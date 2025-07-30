@@ -16,6 +16,26 @@ struct hostapd_sta_add_params;
 enum bw_type;
 struct hostapd_freq_params;
 
+#ifndef CONFIG_QCN_EXTN
+
+static inline
+int ieee802_11_parse_vendor_specific_elems_extn(struct ieee802_11_elems *elems,
+						unsigned int oui_flag,
+						const u8 *pos, size_t elen)
+{
+	return 0;
+}
+
+static inline int
+hostapd_modify_supported_op_class_for_240mhz_extn(int freq,
+						  enum oper_chan_width ch_width,
+						  u8 *op_class)
+{
+	return 0;
+}
+
+#else
+
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
 					   u8 *oper_centr_freq_seg0_idx,
 					   u8 *oper_centr_freq_seg1_idx,
@@ -89,4 +109,5 @@ int hostapd_is_dfs_overlap_extn(struct hostapd_iface *iface,
 				enum chan_width width,
 				int center_freq, u16 punct_bitmap);
 
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
