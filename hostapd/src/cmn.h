@@ -88,5 +88,6 @@ int hostapd_find_dfs_range_extn(struct hostapd_iface *iface,
 int hostapd_is_dfs_overlap_extn(struct hostapd_iface *iface,
 				enum chan_width width,
 				int center_freq, u16 punct_bitmap);
+void hostapd_modify_supported_op_class_for_320mhz_extn(int freq, u8 *op_class);
 
 #endif /* CMN_H */
