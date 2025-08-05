@@ -95,14 +95,23 @@ int hostapd_modify_supported_op_class_for_240mhz_extn(int freq,
 {
 	switch (ch_width) {
 	case CONF_OPER_CHWIDTH_320MHZ:
-		*op_class = is_5ghz_freq(freq) ? 129 : 134;
-		return 0;
+		if (is_5ghz_freq(freq)) {
+			*op_class = 129;
+			return 0;
+		}
 		break;
 
 	default:
 		return -1;
 		break;
 	}
+
+	return -1;
+}
+
+void hostapd_modify_supported_op_class_for_320mhz_extn(int freq, u8 *op_class)
+{
+	*op_class = is_5ghz_freq(freq) ? 129 : 134;
 }
 
 void hostapd_modify_buflen_for_240mhz_extn(size_t *buflen,
@@ -155,7 +164,7 @@ int hostapd_dfs_get_allowed_channels_extn(int n_chans,
 	 * EHT320 valid channels based on center frequency:
 	 * 100
 	 */
-	int allowed_320[] = {100};
+	static int allowed_320[] = {100};
 	int status;
 
 	switch (n_chans) {
@@ -231,7 +240,7 @@ hostapd_get_bw_and_startchan_for_240mhz_extn(enum oper_chan_width
 					     u8 eht_oper_centr_freq_seg0_idx,
 					     u16 *bw, u8 *start_chan)
 {
-	int status;
+	int status = -1;
 
 	switch (eht_oper_chwidth) {
 	case 9:
