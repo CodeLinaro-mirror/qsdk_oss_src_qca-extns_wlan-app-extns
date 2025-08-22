@@ -398,48 +398,47 @@ ieee802_11_parse_vendor_specific_eht_240mhz_cap_extn(struct ieee802_11_elems
 						     unsigned int oui_flag,
 						     const u8 *pos, size_t elen)
 {
-	u8 len = 0, updated_len = 0;
-	struct ieee802_11_elems_extn *elems_extn;
+	size_t off = 0;
+	struct ieee802_11_elems_extn *elems_extn = &elems->elems_extn;
 
-	elems_extn = &elems->elems_extn;
-	elems_extn->eht_240mhz_capab =
-		(const u8 *)os_zalloc(sizeof(
-		struct ieee80211_240mhz_vendor_oper_extn));
+	elems_extn->eht_240mhz_capab = NULL;
+	elems_extn->eht_240mhz_capab_len = 0;
 
-	if (elems_extn->eht_240mhz_capab == NULL) {
-		wpa_printf(MSG_ERROR, "malloc failed for elems_extn->eht_240mhz_capab");
-		return -1;
-	}
+	/* Must have at least OUI(3) + type(1) before accessing pos[3]. */
+	if (elen < 4)
+		return 0;
 
-	if (oui_flag == OUI_QCN && pos[3] == 0x1 ) { /* QCN_OUI_TYPE */
-		updated_len += 4;
-		pos = pos + 4; /* Move OUI(3) and OUI_TYPE (1) */
-		while (elen > updated_len) {
-			switch(pos[0]) {
-			case QCN_ATTRIB_HE_240_MHZ_SUPP:
-				elems_extn->eht_240mhz_capab_len = pos[1];
-				if (elems_extn->eht_240mhz_capab_len >
-				    QCN_HE_240_MHZ_MAX_ELEM_LEN) {
-					wpa_printf(MSG_DEBUG, "Length %d for 240MHz Vendor IE exceeded",
-					elems_extn->eht_240mhz_capab_len);
-					elems_extn->eht_240mhz_capab_len = 0;
-					continue;
-				}
+	/* QCN_OUI_TYPE */
+	if (oui_flag != OUI_QCN || pos[3] != 0x1)
+		return 0;
 
-				len = elems_extn->eht_240mhz_capab_len;
-				pos = pos + 2;
-				elems_extn->eht_240mhz_capab = pos;
-				pos += len;
-				updated_len += len + 2;
-				break;
+	pos += 4;
+	off += 4;
 
-			default:
-				len = pos[1];
-				updated_len += len + 2;
-				pos += len + 2;
-				break;
+	while (off + 2 <= elen) {
+		u8 id   = pos[0];
+		u8 tlen = pos[1];
+
+		if (off + (size_t)2 + (size_t)tlen > elen) {
+			wpa_printf(MSG_DEBUG,
+					"Truncated vendor TLV: id=%u len=%u (off=%zu elen=%zu)",
+					id, tlen, off, elen);
+			break;
+		}
+
+		if (id == QCN_ATTRIB_HE_240_MHZ_SUPP) {
+			if (tlen > QCN_HE_240_MHZ_MAX_ELEM_LEN) {
+				wpa_printf(MSG_DEBUG,
+						"Length %u for 240MHz Vendor IE exceeded (max %u)",
+						tlen, (unsigned)QCN_HE_240_MHZ_MAX_ELEM_LEN);
+			} else {
+				elems_extn->eht_240mhz_capab     = pos + 2;
+				elems_extn->eht_240mhz_capab_len = tlen;
 			}
 		}
+
+		pos += (size_t)2 + (size_t)tlen;
+		off += (size_t)2 + (size_t)tlen;
 	}
 
 	return 0;
