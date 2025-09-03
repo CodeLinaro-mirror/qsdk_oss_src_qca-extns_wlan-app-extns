@@ -115,7 +115,7 @@ Signed-off-by: Venkateswara Swamy Bandaru <vbandaru@qti.qualcomm.com>
  #include "hs20.h"
  #include "wpa_auth.h"
  #include "ap_drv_ops.h"
-+#include "../../qcn_extns/240mhz.h"
++#include "../../qcn_extns/cmn.h"
 +
  #ifdef CONFIG_IEEE80211BE
  #include "common/qca-vendor.h"
@@ -345,7 +345,7 @@ Signed-off-by: Venkateswara Swamy Bandaru <vbandaru@qti.qualcomm.com>
  #include "comeback_token.h"
  #include "nan_usd_ap.h"
  #include "pasn/pasn_common.h"
-+#include "../../qcn_extns/240mhz.h"
++#include "../../qcn_extns/cmn.h"
  #include "wpa_auth_i.h"
  #include "ttlm.h"
  #include "dscp_policy.h"
@@ -455,11 +455,10 @@ Signed-off-by: Venkateswara Swamy Bandaru <vbandaru@qti.qualcomm.com>
  				       &oper_chwidth, &seg0, &seg1);
 --- a/src/ap/sta_info.c
 +++ b/src/ap/sta_info.c
-@@ -37,6 +37,8 @@
+@@ -37,6 +37,7 @@
  #include "mbo_ap.h"
  #include "ndisc_snoop.h"
  #include "sta_info.h"
-+#include "../../qcn_extns/240mhz.h"
 +#include "../../qcn_extns/cmn.h"
  #include "vlan.h"
  #include "wps_hostapd.h"
@@ -496,7 +495,7 @@ Signed-off-by: Venkateswara Swamy Bandaru <vbandaru@qti.qualcomm.com>
  #include "crypto/sha384.h"
  #include "pasn/pasn_common.h"
  #include "hostapd.h"
-+#include "../../qcn_extns/240mhz.h"
++#include "../../qcn_extns/cmn.h"
  #include "ttlm.h"
  #ifdef CONFIG_IEEE80211AX
  #include "robust_av.h"
@@ -538,7 +537,7 @@ Signed-off-by: Venkateswara Swamy Bandaru <vbandaru@qti.qualcomm.com>
  #define IEEE802_11_COMMON_H
  
  #include "defs.h"
-+#include "../../qcn_extns/240mhz.h"
++#include "../../qcn_extns/cmn.h"
  #include "ieee802_11_defs.h"
  #include "utils/list.h"
  
@@ -616,7 +615,7 @@ Signed-off-by: Venkateswara Swamy Bandaru <vbandaru@qti.qualcomm.com>
  #include "utils/list.h"
  #include "drivers/nl80211_copy.h"
  
-+#include "../../qcn_extns/240mhz.h"
++#include "../../qcn_extns/cmn.h"
  struct nan_subscribe_params;
  struct nan_publish_params;
  
