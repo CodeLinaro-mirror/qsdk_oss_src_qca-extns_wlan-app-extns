@@ -120,30 +120,36 @@ Signed-off-by: Venkateswara Swamy Bandaru <vbandaru@qti.qualcomm.com>
  #ifdef CONFIG_IEEE80211BE
  #include "common/qca-vendor.h"
  #include "hw_features.h"
-@@ -528,6 +530,7 @@ int hostapd_sta_add(struct hostapd_data
+@@ -528,6 +530,9 @@ int hostapd_sta_add(struct hostapd_data
  		    size_t he_capab_len,
  		    const struct ieee80211_eht_capabilities *eht_capab,
  		    size_t eht_capab_len,
++#ifdef CONFIG_QCN_EXTN
 +		    struct sta_info_extn *sta_extn,
++#endif
  		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
  		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
  		    int set, const u8 *link_addr, bool mld_link_sta,
-@@ -564,6 +567,8 @@ int hostapd_sta_add(struct hostapd_data
+@@ -564,6 +567,10 @@ int hostapd_sta_add(struct hostapd_data
  	params.set = set;
  	params.mld_link_id = -1;
  
++#ifdef CONFIG_QCN_EXTN
 +	hostapd_copy_sta_add_params_extn(&params.params_extn, sta_extn);
++#endif
 +
  #ifdef CONFIG_IEEE80211BE
  	/*
  	 * An AP MLD needs to always specify to what link the station needs
 --- a/src/ap/ap_drv_ops.h
 +++ b/src/ap/ap_drv_ops.h
-@@ -47,6 +47,7 @@ int hostapd_sta_add(struct hostapd_data
+@@ -47,6 +47,9 @@ int hostapd_sta_add(struct hostapd_data
  		    size_t he_capab_len,
  		    const struct ieee80211_eht_capabilities *eht_capab,
  		    size_t eht_capab_len,
++#ifdef CONFIG_QCN_EXTN
 +		    struct sta_info_extn *sta_extn,
++#endif
  		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
  		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
  		    int set, const u8 *link_addr, bool mld_link_sta,
@@ -387,11 +393,15 @@ Signed-off-by: Venkateswara Swamy Bandaru <vbandaru@qti.qualcomm.com>
  					    sta->flags, 0, 0, 0, 0,
  					    mld_link_addr, mld_link_sta,
  					    eml_cap, reassoc)) {
-@@ -5372,6 +5389,7 @@ static int add_associated_sta(struct hos
+@@ -5372,6 +5389,11 @@ static int add_associated_sta(struct hos
  			    sta->flags & WLAN_STA_HE ? sta->he_capab_len : 0,
  			    sta->flags & WLAN_STA_EHT ? &eht_cap : NULL,
  			    sta->flags & WLAN_STA_EHT ? sta->eht_capab_len : 0,
++
++#ifdef CONFIG_QCN_EXTN
 +			    (struct sta_info_extn *)&sta->sta_extn,
++#endif
++
  			    sta->he_6ghz_capab,
  			    sta->flags | WLAN_STA_ASSOC, sta->qosinfo,
  			    sta->vht_opmode, sta->p2p_ie ? 1 : 0,
