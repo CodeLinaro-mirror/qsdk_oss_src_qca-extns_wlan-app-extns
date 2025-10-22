@@ -401,9 +401,6 @@ ieee802_11_parse_vendor_specific_eht_240mhz_cap_extn(struct ieee802_11_elems
 	size_t off = 0;
 	struct ieee802_11_elems_extn *elems_extn = &elems->elems_extn;
 
-	elems_extn->eht_240mhz_capab = NULL;
-	elems_extn->eht_240mhz_capab_len = 0;
-
 	/* Must have at least OUI(3) + type(1) before accessing pos[3]. */
 	if (elen < 4)
 		return 0;
@@ -413,7 +410,7 @@ ieee802_11_parse_vendor_specific_eht_240mhz_cap_extn(struct ieee802_11_elems
 		return 0;
 
 	pos += 4;
-	off += 4;
+	elen -=4;
 
 	while (off + 2 <= elen) {
 		u8 id   = pos[0];

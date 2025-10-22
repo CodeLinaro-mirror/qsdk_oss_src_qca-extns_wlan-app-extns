@@ -78,9 +78,18 @@ void wpa_driver_nl80211_sta_add_extn(void *priv,
 
 	if (nla_put_u32(msg, NL80211_ATTR_CENTER_FREQ1, oper->ccfs0) ||
 	    nla_put_u32(msg, NL80211_ATTR_CENTER_FREQ2, oper->ccfs1) ||
-	    nla_put_u32(msg, NL80211_ATTR_PUNCT_BITMAP, oper->punct_bitmap) ||
-	    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, params->addr))
+	    nla_put_u32(msg, NL80211_ATTR_PUNCT_BITMAP, oper->punct_bitmap))
 		goto fail;
+
+	if (params->mld_link_addr) {
+		if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN,
+			    params->mld_link_addr))
+			goto fail;
+	} else {
+		if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN,
+			    params->addr))
+			goto fail;
+	}
 
 	ret = send_and_recv_cmd(drv, msg);
 	if (ret) {

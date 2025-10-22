@@ -51,12 +51,27 @@ struct ieee802_11_elems_extn {
 
 #ifndef CONFIG_QCN_EXTN
 
-static inline
-int ieee802_11_parse_vendor_specific_elems_extn(struct ieee802_11_elems *elems,
-						unsigned int oui_flag,
-						const u8 *pos, size_t elen)
+static inline void
+hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
+				      u8 *oper_centr_freq_seg0_idx,
+				      u8 *oper_centr_freq_seg1_idx,
+				      enum oper_chan_width *oper_chwidth)
 {
-	return 0;
+	return;
+}
+
+static inline u8
+hostapd_set_legacy_oper_centr_freq_seg0_extn(struct hostapd_config *conf,
+					     u8 oper_centr_freq_seg0_idx)
+{
+	return oper_centr_freq_seg0_idx;
+}
+
+static inline int
+hostapd_modify_n_chans_for_240mhz_extn(struct hostapd_iface *iface,
+				       int n_chans)
+{
+	return n_chans;
 }
 
 static inline int
@@ -64,7 +79,149 @@ hostapd_modify_supported_op_class_for_240mhz_extn(int freq,
 						  enum oper_chan_width ch_width,
 						  u8 *op_class)
 {
+	return -1;
+}
+
+static inline void
+hostapd_modify_buflen_for_240mhz_extn(size_t *buflen,
+				      struct hostapd_data *hapd)
+{
+	return;
+}
+
+static inline int
+hostapd_get_n_chans_and_frequency_extn(enum oper_chan_width oper_chwidth,
+				       int cf1,
+				       int *n_chans,
+				       int *frequency)
+{
+	return -1;
+}
+
+static inline int hostapd_get_dfs_half_chwidth_extn(enum chan_width width)
+{
 	return 0;
+}
+
+static inline int
+hostapd_dfs_get_allowed_channels_extn(int n_chans,
+				      int *is_allowed,
+				      unsigned int *allowed_no)
+{
+	return -1;
+}
+
+static inline int
+hostapd_dfs_adjust_center_freq_extn(int oper_chwidth,
+				    short chan,
+				    u8 *oper_centr_freq_seg0_idx,
+				    u8 *oper_centr_freq_seg1_idx)
+{
+	return -1;
+}
+
+static inline int
+hostapd_get_bw_and_startchan_for_240mhz_extn(enum oper_chan_width
+					     eht_oper_chwidth,
+					     u8 eht_oper_centr_freq_seg0_idx,
+					     u16 *bw, u8 *start_chan)
+{
+	return -1;
+}
+
+static inline u8 *
+hostapd_eid_vendor_240mhz_extn(struct hostapd_data *hapd, u8 *eid,
+			       int opmode)
+{
+	return eid;
+}
+
+static inline u16
+hostapd_copy_sta_eht_240mhz_cap_extn(struct hostapd_data *hapd,
+				     struct sta_info *sta,
+				     int opmode,
+				     struct ieee802_11_elems_extn *elems_extn)
+{
+	return 0;
+}
+
+static inline void
+hostapd_get_eht_240mhz_cap_extn(struct hostapd_data *hapd,
+				struct sta_info_extn *sta_extn,
+				struct ieee80211_240mhz_vendor_oper_extn *dest)
+{
+	return;
+}
+
+static inline void hostapd_sta_os_free_extn(struct sta_info_extn *sta_extn)
+{
+	return;
+}
+
+static inline int
+ieee802_11_parse_vendor_specific_eht_240mhz_cap_extn(struct ieee802_11_elems
+						     *elems,
+						     unsigned int oui_flag,
+						     const u8 *pos,
+						     size_t elen)
+{
+	return -1;
+}
+
+static inline int
+ieee802_11_parse_vendor_specific_elems_extn(struct ieee802_11_elems *elems,
+					    unsigned int oui_flag,
+					    const u8 *pos, size_t elen)
+{
+	return -1;
+}
+
+static inline void
+hostapd_copy_sta_add_params_extn(struct hostapd_sta_add_params_extn
+				 *params_extn,
+				 struct sta_info_extn *sta_extn)
+{
+	return;
+}
+
+static inline void
+wpa_driver_nl80211_sta_add_extn(void *priv,
+				struct hostapd_sta_add_params
+				*params)
+{
+	return;
+}
+
+static inline bool
+hostapd_dfs_get_valid_punc_bitmap_extn(int chan_freq,
+				       u16 punct_bitmap,
+				       int center_freq,
+				       int half_width)
+{
+	return false;
+}
+
+static inline int
+hostapd_find_dfs_range_extn(struct hostapd_iface *iface,
+			    enum chan_width bandwidth,
+			    struct hostapd_freq_params *freq_params)
+{
+	return -1;
+}
+
+static inline int
+hostapd_is_dfs_overlap_extn(struct hostapd_iface *iface,
+			    enum chan_width width,
+			    int center_freq, u16 punct_bitmap)
+{
+	return -1;
+}
+
+static inline void
+hostapd_modify_supported_op_class_for_320mhz_extn(int freq,
+						  u8 *op_class)
+{
+	return;
 }
 
 #else
