@@ -204,11 +204,17 @@ struct esp_extn {
 	u32 computed_airtime;
 };
 
+enum dynamic_acs_action_extn {
+	DYNAMIC_ACS_DISABLE = 0,
+	CHANNEL_CHANGE_CSA = 1,  // Perform CSA
+};
+
 struct hostapd_iface_extn {
 	struct esp_extn esp;
 	u16 csa_bitmap;
 	bool acs_success;
 	bool acs_failed;
+	enum dynamic_acs_action_extn dynamic_acs_action;
 };
 
 struct hostapd_hw_modes_extn {
@@ -599,6 +605,21 @@ wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx)
 {
 	return;
 }
+
+static inline int
+acs_handle_channel_change_extn(struct hostapd_iface *iface,
+			       struct hostapd_channel_data *chan,
+			       int err)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
+acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
+{
+	return -EOPNOTSUPP;
+}
+
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -786,5 +807,12 @@ void hostapd_mu_cap_war_expire_queries(struct hostapd_data *hapd);
 
 int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd, const char *cmd, char *reply,
 				int reply_size);
+int
+acs_handle_channel_change_extn(struct hostapd_iface *iface,
+			       struct hostapd_channel_data *chan,
+			       int err);
+int
+acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err);
+
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

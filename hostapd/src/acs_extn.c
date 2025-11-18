@@ -11,7 +11,12 @@
 #include "common/ieee802_11_defs.h"
 #include "ap/ap_config.h"
 #include "cmn.h"
-
+#include "common/hw_features_common.h"
+#include "common/wpa_ctrl.h"
+#include "drivers/driver.h"
+#include "ap/ap_drv_ops.h"
+#include "ap/hw_features.h"
+#include "ap/acs.h"
 
 static int
 acs_print_usage_extn(char *reply, int reply_size)
@@ -40,6 +45,7 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs get_txpwr_opt        : get tx power optimization state\n"
 		"  acs 6g_only_psc <1|0>    : restrict 6 GHz to PSC channels only\n"
 		"  acs get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n"
+		"  acs invoke 0             : invoke ACS (0=dynamic+CSA)\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -48,13 +54,36 @@ acs_print_usage_extn(char *reply, int reply_size)
 	return ret;
 }
 
+static int hostapd_acs_run_extn(struct hostapd_data *hapd, const char *pos,
+				char *reply, size_t reply_size)
+{
+	int acs_run_op;
+	struct hostapd_iface *iface = hapd->iface;
+	int status;
+
+	acs_run_op = atoi(pos);
+	if (acs_run_op)
+		return -1;
+
+	iface->iface_extn.dynamic_acs_action = CHANNEL_CHANGE_CSA;
+	status = acs_init(iface);
+	if (status != HOSTAPD_CHAN_ACS) {
+		wpa_printf(MSG_ERROR, "Could not start ACS, error: %d", status);
+		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+		return -1;
+	}
+
+	return 0;
+}
+
 static int hostapd_acs_get_status_extn(struct hostapd_iface *iface,
 		const char *pos,
 		char *reply, size_t reply_size)
 {
 	int ret = os_snprintf(reply, reply_size,
 			      "ACS status: %s\n",
-			      (iface->state == HAPD_IFACE_ACS) ?
+			      (iface->iface_extn.dynamic_acs_action != DYNAMIC_ACS_DISABLE
+			       || iface->state == HAPD_IFACE_ACS) ?
 			      "Inprogress" : "Idle");
 
 	if (os_snprintf_error(reply_size, ret))
@@ -433,6 +462,9 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 		return hostapd_acs_get_6g_only_psc_extn(conf, pos,
 							buf, buflen);
 
+	} else if (os_strncmp(pos, "invoke ", 7) == 0) {
+		return hostapd_acs_run_extn(hapd, pos + 7, buf, buflen);
+
 	} else {
 		return acs_print_usage_extn(buf, buflen);
 	}
@@ -459,3 +491,108 @@ void acs_modify_scan_params_extn(struct hostapd_iface *iface,
 		params->duration_mandatory = 1;
 	}
 }
+
+static int
+hostapd_trigger_channel_switch_for_acs(struct hostapd_iface *iface,
+				       struct hostapd_channel_data *chan)
+{
+	struct csa_settings settings;
+	int i;
+
+	os_memset(&settings, 0, sizeof(settings));
+	settings.cs_count = 5;
+
+	settings.freq_params.freq = chan->freq;
+	settings.freq_params.channel = chan->chan;
+	settings.freq_params.bandwidth = channel_width_to_int(
+		hostapd_get_chan_width_from_oper_chan_width(iface->conf));
+
+	settings.freq_params.ht_enabled = iface->conf->ieee80211n;
+	settings.freq_params.vht_enabled = iface->conf->ieee80211ac;
+	settings.freq_params.he_enabled = iface->conf->ieee80211ax;
+	settings.freq_params.eht_enabled= iface->conf->ieee80211be;
+
+	settings.freq_params.punct_bitmap = chan->punct_bitmap;
+	settings.power_mode = -1;
+
+	if (is_6ghz_freq(settings.freq_params.freq) &&
+	    iface->conf->enable_best_power_mode) {
+		int best_power_mode;
+
+		best_power_mode =
+			hostapd_get_best_ap_6ghz_power_mode(iface,
+				settings.freq_params.freq,
+				settings.freq_params.center_freq1,
+				settings.freq_params.bandwidth,
+				settings.freq_params.punct_bitmap);
+		if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
+			settings.power_mode = best_power_mode;
+			wpa_printf(MSG_DEBUG, "%s: Best power mode for Freq %d is %d",
+				   __func__,
+				   settings.freq_params.freq,
+				   settings.power_mode);
+		} else {
+			wpa_printf(MSG_DEBUG, "%s: Failed to get BPM for Freq %d, Setting to LPI mode",
+				   __func__, settings.freq_params.freq);
+			settings.power_mode = NL80211_REG_AP_LPI;
+		}
+	}
+
+	for (i = 0; i < iface->num_bss; i++) {
+		/* Save CHAN_SWITCH VHT and HE config */
+		hostapd_chan_switch_config(iface->bss[i],
+					   &settings.freq_params);
+
+		wpa_printf(MSG_DEBUG,
+			   "channel=%u, freq=%d, bw=%d, center_freq1=%d",
+			   settings.freq_params.channel,
+			   settings.freq_params.freq,
+			   settings.freq_params.bandwidth,
+			   settings.freq_params.center_freq1);
+
+		if (hostapd_switch_channel(iface->bss[i], &settings))
+			return -1;
+	}
+
+	return 0;
+}
+
+int
+acs_handle_channel_change_extn(struct hostapd_iface *iface,
+			       struct hostapd_channel_data *chan,
+			       int err)
+{
+	int cs_err;
+
+	if (iface->iface_extn.dynamic_acs_action == DYNAMIC_ACS_DISABLE)
+		return -1;
+
+	if (err) {
+		wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
+			   err);
+		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+		return 0;
+	}
+
+	cs_err = hostapd_trigger_channel_switch_for_acs(iface, chan);
+	if (cs_err)
+		wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
+			   cs_err);
+
+	iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+	return 0;
+}
+
+int
+acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
+{
+	if (iface->iface_extn.dynamic_acs_action == DYNAMIC_ACS_DISABLE)
+		return -1;
+
+	wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
+		   err);
+	iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+
+	return 0;
+}
+
