@@ -24,6 +24,7 @@
 #include "common/wpa_common.h"
 #include "drivers/driver.h"
 #include "drivers/driver_nl80211.h"
+#include "esp.h"
 
 
 struct hostapd_sta_add_params;
@@ -128,9 +129,48 @@ int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 				  u32 subcmd, u8 *data, size_t len)
 {
 	switch (subcmd) {
+	case QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION:
+		qca_nl80211_handle_wifi_config_evt_extn(bss, data, len);
+		break;
 	default:
 		return -EINVAL;
 	}
+
+	return 0;
+}
+
+int qca_nl80211_handle_wifi_config_evt_extn(struct i802_bss *bss,
+					    u8 *data, size_t len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {0};
+	u8 link_id = 0;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR, "nl80211: bss is NULL!");
+		return -EINVAL;
+	}
+
+	if (!(data && len)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid data for WiFi configuration event");
+		return -EINVAL;
+	}
+
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+		      (struct nlattr *)data, len, NULL)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to parse WiFi configuration attributes");
+		return -EINVAL;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID])
+		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID]);
+
+	/* Check if ESP params are present */
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS])
+		return nl80211_parse_esp_params_extn(bss,
+						     tb[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS],
+						     link_id);
 
 	return 0;
 }

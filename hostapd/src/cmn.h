@@ -23,6 +23,8 @@ struct wpa_ctrl;
 struct hostapd_bss_config;
 struct i802_bss;
 enum wpa_event_type;
+struct nlattr;
+struct wpa_ctrl;
 union wpa_event_data;
 
 struct ieee80211_240mhz_vendor_oper_extn {
@@ -50,8 +52,18 @@ struct sta_info_extn {
 	struct ieee80211_240mhz_params_extn params_240mhz;
 };
 
+/**
+ * struct esp_update_event - Data for EVENT_ESP_UPDATE
+ * @link_id: Link for which ESP airtime update was received
+ * @airtime: Airtime fraction computed in the firmware
+ */
+struct esp_update_event {
+	u8 link_id;
+	u8 airtime;
+};
+
 union wpa_event_data_extn {
-	/* Add extn wpa_event_data here */
+	struct esp_update_event esp_update_event;
 };
 
 struct ieee802_11_elems_extn {
@@ -65,6 +77,18 @@ struct hostapd_config_extn {
 
 struct hostapd_bss_config_extn {
 	/* Add Per-BSS configuration for extn here */
+};
+
+struct esp_extn {
+	u8 airtime;
+	u8 ppdu_dur;
+	u8 ba_window;
+	u8 enable;
+	u32 computed_airtime;
+};
+
+struct hostapd_iface_extn {
+	struct esp_extn esp;
 };
 
 #ifndef CONFIG_QCN_EXTN
@@ -280,6 +304,25 @@ hostapd_wpa_event_extn(void *ctx, int event,
 	return -1;
 }
 
+static inline int
+qca_nl80211_handle_wifi_config_evt_extn(struct i802_bss *bss,
+					u8 *data, size_t len)
+{
+	return -1;
+}
+
+static inline
+u8 * hostapd_eid_esp_extn(struct hostapd_data *hapd, u8 *eid, size_t len)
+{
+       return eid;
+}
+
+static inline
+size_t hostapd_esp_ie_len_extn(struct hostapd_data *hapd)
+{
+       return 0;
+}
+
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -367,12 +410,26 @@ int
 hostapd_config_fill_extn(struct hostapd_config *conf,
 			 struct hostapd_bss_config *bss,
 			 const char *buf, char *pos, int line);
-
 int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 				  u32 subcmd, u8 *data, size_t len);
 
 int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 			   union wpa_event_data *data);
+#ifdef HOSTAPD
+struct hostapd_data *
+switch_link_hapd(struct hostapd_data *hapd, int link_id);
+#else
+static inline struct hostapd_data *
+switch_link_hapd(struct hostapd_data *hapd, int link_id)
+{
+    return hapd;
+}
+#endif
+int qca_nl80211_handle_wifi_config_evt_extn(struct i802_bss *bss,
+					    u8 *data, size_t len);
+size_t hostapd_esp_ie_len_extn(struct hostapd_data *hapd);
+u8 * hostapd_eid_esp_extn(struct hostapd_data *hapd, u8 *eid, size_t len);
+size_t hostapd_esp_ie_len_extn(struct hostapd_data *hapd);
 
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
