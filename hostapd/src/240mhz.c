@@ -392,6 +392,46 @@ void hostapd_sta_os_free_extn(struct sta_info_extn *sta_extn)
 	os_free(sta_extn->params_240mhz.eht_240mhz_capab);
 }
 
+static int hostapd_validate_240mhz_cap_extn(const u8 *capab, size_t len)
+{
+	const size_t expected = sizeof(struct ieee80211_240mhz_vendor_oper_extn);
+	const struct ieee80211_240mhz_vendor_oper_extn *extn;
+	u8 diff;
+
+	if (!capab || len != expected)
+	    return -EINVAL;
+
+	extn = (const struct ieee80211_240mhz_vendor_oper_extn *) capab;
+
+	if (extn->is5ghz240mhz == 0) {
+		wpa_printf(MSG_DEBUG, "240MHZ support not enabled");
+		return -EINVAL;
+	}
+
+	if (!extn->ccfs0 || !extn->ccfs1) {
+		wpa_printf(MSG_DEBUG, "ccfs should be non zero, ccfs0:%u ccfs1:%u",
+			   extn->ccfs0, extn->ccfs1);
+		return -EINVAL;
+	}
+
+	diff = (extn->ccfs0 > extn->ccfs1) ? (extn->ccfs0 - extn->ccfs1) :
+		(extn->ccfs1 - extn->ccfs0);
+	if (diff != 16) {
+		wpa_printf(MSG_DEBUG, "Incompatible ccfs , ccfs0:%u ccfs1:%u",
+			   extn->ccfs0, extn->ccfs1);
+		return -EINVAL;
+	}
+
+	if ((extn->punct_bitmap & PUNCTURING_PATTERN_5G_320MHZ) !=
+	    PUNCTURING_PATTERN_5G_320MHZ) {
+		wpa_printf(MSG_DEBUG, "Invalid Puncturing bitmap:0x%x",
+			   extn->punct_bitmap);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 int
 ieee802_11_parse_vendor_specific_eht_240mhz_cap_extn(struct ieee802_11_elems
 						     *elems,
@@ -431,6 +471,17 @@ ieee802_11_parse_vendor_specific_eht_240mhz_cap_extn(struct ieee802_11_elems
 			} else {
 				elems_extn->eht_240mhz_capab     = pos + 2;
 				elems_extn->eht_240mhz_capab_len = tlen;
+
+				/* Validate the parsed 240 MHz Vendor Capability */
+				if (elems_extn->eht_240mhz_capab &&
+				    hostapd_validate_240mhz_cap_extn(elems_extn->eht_240mhz_capab,
+								     elems_extn->eht_240mhz_capab_len)) {
+				    wpa_hexdump(MSG_DEBUG, "240MHz Vendor IE ",
+						elems_extn->eht_240mhz_capab,
+						elems_extn->eht_240mhz_capab_len);
+				    elems_extn->eht_240mhz_capab = NULL;
+				    elems_extn->eht_240mhz_capab_len = 0;
+				}
 			}
 		}
 
