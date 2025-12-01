@@ -10,3 +10,8 @@ OBJS+= \
 	qcn_extns/rnr.o \
 	qcn_extns/macaddr.o
 
+ifdef CONFIG_EXTERNAL_PLUGIN
+CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN
+OBJS += qcn_extns/hostapd_if_eloop.o
+endif
+
