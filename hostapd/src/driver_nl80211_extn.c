@@ -122,3 +122,15 @@ fail:
 	nlmsg_free(msg);
 	return;
 }
+
+
+int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
+				  u32 subcmd, u8 *data, size_t len)
+{
+	switch (subcmd) {
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}

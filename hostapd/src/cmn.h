@@ -21,6 +21,9 @@ enum oper_chan_width;
 enum chan_width;
 struct wpa_ctrl;
 struct hostapd_bss_config;
+struct i802_bss;
+enum wpa_event_type;
+union wpa_event_data;
 
 struct ieee80211_240mhz_vendor_oper_extn {
 	u8 ccfs1;
@@ -45,6 +48,10 @@ struct  hostapd_sta_add_params_extn {
 
 struct sta_info_extn {
 	struct ieee80211_240mhz_params_extn params_240mhz;
+};
+
+union wpa_event_data_extn {
+	/* Add extn wpa_event_data here */
 };
 
 struct ieee802_11_elems_extn {
@@ -259,6 +266,20 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 	return -EOPNOTSUPP;
 }
 
+static inline int
+nl80211_vendor_event_qca_extn(struct i802_bss *bss,
+			      u32 subcmd, u8 *data, size_t len)
+{
+	return -1;
+}
+
+static inline int
+hostapd_wpa_event_extn(void *ctx, int event,
+		       union wpa_event_data *data)
+{
+	return -1;
+}
+
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -346,6 +367,12 @@ int
 hostapd_config_fill_extn(struct hostapd_config *conf,
 			 struct hostapd_bss_config *bss,
 			 const char *buf, char *pos, int line);
+
+int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
+				  u32 subcmd, u8 *data, size_t len);
+
+int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
+			   union wpa_event_data *data);
 
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
