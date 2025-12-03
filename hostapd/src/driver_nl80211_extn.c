@@ -29,6 +29,36 @@
 
 struct hostapd_sta_add_params;
 
+static int mac_config_handler(struct nl_msg *msg, void *arg)
+{
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct wpabuf *buf = arg;
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct nlattr *ven_reply, *nl;
+	int rem_len;
+
+	if (!buf)
+		return NL_SKIP;
+
+	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		  genlmsg_attrlen(gnlh, 0), NULL);
+
+	ven_reply = tb[NL80211_ATTR_VENDOR_DATA];
+	if (!ven_reply)
+		return NL_SKIP;
+
+	if (nla_len(ven_reply) > wpabuf_tailroom(buf)) {
+		wpa_printf(MSG_ERROR, "nl80211: no buffer space");
+		return NL_SKIP;
+	}
+
+	nla_for_each_nested(nl, ven_reply, rem_len) {
+		wpabuf_put_data(buf, nla_data(nl), nla_len(nl));
+	}
+
+	return NL_SKIP;
+}
+
 /* This function sends a NL message only if extension parameters exist;
  * otherwise it just returns.
  */
@@ -124,7 +154,6 @@ fail:
 	return;
 }
 
-
 int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 				  u32 subcmd, u8 *data, size_t len)
 {
@@ -173,4 +202,83 @@ int qca_nl80211_handle_wifi_config_evt_extn(struct i802_bss *bss,
 						     link_id);
 
 	return 0;
+}
+
+int wpa_driver_nl80211_vendor_bss_addr(void *priv, u8 radio_idx, u8 bss_id,
+				       u8 mbssid_grp_id, u8 mbssid_grp_size,
+				       enum nl80211_iftype iftype, u32 flags,
+				       u8 *addr, const char *ifname)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *attr;
+	struct wpabuf *buf = NULL;
+	int ret = -1;
+
+	if (!drv)
+		return -EINVAL;
+
+	msg = nlmsg_alloc();
+	if (!msg)
+		return -ENOMEM;
+
+	if (!genlmsg_put(msg, 0, 0, drv->global->nl80211_id, 0, 0,
+			 NL80211_CMD_VENDOR, 0))
+		goto fail;
+
+	if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, if_nametoindex(ifname)) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_DERIVE_LINK_BSS_ADDR))
+		goto fail;
+
+	attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!attr)
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_RADIO_INDEX,
+		       radio_idx) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_RADIO_BSS_ID,
+		       bss_id) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_FLAGS,
+			flags) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_IFTYPE,
+			iftype))
+		goto fail;
+
+	/* Optional MBSSID group details for 6 GHz AP */
+	if (mbssid_grp_size) {
+		if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_GRP_ID,
+			       mbssid_grp_id) ||
+		    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_GRP_SIZE,
+			       mbssid_grp_size))
+			goto fail;
+	}
+
+	nla_nest_end(msg, attr);
+
+	buf = wpabuf_alloc(ETH_ALEN + 16);
+	if (!buf)
+		goto fail;
+
+	ret = send_and_recv_resp(drv, msg, mac_config_handler, buf);
+	msg = NULL;
+	if (ret)
+		goto out;
+
+	if (wpabuf_len(buf) < ETH_ALEN) {
+		ret = -EMSGSIZE;
+		goto out;
+	}
+	os_memcpy(addr, wpabuf_head(buf), ETH_ALEN);
+	ret = 0;
+out:
+	if (buf)
+		wpabuf_free(buf);
+	return ret;
+fail:
+	if (msg)
+		nlmsg_free(msg);
+	return -ENOBUFS;
 }

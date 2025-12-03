@@ -234,6 +234,18 @@ wpa_driver_nl80211_sta_add_extn(void *priv,
 	return;
 }
 
+static inline int
+hostapd_drv_fetch_and_set_vendor_bssid_extn(struct hostapd_data *hapd)
+{
+	return -1;
+}
+
+static inline void
+hostapd_free_bss_index_extn(struct hostapd_data *hapd)
+{
+	return;
+}
+
 static inline bool
 hostapd_dfs_get_valid_punc_bitmap_extn(int chan_freq,
 				       u16 punct_bitmap,
@@ -387,6 +399,8 @@ void hostapd_copy_sta_add_params_extn(struct hostapd_sta_add_params_extn
 				      struct sta_info_extn *sta_extn);
 void wpa_driver_nl80211_sta_add_extn(void *priv,
 				     struct hostapd_sta_add_params *params);
+int hostapd_drv_fetch_and_set_vendor_bssid_extn(struct hostapd_data *hapd);
+void hostapd_free_bss_index_extn(struct hostapd_data *hapd);
 bool hostapd_dfs_get_valid_punc_bitmap_extn(int chan_freq,
 					    u16 punct_bitmap,
 					    int center_freq,
