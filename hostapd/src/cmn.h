@@ -17,6 +17,10 @@ enum bw_type;
 struct hostapd_freq_params;
 struct hostapd_data;
 struct ieee802_11_elems;
+enum oper_chan_width;
+enum chan_width;
+struct wpa_ctrl;
+struct hostapd_bss_config;
 
 struct ieee80211_240mhz_vendor_oper_extn {
 	u8 ccfs1;
@@ -48,6 +52,13 @@ struct ieee802_11_elems_extn {
 	u8 eht_240mhz_capab_len;
 };
 
+struct hostapd_config_extn {
+	/* Add Per-radio configuration for extn here */
+};
+
+struct hostapd_bss_config_extn {
+	/* Add Per-BSS configuration for extn here */
+};
 
 #ifndef CONFIG_QCN_EXTN
 
@@ -224,6 +235,30 @@ hostapd_modify_supported_op_class_for_320mhz_extn(int freq,
 	return;
 }
 
+static inline int
+hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
+					char *buf, char *reply,
+					int reply_size,
+					struct sockaddr_storage *from,
+					socklen_t fromlen, int *reply_len)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline void
+hostapd_config_defaults_extn(struct hostapd_config *conf)
+{
+	return;
+}
+
+static inline int
+hostapd_config_fill_extn(struct hostapd_config *conf,
+			 struct hostapd_bss_config *bss,
+			 const char *buf, char *pos, int line)
+{
+	return -EOPNOTSUPP;
+}
+
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -299,6 +334,18 @@ int hostapd_is_dfs_overlap_extn(struct hostapd_iface *iface,
 				enum chan_width width,
 				int center_freq, u16 punct_bitmap);
 void hostapd_modify_supported_op_class_for_320mhz_extn(int freq, u8 *op_class);
+int
+hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
+					char *buf, char *reply,
+					int reply_size,
+					struct sockaddr_storage *from,
+					socklen_t fromlen, int *reply_len);
+void
+hostapd_config_defaults_extn(struct hostapd_config *conf);
+int
+hostapd_config_fill_extn(struct hostapd_config *conf,
+			 struct hostapd_bss_config *bss,
+			 const char *buf, char *pos, int line);
 
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
