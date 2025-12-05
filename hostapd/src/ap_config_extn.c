@@ -50,7 +50,9 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		conf_extn->rnr_6ghz_override = val;
-	} else
+	} else if (os_strcmp(buf, "qacs_enable") == 0)
+		conf_extn->qacs_enable = atoi(pos);
+	else
 		return -1;
 
 	return 0;

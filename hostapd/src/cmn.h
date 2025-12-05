@@ -6,6 +6,10 @@
 #ifndef CMN_H
 #define CMN_H
 
+#ifdef CONFIG_QCN_APP_EXTN
+#include "qacs/qacs.h"
+#endif
+
 struct hostapd_config;
 struct sta_info;
 struct hostapd_iface;
@@ -81,6 +85,11 @@ struct hostapd_config_extn {
 	u8 rnr_6ghz_colocated_enable;
 	bool rnr_ess_colocated_en;
 	bool rnr_6ghz_override;
+	bool qacs_enable;
+
+#ifdef CONFIG_QCN_APP_EXTN
+	struct qacs_conf_extn qacs_conf;
+#endif
 };
 
 struct hostapd_bss_config_extn {
@@ -97,6 +106,12 @@ struct esp_extn {
 
 struct hostapd_iface_extn {
 	struct esp_extn esp;
+};
+
+struct hostapd_hw_modes_extn {
+#ifdef CONFIG_QCN_APP_EXTN
+	struct qacs_data_extn qacs_extn;
+#endif
 };
 
 #ifndef CONFIG_QCN_EXTN
@@ -368,6 +383,9 @@ size_t hostapd_esp_ie_len_extn(struct hostapd_data *hapd)
        return 0;
 }
 
+static inline void
+acs_process_hostapd_scan_data(struct hostapd_iface *iface) {}
+
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -482,6 +500,21 @@ int qca_nl80211_handle_wifi_config_evt_extn(struct i802_bss *bss,
 size_t hostapd_esp_ie_len_extn(struct hostapd_data *hapd);
 u8 * hostapd_eid_esp_extn(struct hostapd_data *hapd, u8 *eid, size_t len);
 size_t hostapd_esp_ie_len_extn(struct hostapd_data *hapd);
+
+#ifndef CONFIG_QCN_APP_EXTN
+static inline struct hostapd_channel_data *
+qacs_find_ideal_chan(struct hostapd_iface *iface)
+{
+	wpa_printf(MSG_ERROR, "QACS is not supported");
+	return NULL;
+}
+
+#else
+struct hostapd_channel_data *
+qacs_find_ideal_chan(struct hostapd_iface *iface);
+#endif /*CONFIG_QCN_APP_EXTN */
+
+void acs_process_hostapd_scan_data(struct hostapd_iface *iface);
 
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
