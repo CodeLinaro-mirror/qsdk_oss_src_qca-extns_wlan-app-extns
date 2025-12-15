@@ -622,6 +622,7 @@ void hostapd_csa_bitmap_update_extn(struct hostapd_iface *iface, int freq);
 int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 					 bool is_dfs, char *wpa_state,
 					 struct csa_settings *csa);
+int acs_get_bw_center_chan(int freq, enum bw_type bw);
 #ifdef HOSTAPD
 struct hostapd_data *
 switch_link_hapd(struct hostapd_data *hapd, int link_id);
