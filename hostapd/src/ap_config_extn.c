@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// SPDX-License-Identifier: BSD-3-Clause
 /*
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
@@ -19,7 +19,10 @@
 void
 hostapd_config_defaults_extn(struct hostapd_config *conf)
 {
+	struct hostapd_config_extn *conf_extn = &conf->conf_extn;
+
 	/* Configure defaults for extensions */
+	conf_extn->rnr_6ghz_colocated_enable = 0;
 }
 
 int

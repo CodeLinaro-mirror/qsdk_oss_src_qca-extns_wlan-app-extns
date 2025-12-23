@@ -10,6 +10,7 @@
 #include "utils/os.h"
 #include "common/ieee802_11_defs.h"
 #include "ap/ap_config.h"
+#include "ap/beacon.h"
 
 
 static int hostapd_ctrl_iface_set_esp_extn(struct hostapd_data *hapd, char *cmd)
@@ -78,6 +79,70 @@ static int hostapd_ctrl_iface_get_esp_extn(struct hostapd_data *hapd,
         return ret;
 }
 
+static int hostapd_ctrl_set_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, char *cmd)
+{
+#ifdef NEED_AP_MLME
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	uint8_t rnr_mode, frm_val;
+	char *ptr, *endptr;
+
+	if (!hapd->started) {
+		wpa_printf(MSG_ERROR, "Interface is not UP.\n");
+		return -1;
+	}
+
+	rnr_mode = (uint8_t)strtol(cmd, &ptr, 10);
+	if (ptr == cmd || rnr_mode > 1) {
+		wpa_printf(MSG_ERROR, "Invalid mode. Use 1:Enable 0:Disable");
+		return -1;
+	}
+
+	frm_val = (uint8_t)strtol(ptr, &endptr, 10);
+	if (ptr == endptr || frm_val > 7) {
+		wpa_printf(MSG_ERROR, "Invalid frm_val. Valid values:0 to 7");
+		return -1;
+	}
+
+	if (rnr_mode == 1 && frm_val == 0) {
+		wpa_printf(MSG_ERROR, "Mode is enable But frm is not selected. Invalid frm_val");
+		return -1;
+	}
+
+	if (rnr_mode == 1) {
+		/* User rnr mode enable: set frame mask  */
+		conf_extn->rnr_6ghz_colocated_enable |= (frm_val & 0x7);
+	} else {
+		/* User rnr mode disable: clear frame mask */
+		conf_extn->rnr_6ghz_colocated_enable &= ~(frm_val & 0x7);
+	}
+	wpa_printf(MSG_INFO, "rnr_mode:%d frm_val:%d rnr_6ghz_colocated_enable %d",
+			rnr_mode, frm_val, conf_extn->rnr_6ghz_colocated_enable);
+
+	/* Update beacon to reflect the config */
+	ieee802_11_update_beacons(hapd->iface);
+
+	return 0;
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME */
+}
+
+static int hostapd_ctrl_get_rnr_6ghz_colocated_extn(struct hostapd_data *hapd,
+						    const char *cmd, char *reply,
+						    int reply_size)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	int ret;
+
+	ret = os_snprintf(reply, reply_size,
+			"rnr_6ghz_colocated=%d\n",
+			conf_extn->rnr_6ghz_colocated_enable);
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
 
 int
 hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
@@ -94,6 +159,12 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
         } else if (os_strncmp(buf, "GET_ESP", 7) == 0) {
 		reply_len_extn = hostapd_ctrl_iface_get_esp_extn(hapd, buf + 7, reply,
 								 reply_size);
+	} else if (os_strncmp(buf, "RNR_6GHZ_COLOCATED ", 19) == 0) {
+		if (hostapd_ctrl_set_rnr_6ghz_colocated_extn(hapd, buf + 19))
+			reply_len_extn = -1;
+        } else if (os_strncmp(buf, "GET_RNR_6GHZ_COLOCATED ", 23) == 0) {
+		reply_len_extn = hostapd_ctrl_get_rnr_6ghz_colocated_extn(hapd, buf + 23, reply,
+									  reply_size);
         } else {
 		return -1;
 	}

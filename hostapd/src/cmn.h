@@ -73,6 +73,12 @@ struct ieee802_11_elems_extn {
 
 struct hostapd_config_extn {
 	/* Add Per-radio configuration for extn here */
+
+	/* Manages RNR advertisement of 6 GHz BSS information for both
+	 * in-band and out-of-band for each frame type includes Beacon,
+	 * Probe Response and FILS discovery frame.
+	 */
+	u8 rnr_6ghz_colocated_enable;
 };
 
 struct hostapd_bss_config_extn {
@@ -278,6 +284,12 @@ hostapd_modify_supported_op_class_for_320mhz_extn(int freq,
 	return;
 }
 
+static inline bool
+hostapd_skip_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, u32 type)
+{
+	return false;
+}
+
 static inline int
 hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 					char *buf, char *reply,
@@ -412,6 +424,7 @@ int hostapd_is_dfs_overlap_extn(struct hostapd_iface *iface,
 				enum chan_width width,
 				int center_freq, u16 punct_bitmap);
 void hostapd_modify_supported_op_class_for_320mhz_extn(int freq, u8 *op_class);
+bool hostapd_skip_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, u32 type);
 int
 hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 					char *buf, char *reply,

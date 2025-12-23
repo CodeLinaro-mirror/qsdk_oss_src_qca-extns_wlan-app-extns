@@ -7,5 +7,6 @@ OBJS+= \
 	qcn_extns/ctrl_iface_extn.o \
 	qcn_extns/drv_callbacks_extn.o \
 	qcn_extns/esp.o \
+	qcn_extns/rnr.o \
 	qcn_extns/macaddr.o
 

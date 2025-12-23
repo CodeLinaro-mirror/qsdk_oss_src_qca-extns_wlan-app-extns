@@ -38,3 +38,15 @@ int hostapd_cli_cmd_get_esp_extn(struct wpa_ctrl *ctrl, int argc,
 {
 	return wpa_ctrl_command(ctrl, "GET_ESP");
 }
+
+int hostapd_cli_cmd_set_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl,
+						int argc, char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "RNR_6GHZ_COLOCATED", 2, argc, argv);
+}
+
+int hostapd_cli_cmd_get_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl,
+						int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_RNR_6GHZ_COLOCATED");
+}
