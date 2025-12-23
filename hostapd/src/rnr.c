@@ -10,6 +10,7 @@
 #include "ap/hostapd.h"
 #include "cmn.h"
 #include "rnr.h"
+#include "ap/ieee802_11.h"
 
 bool hostapd_skip_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, u32 type)
 {
@@ -31,4 +32,17 @@ bool hostapd_skip_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, u32 type)
 	default:
 		return false;
 	}
+}
+
+bool hostapd_rnr_colocated_ess_indication_extn(struct hostapd_data *hapd)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+
+	/* Member of ESS with 2.4/5 GHz colocated AP of RNR BSS param */
+	if (conf_extn->rnr_ess_colocated_en &&
+		(get_colocation_mode(hapd) == COLOCATED_6GHZ)) {
+		return true;
+
+	}
+	return false;
 }

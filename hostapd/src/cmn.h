@@ -79,6 +79,7 @@ struct hostapd_config_extn {
 	 * Probe Response and FILS discovery frame.
 	 */
 	u8 rnr_6ghz_colocated_enable;
+	bool rnr_ess_colocated_en;
 };
 
 struct hostapd_bss_config_extn {
@@ -290,6 +291,12 @@ hostapd_skip_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, u32 type)
 	return false;
 }
 
+static inline bool
+hostapd_rnr_colocated_ess_indication_extn(struct hostapd_data *hapd, u32 type)
+{
+	return false;
+}
+
 static inline int
 hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 					char *buf, char *reply,
@@ -312,6 +319,19 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			 const char *buf, char *pos, int line)
 {
 	return -EOPNOTSUPP;
+}
+
+static inline int
+hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *value)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
+hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
+			       size_t buflen, size_t curr_len)
+{
+	return curr_len;
 }
 
 static inline int
@@ -425,6 +445,7 @@ int hostapd_is_dfs_overlap_extn(struct hostapd_iface *iface,
 				int center_freq, u16 punct_bitmap);
 void hostapd_modify_supported_op_class_for_320mhz_extn(int freq, u8 *op_class);
 bool hostapd_skip_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, u32 type);
+bool hostapd_rnr_colocated_ess_indication_extn(struct hostapd_data *hapd);
 int
 hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 					char *buf, char *reply,
@@ -439,9 +460,11 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			 const char *buf, char *pos, int line);
 int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 				  u32 subcmd, u8 *data, size_t len);
-
+int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *value);
 int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 			   union wpa_event_data *data);
+int hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
+				   size_t buflen, size_t curr_len);
 #ifdef HOSTAPD
 struct hostapd_data *
 switch_link_hapd(struct hostapd_data *hapd, int link_id);

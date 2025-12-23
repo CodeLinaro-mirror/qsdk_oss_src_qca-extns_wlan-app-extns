@@ -23,6 +23,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 
 	/* Configure defaults for extensions */
 	conf_extn->rnr_6ghz_colocated_enable = 0;
+	conf_extn->rnr_ess_colocated_en = false;
 }
 
 int
@@ -32,23 +33,16 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 {
 	struct hostapd_config_extn *conf_extn = &conf->conf_extn;
 
-	if (!conf_extn)
+	if (os_strcmp(buf, "rnr_member_ess_colocated_en") == 0) {
+		int val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid value for rnr_member_ess_colocated_en %d (expected 0 or 1)",
+				line, val);
+			return -1;
+		}
+		conf_extn->rnr_ess_colocated_en = val;
+	} else
 		return -1;
-/*
-	if (os_strcmp(buf, "temp_enable") == 0)
-		conf_extn->temp_enable = atoi(pos);
-	else
-
- * Return -1 if no extension configuration is parsed.
- * This allows the parent API hostapd_config_fill to continue
- * processing its logic.
- */
-	return -1;
-
-/*
- * Return 0 if an extension configuration is successfully handled.
- * In this case, the parent API hostapd_config_fill will return immediately.
 
 	return 0;
- */
 }

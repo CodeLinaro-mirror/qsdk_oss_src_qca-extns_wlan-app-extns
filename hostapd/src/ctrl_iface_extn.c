@@ -178,3 +178,46 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 
 	return 0;
 }
+
+int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *value)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+
+	if (os_strcasecmp(cmd, "rnr_member_ess_colocated_en") == 0) {
+		int val;
+		val = atoi(value);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				"rnr_member_ess_colocated_en: Invalid value (expected 0 or 1)");
+			return -1;
+		}
+		if (is_6ghz_freq(hapd->iface->freq)) {
+			conf_extn->rnr_ess_colocated_en = val;
+			ieee802_11_update_beacons(hapd->iface);
+		} else {
+			wpa_printf(MSG_ERROR, "rnr_member_ess_colocated_en is valid only for 6 GHz");
+			return -1;
+		}
+
+	}
+	return 0;
+}
+
+int hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
+				   size_t buflen, size_t curr_len)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	size_t len = curr_len;
+	int ret;
+
+	if (is_6ghz_freq(hapd->iface->freq)) {
+		ret = os_snprintf(buf + len, buflen - len,
+				"rnr_member_ess_colocated_en=%d\n",
+				conf_extn->rnr_ess_colocated_en);
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
+	}
+
+	return len;
+}
