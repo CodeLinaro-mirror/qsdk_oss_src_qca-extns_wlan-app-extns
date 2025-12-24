@@ -15,3 +15,8 @@ CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN
 OBJS += qcn_extns/hostapd_if_eloop.o
 endif
 
+ifneq ($(wildcard ../qcn_extns/qacs/qacs.c),)
+	CFLAGS += -DCONFIG_QCN_APP_EXTN
+	OBJS += qcn_extns/qacs/qacs.o
+endif
+
