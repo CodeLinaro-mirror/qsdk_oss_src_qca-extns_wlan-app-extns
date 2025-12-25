@@ -813,6 +813,8 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			       int err);
 int
 acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err);
+bool
+acs_usable_bw_chan(const struct hostapd_channel_data *chan, enum bw_type bw);
 
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

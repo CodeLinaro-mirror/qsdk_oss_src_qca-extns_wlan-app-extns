@@ -17,6 +17,103 @@
 #include "ap/ap_drv_ops.h"
 #include "ap/hw_features.h"
 #include "ap/acs.h"
+#include "cmn.h"
+
+static int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
+					struct hostapd_channel_data *chan,
+					enum oper_chan_width oper_bw)
+{
+	int center = 0;
+
+	switch (oper_bw) {
+	case CONF_OPER_CHWIDTH_USE_HT:
+		if (iface->conf->secondary_channel &&
+		    chan->freq >= 2400 && chan->freq < 2500)
+			center = chan->chan +
+				2 * iface->conf->secondary_channel;
+		else if (iface->conf->secondary_channel)
+			center = acs_get_bw_center_chan(chan->freq, ACS_BW40);
+		else
+			center = chan->chan;
+		break;
+	case CONF_OPER_CHWIDTH_80MHZ:
+		center = acs_get_bw_center_chan(chan->freq, ACS_BW80);
+		break;
+	case CONF_OPER_CHWIDTH_160MHZ:
+		center = acs_get_bw_center_chan(chan->freq, ACS_BW160);
+		break;
+	case CONF_OPER_CHWIDTH_320MHZ:
+		switch (hostapd_get_bw320_offset(iface->conf)) {
+		case 0:
+			if (acs_usable_bw_chan(chan, ACS_BW320_1))
+				center = acs_get_bw_center_chan(chan->freq, ACS_BW320_1);
+			else if (acs_usable_bw_chan(chan, ACS_BW320_2))
+				center = acs_get_bw_center_chan(chan->freq, ACS_BW320_2);
+			break;
+		case 1:
+			center = acs_get_bw_center_chan(chan->freq,
+							ACS_BW320_1);
+			break;
+		case 2:
+			center = acs_get_bw_center_chan(chan->freq,
+							ACS_BW320_2);
+			break;
+		default:
+			wpa_printf(MSG_INFO,
+				   "ACS: BW320 offset is not selected");
+			return -1;
+		}
+
+		break;
+	default:
+		wpa_printf(MSG_INFO,
+			   "ACS: Only VHT20/40/80/160/320 is supported now");
+		return -1;
+	}
+
+	return center;
+}
+
+static void
+hostapd_get_center_chanfreq1_from_channel(struct hostapd_iface *iface,
+					   struct hostapd_channel_data *chan,
+					   enum oper_chan_width oper_bw,
+					   int *center_chan1,
+					   int *center_freq1)
+{
+	int center_chan = 0, center_freq = 0;
+	u8 op_class = 0, channel = 0;
+	enum hostapd_hw_mode hw_mode;
+
+	center_chan = hostapd_get_center_chan_extn(iface, chan, oper_bw);
+	if (center_chan == -1)
+		goto fail;
+
+	hw_mode = ieee80211_freq_to_channel_ext(chan->freq,
+						iface->conf->secondary_channel,
+						oper_bw,
+						&op_class, &channel);
+	if (hw_mode == NUM_HOSTAPD_MODES) {
+		wpa_printf(MSG_ERROR, "Failed to get channel for freq: %d, sec_channel_offset: %d, bw: %d",
+			   chan->freq, iface->conf->secondary_channel, oper_bw);
+		goto fail;
+	}
+
+	center_freq = ieee80211_chan_to_freq(NULL, op_class, center_chan);
+
+fail:
+	wpa_printf(MSG_DEBUG, "%s: center_chan1: %d, center_freq1: %d",
+		   __func__,
+		   center_chan,
+		   center_freq);
+
+	if (center_chan1)
+		*center_chan1 = center_chan;
+
+	if (center_freq1)
+		*center_freq1 = center_freq;
+}
+
 
 static int
 acs_print_usage_extn(char *reply, int reply_size)
@@ -507,11 +604,16 @@ hostapd_trigger_channel_switch_for_acs(struct hostapd_iface *iface,
 	settings.freq_params.bandwidth = channel_width_to_int(
 		hostapd_get_chan_width_from_oper_chan_width(iface->conf));
 
+	/* Get the center_freq1 for the chan->freq and operating bw*/
+	hostapd_get_center_chanfreq1_from_channel(iface, chan,
+		hostapd_get_oper_chwidth(iface->conf),
+		NULL,
+		&settings.freq_params.center_freq1);
+
 	settings.freq_params.ht_enabled = iface->conf->ieee80211n;
 	settings.freq_params.vht_enabled = iface->conf->ieee80211ac;
 	settings.freq_params.he_enabled = iface->conf->ieee80211ax;
 	settings.freq_params.eht_enabled= iface->conf->ieee80211be;
-
 	settings.freq_params.punct_bitmap = chan->punct_bitmap;
 	settings.power_mode = -1;
 
