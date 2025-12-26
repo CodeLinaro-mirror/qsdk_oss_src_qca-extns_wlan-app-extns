@@ -23,13 +23,14 @@ int wpa_driver_nl80211_vendor_bss_addr(void *priv, u8 radio_idx, u8 bss_id,
 				       enum nl80211_iftype iftype, u32 flags,
 				       u8 *addr, const char *ifname);
 
+#define MAX_NUM_MAC_ADDRESS 16
+
 static int hostapd_get_bss_index(struct hostapd_data *hapd)
 {
 	u32 used_mask = 0;
-	int i, max_bss;
+	int i;
 
-	max_bss = hapd->iface->num_bss;
-	if (max_bss == 0)
+	if (hapd->iface->num_bss == 0)
 		return 0;
 
 	/* MBSSID: reuse hostapd's MBSSID index */
@@ -37,10 +38,10 @@ static int hostapd_get_bss_index(struct hostapd_data *hapd)
 		return hapd->mbssid_idx;
 
 	if (hapd->conf->bss_index >= 0) {
-		if (hapd->conf->bss_index >= max_bss) {
+		if (hapd->conf->bss_index >= MAX_NUM_MAC_ADDRESS) {
 			wpa_printf(MSG_DEBUG,
 				   "bss_index=%d out of range (max %d)",
-				   hapd->conf->bss_index, max_bss);
+				   hapd->conf->bss_index, MAX_NUM_MAC_ADDRESS);
 			return -1;
 		}
 		return hapd->conf->bss_index;
@@ -57,13 +58,13 @@ static int hostapd_get_bss_index(struct hostapd_data *hapd)
 	 * Ensure we also respect per-BSS overrides and indices
 	 * already taken by other BSSes.
 	 */
-	for (i = 0; i < max_bss; i++) {
+	for (i = 0; i < hapd->iface->num_bss; i++) {
 		struct hostapd_data *other = hapd->iface->bss[i];
 		int idx;
 
 		if (!other || other == hapd)
 			continue;
-		if (other->conf->bss_index >= max_bss)
+		if (other->conf->bss_index >= MAX_NUM_MAC_ADDRESS)
 			continue;
 
 		if (other->conf->bss_index >= 0)
@@ -73,16 +74,16 @@ static int hostapd_get_bss_index(struct hostapd_data *hapd)
 		else
 			continue;
 
-		if (idx < max_bss)
+		if (idx < MAX_NUM_MAC_ADDRESS)
 			used_mask |= BIT(idx);
 	}
 
-	/* Pick the first unused index in [0..max_bss-1] */
-	for (i = 0; i < max_bss; i++)
+	/* Pick the first unused index in [0..MAX_NUM_MAC_ADDRESS-1] */
+	for (i = 0; i < MAX_NUM_MAC_ADDRESS; i++)
 		if (!(used_mask & BIT(i)))
 			break;
 
-	if (i >= max_bss)
+	if (i >= MAX_NUM_MAC_ADDRESS)
 		return -1;
 
 	hapd->vendor_bss_index = i;
