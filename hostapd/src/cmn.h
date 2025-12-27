@@ -82,6 +82,11 @@ struct ieee80211_240mhz_params_extn {
 	size_t eht_240mhz_capab_len;
 };
 
+struct driver_dcs_config {
+	u8 cmd_type;
+	u16 dcs_enable;
+};
+
 struct  hostapd_sta_add_params_extn {
 	struct ieee80211_240mhz_params_extn params_240mhz;
 };
@@ -365,6 +370,13 @@ hostapd_free_bss_index_extn(struct hostapd_data *hapd)
 	return;
 }
 
+inline int wpa_driver_nl80211_dcs_config_extn(void *priv,
+					      u8 link_id,
+					      struct driver_dcs_config *params)
+{
+	return -1;
+}
+
 static inline bool
 hostapd_dfs_get_valid_punc_bitmap_extn(int chan_freq,
 				       u16 punct_bitmap,
@@ -638,6 +650,8 @@ void hostapd_copy_sta_add_params_extn(struct hostapd_sta_add_params_extn
 				      struct sta_info_extn *sta_extn);
 void wpa_driver_nl80211_sta_add_extn(void *priv,
 				     struct hostapd_sta_add_params *params);
+int wpa_driver_nl80211_dcs_config_extn(void *priv, u8 link_id,
+				       struct driver_dcs_config *params);
 int hostapd_drv_fetch_and_set_vendor_bssid_extn(struct hostapd_data *hapd);
 void hostapd_free_bss_index_extn(struct hostapd_data *hapd);
 bool hostapd_dfs_get_valid_punc_bitmap_extn(int chan_freq,
@@ -755,5 +769,7 @@ void hostapd_mu_cap_war_client_cap_extn(struct hostapd_data *hapd,
 void hostapd_mu_cap_war_expire_queries(struct hostapd_data *hapd);
 #endif /* CONFIG_IEEE80211AC */
 
+int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd, const char *cmd, char *reply,
+				int reply_size);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

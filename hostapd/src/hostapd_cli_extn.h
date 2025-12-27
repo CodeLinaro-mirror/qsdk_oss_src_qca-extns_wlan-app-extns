@@ -18,6 +18,7 @@ int hostapd_cli_cmd_get_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc, char *a
 int hostapd_cli_cmd_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 #endif /* CONFIG_IEEE80211AC */
 
+int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 #ifdef CONFIG_QCN_EXTN
 int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
 		    int min_args, int argc, char *argv[]);
@@ -58,7 +59,10 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 	{ "mu_cap_war", hostapd_cli_cmd_mu_cap_war_extn, NULL, \
 		"enable/disable VHT MU-MIMO capability for MU_CAP_WAR clients" }, \
 	{ "get_mu_cap_war", hostapd_cli_cmd_get_mu_cap_war_extn, NULL, \
-		"get MU_CAP_WAR status" },
+		"get MU_CAP_WAR status" }, \
+	{ "dcs", hostapd_cli_cmd_dcs_extn, NULL, \
+		"enable		: enable DCS configuration\n" \
+	},
 #else
 #define HOSTAPD_CLI_CMDS_EXTN
 
