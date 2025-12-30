@@ -182,9 +182,9 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *value)
 {
 	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	int val, ret;
 
 	if (os_strcasecmp(cmd, "rnr_member_ess_colocated_en") == 0) {
-		int val;
 		val = atoi(value);
 		if (val < 0 || val > 1) {
 			wpa_printf(MSG_ERROR,
@@ -199,6 +199,24 @@ int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *valu
 			return -1;
 		}
 
+	} else if (os_strcasecmp(cmd, "rnr_6ghz_override") == 0) {
+		val = atoi(value);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR, "rnr_6ghz_override: Invalid value (expected 0 or 1)");
+			return -1;
+		}
+		if (!is_6ghz_freq(hapd->iface->freq)) {
+			wpa_printf(MSG_ERROR, "rnr_6ghz_override is valid only for 6 GHz");
+			return -1;
+		}
+
+		conf_extn->rnr_6ghz_override = val;
+
+		ret = ieee802_11_update_beacons(hapd->iface);
+		if (ret < 0) {
+			wpa_printf(MSG_ERROR, "Failed to update beacon");
+			return -1;
+		}
 	}
 	return 0;
 }
@@ -214,6 +232,13 @@ int hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
 		ret = os_snprintf(buf + len, buflen - len,
 				"rnr_member_ess_colocated_en=%d\n",
 				conf_extn->rnr_ess_colocated_en);
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
+
+		ret = os_snprintf(buf + len, buflen - len,
+				"rnr_6ghz_override=%d\n",
+				conf_extn->rnr_6ghz_override);
 		if (os_snprintf_error(buflen - len, ret))
 			return len;
 		len += ret;

@@ -34,6 +34,17 @@ bool hostapd_skip_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, u32 type)
 	}
 }
 
+bool hostapd_rnr_6ghz_override_extn(struct hostapd_data *hapd)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+
+	if (!is_6ghz_freq(hapd->iface->freq))
+		return true;
+
+	return conf_extn->rnr_6ghz_override;
+}
+
+
 bool hostapd_rnr_colocated_ess_indication_extn(struct hostapd_data *hapd)
 {
 	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;

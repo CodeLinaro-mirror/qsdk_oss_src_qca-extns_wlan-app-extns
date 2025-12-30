@@ -24,6 +24,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	/* Configure defaults for extensions */
 	conf_extn->rnr_6ghz_colocated_enable = 0;
 	conf_extn->rnr_ess_colocated_en = false;
+	conf_extn->rnr_6ghz_override = true;
 }
 
 int
@@ -32,15 +33,23 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			 const char *buf, char *pos, int line)
 {
 	struct hostapd_config_extn *conf_extn = &conf->conf_extn;
+	int val;
 
 	if (os_strcmp(buf, "rnr_member_ess_colocated_en") == 0) {
-		int val = atoi(pos);
+		val = atoi(pos);
 		if (val != 0 && val != 1) {
 			wpa_printf(MSG_ERROR, "Line %d: invalid value for rnr_member_ess_colocated_en %d (expected 0 or 1)",
 				line, val);
 			return -1;
 		}
 		conf_extn->rnr_ess_colocated_en = val;
+	} else if (os_strcmp(buf, "rnr_6ghz_override") == 0) {
+		val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid value for rnr_6ghz_override %d (expected 0 or 1)", line, val);
+			return -1;
+		}
+		conf_extn->rnr_6ghz_override = val;
 	} else
 		return -1;
 
