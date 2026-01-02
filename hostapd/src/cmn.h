@@ -110,8 +110,24 @@ struct esp_update_event {
 	u8 airtime;
 };
 
+struct dcs_intf_event {
+	u32 freq;
+	enum chan_width chan_width;
+	u32 cf1;
+	u32 cf2;
+	u32 chan_bw_interference_bitmap;
+	u8 link_id;
+};
+
+struct chan_params {
+	u32 cf1;
+	u32 cf2;
+	enum chan_width chan_width;
+};
+
 union wpa_event_data_extn {
 	struct esp_update_event esp_update_event;
+	struct dcs_intf_event dcs_intf_event;
 };
 
 struct ieee802_11_elems_extn {
@@ -188,6 +204,7 @@ struct hostapd_config_extn {
 	int ind_rptr;    /* 1 - Independent Rep; 0 - Dependent */
 	bool qacs_enable;
 	struct qacs_conf_extn qacs_conf;
+	struct chan_params cur_chan_params;
 };
 
 struct hostapd_bss_config_extn {
@@ -223,6 +240,9 @@ struct hostapd_hw_modes_extn {
 	struct qacs_data_extn qacs_extn;
 #endif
 };
+
+int get_centre_freq_6g(int chan_idx, int chan_width, int *centre_freq);
+int get_next_max_width(int chan_width);
 
 #ifndef CONFIG_QCN_EXTN
 
@@ -621,6 +641,20 @@ acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
 	return -EOPNOTSUPP;
 }
 
+qca_nl80211_handle_dcs_config_evt_extn(struct i802_bss *bss,
+				       u8 *data, size_t len)
+
+{
+	return -1;
+}
+
+static inline int
+intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
+			    struct hostapd_channel_data ***chandef_list,
+			    int *awgn_interference_freqs)
+{
+	return -1;
+}
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -816,6 +850,12 @@ int
 acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err);
 bool
 acs_usable_bw_chan(const struct hostapd_channel_data *chan, enum bw_type bw);
-
+int qca_nl80211_handle_dcs_config_evt_extn(struct i802_bss *bss,
+					   u8 *data, size_t len);
+int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
+				struct hostapd_channel_data ***chandef_list,
+				int *awgn_interference_freqs);
+void update_chan_params(struct hostapd_data *hapd, int cf1, int cf2,
+			enum chan_width chwidth);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

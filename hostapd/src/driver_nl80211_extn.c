@@ -163,6 +163,8 @@ int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 	case QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION:
 		qca_nl80211_handle_wifi_config_evt_extn(bss, data, len);
 		break;
+	case QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG:
+		qca_nl80211_handle_dcs_config_evt_extn(bss, data, len);
 	default:
 		return -EINVAL;
 	}
@@ -202,6 +204,41 @@ int qca_nl80211_handle_wifi_config_evt_extn(struct i802_bss *bss,
 		return nl80211_parse_esp_params_extn(bss,
 						     tb[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS],
 						     link_id);
+
+	return 0;
+}
+
+int qca_nl80211_handle_dcs_config_evt_extn(struct i802_bss *bss,
+					   u8 *data, size_t len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_DCS_MAX  + 1] = {0};
+	union wpa_event_data event = {};
+	struct dcs_intf_event *dcs_intf_event;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR, "nl80211: bss is NULL!");
+		return -EINVAL;
+	}
+
+	if (!(data && len)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid data for DCS configuration event");
+		return -EINVAL;
+	}
+
+	dcs_intf_event = &event.event_data_extn.dcs_intf_event;
+
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_DCS_MAX,
+				(struct nlattr *)data, len, NULL)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to parse DCS configuration attributes");
+		return -EINVAL;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_DCS_LINK_ID])
+		dcs_intf_event->link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_DCS_LINK_ID]);
+
+	wpa_supplicant_event(bss->ctx, EVENT_DCS_INTF, &event);
 
 	return 0;
 }
