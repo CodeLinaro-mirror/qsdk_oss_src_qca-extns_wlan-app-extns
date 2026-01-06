@@ -56,7 +56,7 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 		"get_txpwr_opt        : get tx power optimization state\n" \
 		"6g_only_psc <1|0>    : restrict 6 GHz to PSC channels only\n" \
 		"get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n" \
-		"acs invoke 0         : invoke ACS (0=dynamic+CSA)\n"}, \
+		"acs invoke <0|1>     : invoke ACS (0=dynamicACS+CSA)|(1=DynamicACS)\n"}, \
 	{ "mu_cap_war", hostapd_cli_cmd_mu_cap_war_extn, NULL, \
 		"enable/disable VHT MU-MIMO capability for MU_CAP_WAR clients" }, \
 	{ "get_mu_cap_war", hostapd_cli_cmd_get_mu_cap_war_extn, NULL, \

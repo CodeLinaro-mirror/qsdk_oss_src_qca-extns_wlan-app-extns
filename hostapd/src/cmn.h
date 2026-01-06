@@ -207,6 +207,7 @@ struct esp_extn {
 enum dynamic_acs_action_extn {
 	DYNAMIC_ACS_DISABLE = 0,
 	CHANNEL_CHANGE_CSA = 1,  // Perform CSA
+	NO_CHANNEL_CHANGE = 2,  // Report-only
 };
 
 struct hostapd_iface_extn {

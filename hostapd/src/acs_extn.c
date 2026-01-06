@@ -142,7 +142,7 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs get_txpwr_opt        : get tx power optimization state\n"
 		"  acs 6g_only_psc <1|0>    : restrict 6 GHz to PSC channels only\n"
 		"  acs get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n"
-		"  acs invoke 0             : invoke ACS (0=dynamic+CSA)\n"
+		"  acs invoke <0|1>         : invoke ACS (0=dynamicACS+CSA)|(1=DynamicACS)\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -159,10 +159,19 @@ static int hostapd_acs_run_extn(struct hostapd_data *hapd, const char *pos,
 	int status;
 
 	acs_run_op = atoi(pos);
-	if (acs_run_op)
+
+	if (acs_run_op != 0 && acs_run_op != 1)
 		return -1;
 
-	iface->iface_extn.dynamic_acs_action = CHANNEL_CHANGE_CSA;
+	if (iface->iface_extn.dynamic_acs_action) {
+		wpa_printf(MSG_ERROR, "Dynamic ACS is already in progress");
+		return -1;
+	}
+
+	iface->iface_extn.dynamic_acs_action = acs_run_op == 1 ?
+					       NO_CHANNEL_CHANGE :
+					       CHANNEL_CHANGE_CSA;
+
 	status = acs_init(iface);
 	if (status != HOSTAPD_CHAN_ACS) {
 		wpa_printf(MSG_ERROR, "Could not start ACS, error: %d", status);
@@ -665,6 +674,11 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			       int err)
 {
 	int cs_err;
+
+	if (iface->iface_extn.dynamic_acs_action == NO_CHANNEL_CHANGE) {
+		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+		return 0;
+	}
 
 	if (iface->iface_extn.dynamic_acs_action == DYNAMIC_ACS_DISABLE)
 		return -1;
