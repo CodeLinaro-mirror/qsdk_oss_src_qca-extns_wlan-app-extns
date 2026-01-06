@@ -162,8 +162,8 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "RNR_6GHZ_COLOCATED ", 19) == 0) {
 		if (hostapd_ctrl_set_rnr_6ghz_colocated_extn(hapd, buf + 19))
 			reply_len_extn = -1;
-        } else if (os_strncmp(buf, "GET_RNR_6GHZ_COLOCATED ", 23) == 0) {
-		reply_len_extn = hostapd_ctrl_get_rnr_6ghz_colocated_extn(hapd, buf + 23, reply,
+        } else if (os_strncmp(buf, "GET_RNR_6GHZ_COLOCATED", 22) == 0) {
+		reply_len_extn = hostapd_ctrl_get_rnr_6ghz_colocated_extn(hapd, buf + 22, reply,
 									  reply_size);
         } else {
 		return -1;
