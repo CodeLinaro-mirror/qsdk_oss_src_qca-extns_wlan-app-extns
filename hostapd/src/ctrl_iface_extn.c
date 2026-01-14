@@ -87,18 +87,36 @@ static int hostapd_ctrl_iface_get_esp_extn(struct hostapd_data *hapd,
 {
 	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
 	int ret;
+	u8 airtime, ppdu_dur, ba_window;
 
 	if (!iface_extn)
 		return -1;
+
+	if (iface_extn->esp.airtime)
+		airtime = iface_extn->esp.airtime;
+	else if (iface_extn->esp.enable)
+		airtime = iface_extn->esp.computed_airtime;
+	else
+		airtime = 0;
+
+	if (iface_extn->esp.ppdu_dur)
+		ppdu_dur = iface_extn->esp.ppdu_dur;
+	else
+		ppdu_dur = ESP_DEFAULT_PPDU_DURATION;
+
+	if (iface_extn->esp.ba_window)
+		ba_window = iface_extn->esp.ba_window;
+	else
+		ba_window = 5;
 
 	ret = os_snprintf(reply, reply_size,
 			  "airtime=%u "
 			  "ppdu_dur=%u "
 			  "ba_window=%u "
 			  "enable_esp=%u\n",
-			  iface_extn->esp.airtime,
-			  iface_extn->esp.ppdu_dur,
-			  iface_extn->esp.ba_window,
+			  airtime,
+			  ppdu_dur,
+			  ba_window,
 			  iface_extn->esp.enable);
 	if (os_snprintf_error(reply_size, ret))
 		return -1;
