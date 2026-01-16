@@ -13,6 +13,11 @@ int hostapd_cli_cmd_get_esp_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 
+#ifdef CONFIG_IEEE80211AC
+int hostapd_cli_cmd_get_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+#endif /* CONFIG_IEEE80211AC */
+
 #ifdef CONFIG_QCN_EXTN
 int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
 		    int min_args, int argc, char *argv[]);
@@ -49,7 +54,11 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 		"txpwr_opt <1|2>      : set the tx pwr optimization state(1 = optimize throughput, 2 = optimize range)\n" \
 		"get_txpwr_opt        : get tx power optimization state\n" \
 		"6g_only_psc <1|0>    : restrict 6 GHz to PSC channels only\n" \
-		"get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n"},
+		"get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n"}, \
+	{ "mu_cap_war", hostapd_cli_cmd_mu_cap_war_extn, NULL, \
+		"enable/disable VHT MU-MIMO capability for MU_CAP_WAR clients" }, \
+	{ "get_mu_cap_war", hostapd_cli_cmd_get_mu_cap_war_extn, NULL, \
+		"get MU_CAP_WAR status" },
 #else
 #define HOSTAPD_CLI_CMDS_EXTN
 
