@@ -10,7 +10,8 @@ OBJS+= \
 	qcn_extns/esp.o \
 	qcn_extns/rnr.o \
 	qcn_extns/macaddr.o \
-	qcn_extns/acs_extn.o
+	qcn_extns/acs_extn.o \
+	qcn_extns/mucapwar.o
 
 ifdef CONFIG_EXTERNAL_PLUGIN
 CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN

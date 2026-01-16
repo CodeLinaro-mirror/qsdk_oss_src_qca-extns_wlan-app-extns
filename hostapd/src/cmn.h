@@ -12,6 +12,11 @@
 #include "qacs/qacs.h"
 #endif
 
+#include "includes.h"
+#include "utils/list.h"
+#include "utils/common.h"
+#include "common/ieee802_11_defs.h"
+
 struct hostapd_config;
 struct sta_info;
 struct hostapd_iface;
@@ -38,6 +43,7 @@ struct wpa_bss;
 struct wpa_connect_work;
 struct csa_settings;
 struct wpa_driver_scan_params;
+struct dl_list;
 
 struct ieee80211_240mhz_vendor_oper_extn {
 	u8 ccfs1;
@@ -82,6 +88,11 @@ struct  hostapd_sta_add_params_extn {
 
 struct sta_info_extn {
 	struct ieee80211_240mhz_params_extn params_240mhz;
+#ifdef CONFIG_IEEE80211AC
+	unsigned int mu_cap_war_mu_force_join:1;
+	unsigned int mu_cap_war_mu_capable:1;
+	unsigned int mu_cap_war_su_join:1;
+#endif /* CONFIG_IEEE80211AC */
 };
 
 /**
@@ -127,8 +138,36 @@ struct hostapd_data_extn {
 #ifdef CONFIG_IEEE80211AC
 	/* Per-BSS control for MU-MIMO capability override WAR */
 	bool mu_cap_war;
+	bool mu_cap_war_override;
+	struct dl_list mu_cap_war_sta_list;
 #endif /* CONFIG_IEEE80211AC */
 };
+
+
+#ifdef CONFIG_IEEE80211AC
+struct hostapd_mu_cap_war_sta_entry_extn {
+	struct dl_list list;
+	u8 addr[ETH_ALEN];
+	struct os_reltime last_probe_time;
+};
+
+#define is_mu_cap_war_active(hapd)				\
+({								\
+	struct hostapd_data_extn *h_ext = &(hapd)->hapd_extn;   \
+	(h_ext->mu_cap_war && !h_ext->mu_cap_war_override);	\
+})
+
+#define is_sta_vht_only(sta) \
+	((sta)->flags & WLAN_STA_VHT) && \
+	!((sta)->flags & (WLAN_STA_HE | WLAN_STA_EHT))
+
+#define is_sta_elems_vht_only(elems) \
+	((elems)->vht_capabilities || (elems)->vendor_vht) && \
+	!(elems)->he_capabilities && !(elems)->eht_capabilities
+
+#define MU_CAP_WAR_DB_ENTRY_TIMEOUT_SEC 300
+
+#endif /* CONFIG_IEEE80211AC */
 
 struct hostapd_config_extn {
 	/* Add Per-radio configuration for extn here */
@@ -704,5 +743,17 @@ void acs_request_scan_add_freqs_extn(struct hostapd_channel_data *chan,
 				     int **freq);
 void acs_modify_scan_params_extn(struct hostapd_iface *iface,
 				 struct wpa_driver_scan_params *params);
+#ifdef CONFIG_IEEE80211AC
+void hostapd_mu_cap_war_state_init_extn(struct hostapd_data *hapd);
+void hostapd_mu_cap_war_update_db_extn(struct hostapd_data *hapd,
+				       const u8 *addr, const u8 *vht_cap_offset);
+void hostapd_mu_cap_war_mu_state_changed_extn(struct hostapd_data *hapd);
+void hostapd_mu_cap_war_sta_list_flush_extn(struct hostapd_data *hapd);
+void hostapd_mu_cap_war_kickout_timer_extn(void *eloop_ctx, void *timeout_ctx);
+void hostapd_mu_cap_war_client_cap_extn(struct hostapd_data *hapd,
+					struct sta_info *sta);
+void hostapd_mu_cap_war_expire_queries(struct hostapd_data *hapd);
+#endif /* CONFIG_IEEE80211AC */
+
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
