@@ -25,6 +25,10 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->rnr_6ghz_colocated_enable = 0;
 	conf_extn->rnr_ess_colocated_en = false;
 	conf_extn->rnr_6ghz_override = true;
+
+	/* Repeater defaults */
+	conf_extn->skip_cac = 0;
+	conf_extn->ind_rptr = 0;
 }
 
 int
@@ -50,6 +54,12 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		conf_extn->rnr_6ghz_override = val;
+	} else if (os_strcmp(buf, "athnewind") == 0) {
+		conf_extn->ind_rptr = atoi(pos);
+		return 0;
+	} else if (os_strcmp(buf, "skip_cac") == 0) {
+		conf_extn->skip_cac = atoi(pos);
+		return 0;
 	} else if (os_strcmp(buf, "qacs_enable") == 0)
 		conf_extn->qacs_enable = atoi(pos);
 	else

@@ -6,6 +6,7 @@ OBJS+= \
 	qcn_extns/ap_config_extn.o \
 	qcn_extns/ctrl_iface_extn.o \
 	qcn_extns/drv_callbacks_extn.o \
+	qcn_extns/hostapd_rptr_extn.o \
 	qcn_extns/esp.o \
 	qcn_extns/rnr.o \
 	qcn_extns/macaddr.o

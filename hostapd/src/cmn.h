@@ -30,6 +30,11 @@ enum wpa_event_type;
 struct nlattr;
 struct wpa_ctrl;
 union wpa_event_data;
+struct ieee80211_neighbor_ap_info;
+struct wpa_supplicant;
+struct wpa_bss;
+struct wpa_connect_work;
+struct csa_settings;
 
 struct ieee80211_240mhz_vendor_oper_extn {
 	u8 ccfs1;
@@ -42,6 +47,26 @@ struct ieee80211_240mhz_vendor_oper_extn {
 	    mubfmr320mhz          :1;
 	u8 mcs_map_320mhz[3];
 } STRUCT_PACKED;
+
+/*
+ * Introduced ieee80211_240mhz_vendor_oper_extn_v2 to correct field
+ * ordering (ccfs0 before ccfs1) as per spec. The legacy struct
+ * ieee80211_240mhz_vendor_oper_extn is retained for backward compatibility
+ * until a broader review decides on its deprecation. New code should use
+ * ieee80211_240mhz_vendor_oper_v2.
+ */
+struct ieee80211_240mhz_vendor_oper_extn_v2 {
+	u8 ccfs0;
+	u8 ccfs1;
+	u16 punct_bitmap;
+	u16 is5ghz240mhz      :1,
+	bfmess320mhz          :3,
+	numsound320mhz        :3,
+	nonofdmaulmumimo320mhz:1,
+	mubfmr320mhz          :1;
+	u8 mcs_map_320mhz[3];
+} STRUCT_PACKED;
+
 
 struct ieee80211_240mhz_params_extn {
 	struct ieee80211_240mhz_vendor_oper_extn *eht_240mhz_capab;
@@ -85,6 +110,8 @@ struct hostapd_config_extn {
 	u8 rnr_6ghz_colocated_enable;
 	bool rnr_ess_colocated_en;
 	bool rnr_6ghz_override;
+	bool skip_cac;    /* Skip DFS CAC for Repeater AP */
+	int ind_rptr;    /* 1 - Independent Rep; 0 - Dependent */
 	bool qacs_enable;
 
 #ifdef CONFIG_QCN_APP_EXTN
@@ -106,6 +133,7 @@ struct esp_extn {
 
 struct hostapd_iface_extn {
 	struct esp_extn esp;
+	u16 csa_bitmap;
 };
 
 struct hostapd_hw_modes_extn {
@@ -351,6 +379,78 @@ hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
 }
 
 static inline int
+wpa_ctrl_get_freq_list_extn(struct wpa_supplicant *wpa_s,
+			    char *reply, int reply_size)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
+wpa_ctrl_chan_sw_finished_notify_extn(struct wpa_supplicant *wpa_s,
+				      const char *buf, char *reply,
+				      int reply_size)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
+compute_sec_channel_offset_extn(int primary_freq, int center_freq1,
+				enum chan_width width)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline void
+wpa_get_bss_channel_oper_info_extn(struct wpa_supplicant *wpa_s,
+				   struct wpa_bss *bss)
+{
+	return;
+}
+
+static inline bool
+compute_dfs_for_chanwidth_extn(int freq, int chanwidth)
+{
+	return false;
+}
+
+static inline void
+wpa_supp_pre_connect_state_handle_extn(struct wpa_supplicant *wpa_s,
+				       struct wpa_bss *bss)
+{
+	return;
+}
+
+static inline void
+sme_pre_connect_timer_extn(void *eloop_ctx, void *timeout_ctx)
+{
+	return;
+}
+
+static inline void
+wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
+				     struct wpa_bss *bss,
+				     const u8 *bssid_ptr,
+				     const struct ieee80211_neighbor_ap_info *ap_info,
+				     const u8 *mld_params, u8 link_id)
+{
+	return;
+}
+
+static inline void
+hostapd_csa_bitmap_update_extn(struct hostapd_iface *iface, int freq)
+{
+	return;
+}
+
+static inline int
+uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
+				     bool is_dfs, char *wpa_state,
+				     struct csa_settings *csa)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
 nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 			      u32 subcmd, u8 *data, size_t len)
 {
@@ -485,6 +585,28 @@ int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 			   union wpa_event_data *data);
 int hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
 				   size_t buflen, size_t curr_len);
+int wpa_ctrl_get_freq_list_extn(struct wpa_supplicant *wpa_s,
+				char *reply, int reply_size);
+int wpa_ctrl_chan_sw_finished_notify_extn(struct wpa_supplicant *wpa_s,
+					  const char *buf, char *reply,
+					  int reply_size);
+int compute_sec_channel_offset_extn(int primary_freq, int center_freq1,
+				    enum chan_width width);
+void wpa_get_bss_channel_oper_info_extn(struct wpa_supplicant *wpa_s,
+					struct wpa_bss *bss);
+bool compute_dfs_for_chanwidth_extn(int freq, int chanwidth);
+void wpa_supp_pre_connect_state_handle_extn(struct wpa_supplicant *wpa_s,
+					    struct wpa_bss *bss);
+void sme_pre_connect_timer_extn(void *eloop_ctx, void *timeout_ctx);
+void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
+					  struct wpa_bss *bss,
+					  const u8 *bssid_ptr,
+					  const struct ieee80211_neighbor_ap_info *ap_info,
+					  const u8 *mld_params, u8 link_id);
+void hostapd_csa_bitmap_update_extn(struct hostapd_iface *iface, int freq);
+int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
+					 bool is_dfs, char *wpa_state,
+					 struct csa_settings *csa);
 #ifdef HOSTAPD
 struct hostapd_data *
 switch_link_hapd(struct hostapd_data *hapd, int link_id);
