@@ -121,6 +121,8 @@ struct hostapd_config_extn {
 
 struct hostapd_bss_config_extn {
 	/* Add Per-BSS configuration for extn here */
+	u8 nontx_vendor_elem_size;
+	u8 nontx_optional_elem_size;
 };
 
 struct esp_extn {
@@ -357,6 +359,12 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	return;
 }
 
+static inline void
+hostapd_config_defaults_bss_extn(struct hostapd_bss_config *bss)
+{
+	return;
+}
+
 static inline int
 hostapd_config_fill_extn(struct hostapd_config *conf,
 			 struct hostapd_bss_config *bss,
@@ -486,6 +494,11 @@ size_t hostapd_esp_ie_len_extn(struct hostapd_data *hapd)
 static inline void
 acs_process_hostapd_scan_data(struct hostapd_iface *iface) {}
 
+static inline int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *cmd,
+					      char *buf, size_t buflen)
+{
+	return -1;
+}
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -574,6 +587,8 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 					socklen_t fromlen, int *reply_len);
 void
 hostapd_config_defaults_extn(struct hostapd_config *conf);
+void
+hostapd_config_defaults_bss_extn(struct hostapd_bss_config *bss);
 int
 hostapd_config_fill_extn(struct hostapd_config *conf,
 			 struct hostapd_bss_config *bss,
@@ -622,6 +637,8 @@ int qca_nl80211_handle_wifi_config_evt_extn(struct i802_bss *bss,
 size_t hostapd_esp_ie_len_extn(struct hostapd_data *hapd);
 u8 * hostapd_eid_esp_extn(struct hostapd_data *hapd, u8 *eid, size_t len);
 size_t hostapd_esp_ie_len_extn(struct hostapd_data *hapd);
+int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *cmd,
+				char *buf, size_t buflen);
 
 #ifndef CONFIG_QCN_APP_EXTN
 static inline struct hostapd_channel_data *
@@ -637,6 +654,12 @@ qacs_find_ideal_chan(struct hostapd_iface *iface);
 #endif /*CONFIG_QCN_APP_EXTN */
 
 void acs_process_hostapd_scan_data(struct hostapd_iface *iface);
+
+#define MBSSID_NONTX_OPTIONAL_ELEM_SIZE 128
+#define MBSSID_NONTX_VENDOR_ELEM_SIZE  80
+
+int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_bss_config *conf,
+						     char *value);
 
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

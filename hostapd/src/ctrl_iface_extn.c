@@ -432,6 +432,50 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	return 0;
 }
 
+int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_bss_config *conf,
+						     char *value)
+{
+	char *end;
+	unsigned long v;
+	u8 optional_elem_size, vendor_elem_size;
+
+	v = strtoul(value, &end, 0); /* accepts 0x-prefixed hex or decimal */
+	if (end == value || *end != '\0') {
+		wpa_printf(MSG_ERROR, "CTRL: nontx_profile_ie_size: invalid value '%s'", value);
+		return -1;
+	}
+
+	if (v > 0xFFFF) {
+		wpa_printf(MSG_ERROR, "CTRL: nontx_profile_ie_size: out of range '%s'", value);
+		return -1;
+	}
+
+	optional_elem_size = (v >> 8) & 0xFF;
+	vendor_elem_size = v & 0xFF;
+
+	wpa_printf(MSG_INFO,
+		   "CTRL: Optional elem size: %u max limit: %d vendor elem size: %u max limit: %d",
+		   optional_elem_size, MBSSID_NONTX_OPTIONAL_ELEM_SIZE, vendor_elem_size,
+		   MBSSID_NONTX_VENDOR_ELEM_SIZE);
+
+	if (optional_elem_size > MBSSID_NONTX_OPTIONAL_ELEM_SIZE) {
+		wpa_printf(MSG_ERROR, "CTRL: Optional elem size %u bytes exceeds max limit %d",
+			   optional_elem_size, MBSSID_NONTX_OPTIONAL_ELEM_SIZE);
+		return -1;
+	}
+
+	if (vendor_elem_size > MBSSID_NONTX_VENDOR_ELEM_SIZE) {
+		wpa_printf(MSG_ERROR, "CTRL: Vendor elem size %u bytes exceeds max limit %d",
+			   vendor_elem_size, MBSSID_NONTX_VENDOR_ELEM_SIZE);
+		return -1;
+	}
+
+	conf->bss_extn.nontx_optional_elem_size = optional_elem_size;
+	conf->bss_extn.nontx_vendor_elem_size = vendor_elem_size;
+
+	return 0;
+}
+
 int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *value)
 {
 	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
@@ -470,9 +514,38 @@ int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *valu
 			wpa_printf(MSG_ERROR, "Failed to update beacon");
 			return -1;
 		}
+
+	} else if (os_strcasecmp(cmd, "nontx_profile_elem_size") == 0) {
+		ret = hostapd_set_nontx_optional_vendor_elem_size_extn(hapd->conf, value);
+		if (ret < 0) {
+			wpa_printf(MSG_ERROR, "Failed to set nontx_profile_elem_size");
+			return -1;
+		}
+		return ret;
+	} else {
+		return -1;
 	}
+
 	return 0;
 }
+
+int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *cmd,
+				char *buf, size_t buflen)
+{
+	int res;
+
+	if (os_strcasecmp(cmd, "nontx_profile_elem_size") == 0) {
+		res = os_snprintf(buf, buflen, "Optional elem size = %u\nVendor elem size = %u\n",
+				  hapd->conf->bss_extn.nontx_optional_elem_size,
+				  hapd->conf->bss_extn.nontx_vendor_elem_size);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	}
+
+	return -1;
+}
+
 
 int hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
 				   size_t buflen, size_t curr_len)
