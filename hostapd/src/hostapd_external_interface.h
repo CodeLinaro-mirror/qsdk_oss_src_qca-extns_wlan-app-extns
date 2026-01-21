@@ -188,6 +188,7 @@ struct hostapd_if_event {
 
 		struct {
 			int link_id;
+			uint8_t link_mac[6];
 			bool is_tx_status;
 			int tx_status_ok;
 			enum hostapd_if_disconnect_type type;
