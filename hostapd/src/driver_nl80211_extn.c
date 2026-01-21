@@ -26,6 +26,7 @@
 #include "drivers/driver_nl80211.h"
 #include "esp.h"
 #include "dcs.h"
+#include "rropinfo.h"
 
 
 struct hostapd_sta_add_params;
@@ -329,4 +330,135 @@ error:
 	nlmsg_free(msg);
 	wpa_printf(MSG_DEBUG, "nl80211: Could not configure DCS on link %d", link_id);
 	return -1;
+}
+
+static int rropinfo_handler(struct nl_msg *msg, void *arg)
+{
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct nlattr *nl = NULL;
+	struct nlattr *nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_MAX + 1];
+	int rem = 0, i = 0;
+	u32 num_rtplinst = 0;
+	struct nl80211_rropinfo *rropinfo = (struct nl80211_rropinfo *)arg;
+
+	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		  genlmsg_attrlen(gnlh, 0), NULL);
+
+	if (tb[NL80211_ATTR_VENDOR_DATA])
+		goto fail;
+
+	struct nlattr *nl_vendor = tb[NL80211_ATTR_VENDOR_DATA];
+	struct nlattr *tb_vendor[QCA_WLAN_VENDOR_ATTR_RROP_INFO_MAX + 1];
+
+	nla_parse(tb_vendor, QCA_WLAN_VENDOR_ATTR_RROP_INFO_MAX,
+		  nla_data(nl_vendor), nla_len(nl_vendor), NULL);
+
+	nl = tb_vendor[QCA_WLAN_VENDOR_ATTR_RROP_INFO_RTPL];
+	if (!nl)
+		goto fail;
+
+	num_rtplinst = 0;
+	nla_for_each_nested(nl,
+			    tb_vendor[QCA_WLAN_VENDOR_ATTR_RROP_INFO_RTPL],
+			    rem) {
+		num_rtplinst++;
+	}
+
+	wpa_printf(MSG_DEBUG, "nl80211: rropinfo_handler found %u RTPL instances",
+		   num_rtplinst);
+	if (!num_rtplinst)
+		goto fail;
+
+	rropinfo->num_rtplinst = (num_rtplinst > MAX_NUM_CHANNELS) ?
+				 MAX_NUM_CHANNELS : num_rtplinst;
+
+	i = 0;
+	nla_for_each_nested(nl,
+			    tb_vendor[QCA_WLAN_VENDOR_ATTR_RROP_INFO_RTPL],
+			    rem) {
+		if (i >= MAX_NUM_CHANNELS)
+			break;
+		if (nla_parse(nl_rtplinst,
+			      QCA_WLAN_VENDOR_ATTR_RTPLINST_MAX,
+			      nla_data(nl), nla_len(nl), NULL)) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: failed to parse RTPL");
+			goto fail;
+		}
+
+		if (nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_PRIMARY_FREQUENCY])
+			rropinfo->rtpl[i].primary_freq =
+				nla_get_u32(
+				nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_PRIMARY_FREQUENCY]);
+
+		if (nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_TXPOWER_THROUGHPUT])
+			rropinfo->rtpl[i].txpower_throughput =
+				(int)nla_get_u32(
+				nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_TXPOWER_THROUGHPUT]);
+
+		if (nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_TXPOWER_RANGE])
+			rropinfo->rtpl[i].txpower_range =
+				(int)nla_get_u32(
+				nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_TXPOWER_RANGE]);
+
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: RTPL[%d] primary=%u throughput=%d range=%d",
+			   i,
+			   rropinfo->rtpl[i].primary_freq,
+			   rropinfo->rtpl[i].txpower_throughput,
+			   rropinfo->rtpl[i].txpower_range);
+		i++;
+	}
+
+	return NL_SKIP;
+
+fail:
+	rropinfo->num_rtplinst = 0;
+	return NL_SKIP;
+}
+
+int driver_nl80211_vendor_get_chan_rropinfo(void *ctx,
+					    struct nl80211_rropinfo *rropinfo,
+					    int radio_idx)
+{
+	int ret = -1;
+	struct nl_msg *msg = NULL;
+	struct i802_bss *bss = ctx;
+	struct wpa_driver_nl80211_data *drv;
+	struct nlattr *params;
+
+	wpa_printf(MSG_DEBUG, "nl80211: driver_nl80211_vendor_get_chan_rropinfo start: radio_idx: %d", radio_idx);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_GET_RROP_INFO))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+	if (radio_idx != NL80211_WIPHY_RADIO_ID_MAX &&
+	    nla_put_u8(msg,QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX, radio_idx))
+		goto fail;
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_resp(drv, msg, rropinfo_handler, rropinfo);
+	msg = NULL;
+	if (ret) {
+		wpa_printf(MSG_ERROR, "nl80211: Vendor get RROP info request failed: ret=%d (%s)",
+			   ret, strerror(-ret));
+		goto fail;
+	}
+
+	wpa_printf(MSG_DEBUG, "nl80211: RROP info received, num_rtplinst=%u",
+		   rropinfo ? rropinfo->num_rtplinst : 0);
+	return 0;
+
+fail:
+	if (msg)
+		nlmsg_free(msg);
+	return ret;
 }
