@@ -80,6 +80,7 @@ struct hostapd_config_extn {
 	 */
 	u8 rnr_6ghz_colocated_enable;
 	bool rnr_ess_colocated_en;
+	bool rnr_6ghz_override;
 };
 
 struct hostapd_bss_config_extn {
@@ -445,6 +446,7 @@ int hostapd_is_dfs_overlap_extn(struct hostapd_iface *iface,
 				int center_freq, u16 punct_bitmap);
 void hostapd_modify_supported_op_class_for_320mhz_extn(int freq, u8 *op_class);
 bool hostapd_skip_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, u32 type);
+bool hostapd_rnr_6ghz_override_extn(struct hostapd_data *hapd);
 bool hostapd_rnr_colocated_ess_indication_extn(struct hostapd_data *hapd);
 int
 hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
