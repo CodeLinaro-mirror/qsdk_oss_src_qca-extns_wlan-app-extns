@@ -595,9 +595,9 @@ int hostapd_is_dfs_overlap_extn(struct hostapd_iface *iface,
 			res++;
 	}
 
-	wpa_printf(MSG_DEBUG, "DFS CAC required: (%d, %d): in range: %s",
+	wpa_printf(MSG_DEBUG, "DFS CAC required: (%d, %d): in range: %s, width %d half_width %d",
 		   center_freq - half_width, center_freq + half_width,
-		   res ? "yes" : "no");
+		   res ? "yes" : "no", width, half_width);
 
 	return res;
 }

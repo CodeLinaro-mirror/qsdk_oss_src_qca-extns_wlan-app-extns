@@ -17,6 +17,8 @@
 #include "ap/ap_drv_ops.h"
 #include "ap/hw_features.h"
 #include "ap/acs.h"
+#include "ap/dfs.h"
+#include "utils/eloop.h"
 #include "cmn.h"
 
 static int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
@@ -24,14 +26,17 @@ static int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
 					enum oper_chan_width oper_bw)
 {
 	int center = 0;
+	int bw;
 
+	bw = channel_width_to_int(
+			hostapd_get_chan_width_from_oper_chan_width(iface->conf));
 	switch (oper_bw) {
 	case CONF_OPER_CHWIDTH_USE_HT:
 		if (iface->conf->secondary_channel &&
 		    chan->freq >= 2400 && chan->freq < 2500)
 			center = chan->chan +
 				2 * iface->conf->secondary_channel;
-		else if (iface->conf->secondary_channel)
+		else if (bw == 40)
 			center = acs_get_bw_center_chan(chan->freq, ACS_BW40);
 		else
 			center = chan->chan;
@@ -102,10 +107,10 @@ hostapd_get_center_chanfreq1_from_channel(struct hostapd_iface *iface,
 	center_freq = ieee80211_chan_to_freq(NULL, op_class, center_chan);
 
 fail:
-	wpa_printf(MSG_DEBUG, "%s: center_chan1: %d, center_freq1: %d",
+	wpa_printf(MSG_DEBUG, "%s: ACS: center_chan1: %d, center_freq1: %d, oper_bw %d",
 		   __func__,
 		   center_chan,
-		   center_freq);
+		   center_freq, oper_bw);
 
 	if (center_chan1)
 		*center_chan1 = center_chan;
@@ -600,14 +605,18 @@ void acs_modify_scan_params_extn(struct hostapd_iface *iface,
 
 static int
 hostapd_trigger_channel_switch_for_acs(struct hostapd_iface *iface,
-				       struct hostapd_channel_data *chan)
+                                       struct hostapd_channel_data *chan)
 {
 	struct csa_settings settings;
 	int i;
+	int dfs_range = 0;
+	int bandwidth;
+	u8 chan_no;
 
 	os_memset(&settings, 0, sizeof(settings));
 	settings.cs_count = 5;
 
+	settings.freq_params.sec_channel_offset = iface->conf->secondary_channel;
 	settings.freq_params.freq = chan->freq;
 	settings.freq_params.channel = chan->chan;
 	settings.freq_params.bandwidth = channel_width_to_int(
@@ -648,6 +657,87 @@ hostapd_trigger_channel_switch_for_acs(struct hostapd_iface *iface,
 			settings.power_mode = NL80211_REG_AP_LPI;
 		}
 	}
+
+	/* Determine chan_width enumeration from bandwidth int */
+	switch (settings.freq_params.bandwidth) {
+		case 40:
+			bandwidth = CHAN_WIDTH_40;
+			break;
+		case 80:
+			bandwidth = settings.freq_params.center_freq2 ?
+					CHAN_WIDTH_80P80 : CHAN_WIDTH_80;
+			break;
+
+		case 160:
+			bandwidth = CHAN_WIDTH_160;
+			break;
+		case 320:
+			bandwidth = CHAN_WIDTH_320;
+			break;
+		default:
+			bandwidth = CHAN_WIDTH_20;
+			break;
+	}
+
+#ifdef CONFIG_QCN_EXTN
+	dfs_range += hostapd_find_dfs_range_extn(iface, bandwidth,
+						 &settings.freq_params);
+#else
+	if (settings.freq_params.center_freq1)
+		dfs_range += hostapd_is_dfs_overlap(
+				iface, bandwidth, settings.freq_params.center_freq1);
+	else
+		dfs_range += hostapd_is_dfs_overlap(
+				iface, bandwidth, settings.freq_params.freq);
+
+	if (settings.freq_params.center_freq2)
+		dfs_range += hostapd_is_dfs_overlap(
+				iface, bandwidth, settings.freq_params.center_freq2);
+#endif
+	if (dfs_range) {
+		if (ieee80211_freq_to_chan(settings.freq_params.freq, &chan_no) ==
+			NUM_HOSTAPD_MODES) {
+			wpa_printf(MSG_ERROR,
+				   "ACS: Failed to get channel for (freq=%d, sec_channel_offset=%d, bw=%d)",
+				   settings.freq_params.freq,
+				   settings.freq_params.sec_channel_offset,
+				   settings.freq_params.bandwidth);
+			return -1;
+	}
+
+
+	if (iface->conf->disable_csa_dfs == 1) {
+		wpa_printf(MSG_DEBUG, "ACS: cancel radar handling timer for %s",
+				iface->conf->bss[0]->iface);
+		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout, iface, NULL);
+	}
+
+	settings.freq_params.channel = chan_no;
+        wpa_printf(MSG_DEBUG,
+                   "ACS DFS/CAC to (channel=%u, freq=%d, sec_channel_offset=%d, bw=%d, center_freq1=%d)",
+                   settings.freq_params.channel,
+                   settings.freq_params.freq,
+                   settings.freq_params.sec_channel_offset,
+                   settings.freq_params.bandwidth,
+                   settings.freq_params.center_freq1);
+
+        /* Perform CAC and switch channel via fallback */
+        iface->is_ch_switch_dfs = true;
+        hostapd_switch_channel_fallback(iface, &settings.freq_params);
+        return 0;
+    }
+
+    if (iface->cac_started) {
+        wpa_printf(MSG_DEBUG,
+                   "ACS: CAC in progress - switching channel without CSA");
+        return hostapd_force_channel_switch(iface, &settings);
+    }
+
+    if (iface->conf->disable_csa_dfs == 1) {
+        wpa_printf(MSG_DEBUG, "ACS: cancel radar handling timer for %s",
+                   iface->conf->bss[0]->iface);
+        eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout, iface, NULL);
+    }
 
 	for (i = 0; i < iface->num_bss; i++) {
 		/* Save CHAN_SWITCH VHT and HE config */
@@ -711,4 +801,3 @@ acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
 
 	return 0;
 }
-
