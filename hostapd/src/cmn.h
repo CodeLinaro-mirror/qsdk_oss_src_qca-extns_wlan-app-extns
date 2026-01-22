@@ -156,6 +156,8 @@ struct esp_extn {
 struct hostapd_iface_extn {
 	struct esp_extn esp;
 	u16 csa_bitmap;
+	bool acs_success;
+	bool acs_failed;
 };
 
 struct hostapd_hw_modes_extn {
@@ -528,6 +530,17 @@ static inline void
 acs_modify_scan_params_extn(struct hostapd_iface *iface,
 			    struct wpa_driver_scan_params *params) {}
 
+static inline void
+hostapd_ml_acs_check_and_notify(struct hostapd_iface *iface, bool status)
+{
+	return;
+}
+
+static inline void
+wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx)
+{
+	return;
+}
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -652,6 +665,8 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 					 bool is_dfs, char *wpa_state,
 					 struct csa_settings *csa);
 int acs_get_bw_center_chan(int freq, enum bw_type bw);
+void hostapd_ml_acs_check_and_notify(struct hostapd_iface *iface, bool status);
+void wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx);
 #ifdef HOSTAPD
 struct hostapd_data *
 switch_link_hapd(struct hostapd_data *hapd, int link_id);

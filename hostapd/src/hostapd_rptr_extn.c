@@ -17,7 +17,6 @@
 #include "common/defs.h"
 #include "hostapd_rptr_extn.h"
 
-
 /**
  * hostapd_csa_bitmap_update_extn - Track CSA completion and notify supplicant
  * @iface: Hostapd interface whose links are undergoing CSA/CAC
@@ -46,6 +45,65 @@ void hostapd_csa_bitmap_update_extn(struct hostapd_iface *iface, int freq)
 			hostapd_ucode_chsw_comp_ev_notify(iface->bss[0], freq);
 #endif
 		}
+	}
+}
+
+/**
+ * hostapd_ml_acs_check_and_notify - Track ACS completion and notify supplicant
+ * @iface: Hostapd interface whose links are undergoing CSA/CAC
+ * @status: ACS status
+ *
+ * Check if all ML partner links have completed ACS, and if so sends
+ * notification to wpa_supplicant to start Repeater STA scan.
+ */
+void hostapd_ml_acs_check_and_notify(struct hostapd_iface *iface, bool status)
+{
+	struct hostapd_data *hapd = iface->bss[0];
+	int i, num_ap_with_acs_done = 0;
+
+	wpa_printf(MSG_DEBUG, "ACS: Checking ACS status across all ML partner links");
+
+	if (status)
+		iface->iface_extn.acs_success = true;
+	else
+		iface->iface_extn.acs_failed = true;
+
+	num_ap_with_acs_done++;
+
+	/* Check all other ML partner interfaces */
+	for (i = 0; i < hapd->iface->interfaces->count; i++) {
+		struct hostapd_iface *h =
+			hapd->iface->interfaces->iface[i];
+		struct hostapd_data *h_hapd = h->bss[0];
+
+		if (h == hapd->iface) {
+			wpa_printf(MSG_DEBUG, "ACS: Continue as same iface");
+			continue;
+		}
+
+		if (hostapd_is_ml_partner(hapd, h_hapd)) {
+			/* Count interfaces that have status (success or failure) */
+			if (h_hapd->iface->iface_extn.acs_success ||
+			    h_hapd->iface->iface_extn.acs_failed) {
+				num_ap_with_acs_done++;
+				wpa_printf(MSG_DEBUG, "ACS: ML partner %s has ACS done (status=%d)",
+					   h_hapd->conf->iface,
+				           h_hapd->iface->iface_extn.acs_success
+					   ? h_hapd->iface->iface_extn.acs_success
+					   : h_hapd->iface->iface_extn.acs_failed);
+			}
+		}
+	}
+
+	wpa_printf(MSG_DEBUG, "ACS: Total ML partners with ACS done: %d, Total interfaces: %zu",
+			num_ap_with_acs_done, hapd->iface->interfaces->count);
+
+	/* If all ML partner links have completed ACS, send notification */
+	if (num_ap_with_acs_done == hapd->iface->interfaces->count) {
+		wpa_printf(MSG_DEBUG, "ACS: All ML partner links have completed ACS, sending notification");
+#ifdef CONFIG_HOSTAPD_SRC_DIR
+		hostapd_ucode_notify_acs_completed(iface, 1);
+#endif
 	}
 }
 
@@ -91,11 +149,22 @@ uc_hostapd_compare_channel_params_extn(struct hostapd_config *conf,
 	centr_freq_seg0_idx = hostapd_get_oper_centr_freq_seg0_idx(conf);
 	centr_freq_seg1_idx = hostapd_get_oper_centr_freq_seg1_idx(conf);
 	ieee80211_freq_to_channel_ext(freq, 0, 1, &op_class, &channel);
-	center_freq1 = ieee80211_chan_to_freq(NULL, op_class, centr_freq_seg0_idx);
-	center_freq2 = ieee80211_chan_to_freq(NULL, op_class, centr_freq_seg1_idx);
 
-	center_freq1 = (center_freq1 == -1) ? 0 : center_freq1;
-	center_freq2 = (center_freq2 == -1) ? 0 : center_freq2;
+	/* Handle 2.4GHz band differently */
+	if (freq >= 2412 && freq <= 2472) {
+		if (bandwidth == 40) {
+			int offset_mhz = (channel <= 7) ? 10 : -10;
+			center_freq1 = freq + offset_mhz;
+		} else {
+			center_freq1 = freq;
+		}
+		center_freq2 = 0;
+	} else {
+		center_freq1 = ieee80211_chan_to_freq(NULL, op_class, centr_freq_seg0_idx);
+		center_freq2 = ieee80211_chan_to_freq(NULL, op_class, centr_freq_seg1_idx);
+		center_freq1 = (center_freq1 == -1) ? 0 : center_freq1;
+		center_freq2 = (center_freq2 == -1) ? 0 : center_freq2;
+	}
 
 	if ((freq_params.freq == freq) &&
 	    (freq_params.bandwidth == bandwidth) &&
@@ -146,6 +215,18 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 	if (!uc_hostapd_compare_channel_params_extn(conf, csa->freq_params, iface->freq)) {
 		for (i = 0; i < iface->num_bss; i++) {
 			ret = hostapd_switch_channel(iface->bss[i], csa);
+			if (ret) {
+				wpa_printf(MSG_ERROR, "Channel switch failed"
+					   " ret = %d", ret);
+#ifdef CONFIG_HOSTAPD_SRC_DIR
+				if (pre_connect) {
+					hostapd_ucode_chsw_comp_ev_notify(
+							iface->bss[0],
+							csa->freq_params.freq);
+				}
+#endif
+				return ret;
+			}
 			/* Track CSA per link using bitmap in PRE_CONNECT */
 			if (pre_connect)
 				iface->iface_extn.csa_bitmap |= BIT(i);
