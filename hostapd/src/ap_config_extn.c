@@ -15,6 +15,7 @@
 #include "ap/ap_drv_ops.h"
 #include "common/ieee802_11_defs.h"
 #include "ap/ap_config.h"
+#include "cmn.h"
 
 void
 hostapd_config_defaults_extn(struct hostapd_config *conf)
@@ -98,6 +99,16 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		return ret;
+	} else if (os_strcmp(buf, "repurpose_mode") == 0) {
+		int mode = atoi(pos);
+
+		if (!hostapd_is_valid_repurpose_mode_extn(mode)) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid repurpose_mode %d (allowed 1..3)",
+				   line, mode);
+			return -1;
+		}
+		bss->bss_extn.repurpose_mode = (u8) mode;
 	} else if (os_strcmp(buf, "acs_wradar") == 0) {
 		conf_extn->qacs_conf.wradar = atoi(pos);
 	} else if (os_strcmp(buf, "acs_txpwr_opt") == 0) {

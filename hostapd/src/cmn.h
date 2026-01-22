@@ -16,6 +16,7 @@
 #include "utils/list.h"
 #include "utils/common.h"
 #include "common/ieee802_11_defs.h"
+#include "repurpose.h"
 
 struct hostapd_config;
 struct sta_info;
@@ -223,6 +224,7 @@ struct hostapd_bss_config_extn {
 	/* Add Per-BSS configuration for extn here */
 	u8 nontx_vendor_elem_size;
 	u8 nontx_optional_elem_size;
+	enum repurpose_mode repurpose_mode;
 };
 
 struct esp_extn {
