@@ -328,6 +328,53 @@ fail:
 	return -ENOBUFS;
 }
 
+#ifdef CONFIG_IEEE80211BE
+int wpa_driver_nl80211_vendor_cmd_notify_link_repurpose(void *priv, u8 link_id)
+{
+	struct nl_msg *msg;
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nlattr *params;
+	int ret = -ENOBUFS;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Indication of link repurpose");
+
+	if (drv->nlmode != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		goto error;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION))
+		goto error;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto error;
+	if (link_id != NL80211_DRV_LINK_ID_NA &&
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID, link_id))
+		goto error;
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv(drv, bss->nl_connect, msg, NULL, NULL, NULL, NULL, NULL);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: link repurpose indication failed err=%d (%s)",
+			   ret, strerror(-ret));
+	}
+	return ret;
+error:
+	nlmsg_free(msg);
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Could not indicate repurpose on link %d",
+		   link_id);
+	return ret;
+}
+#endif /* CONFIG_IEEE80211BE */
+
 int wpa_driver_nl80211_dcs_config_extn(void *priv, u8 link_id,
 				       struct driver_dcs_config *params)
 {

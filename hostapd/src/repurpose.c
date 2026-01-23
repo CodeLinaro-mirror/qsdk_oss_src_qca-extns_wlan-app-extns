@@ -67,3 +67,20 @@ hostapd_is_repurpose_disabled_11be_extn(const struct hostapd_bss_config *bss)
 	return false;
 }
 
+#ifdef CONFIG_IEEE80211BE
+int wpa_driver_nl80211_vendor_cmd_notify_link_repurpose(void *priv, u8 link_id);
+#endif /* CONFIG_IEEE80211BE */
+
+int
+hostapd_drv_notify_link_repurpose_extn(struct hostapd_data *hapd, u8 link_id)
+{
+#ifdef CONFIG_IEEE80211BE
+	if (!hapd || !hapd->driver || !hapd->drv_priv)
+		return 0;
+
+	return wpa_driver_nl80211_vendor_cmd_notify_link_repurpose(hapd->drv_priv,
+								   link_id);
+#else
+	return 0;
+#endif /* CONFIG_IEEE80211BE */
+}
