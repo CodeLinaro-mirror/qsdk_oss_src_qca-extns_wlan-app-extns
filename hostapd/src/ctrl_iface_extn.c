@@ -541,8 +541,6 @@ int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *valu
 			return -1;
 		}
 		return ret;
-	} else {
-		return -1;
 	}
 
 	return 0;
