@@ -15,6 +15,7 @@
 #include "ap/hw_features.h"
 #include "ap/ap_drv_ops.h"
 #include "hostapd_rptr_extn.h"
+#include "cmn.h"
 
 /**
  * hostapd_ctrl_get_hw_info_extn - Return current hardware info
@@ -437,6 +438,9 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "REP_AP_ENABLE ", 14) == 0) {
 		if (hostapd_iface_rep_ap_enable_extn(hapd->iface, buf + 14))
 			reply_len_extn = -1;
+	} else if (os_strncmp(buf, "ACS ", 4) == 0) {
+		reply_len_extn = hostapd_handle_cli_acs_extn(hapd, buf + 4,
+							     reply, reply_size);
 	} else {
 		return -1;
 	}

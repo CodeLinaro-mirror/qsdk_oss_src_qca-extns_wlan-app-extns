@@ -6,6 +6,8 @@
 #ifndef CMN_H
 #define CMN_H
 
+#include "includes.h"
+
 #ifdef CONFIG_QCN_APP_EXTN
 #include "qacs/qacs.h"
 #endif
@@ -35,6 +37,7 @@ struct wpa_supplicant;
 struct wpa_bss;
 struct wpa_connect_work;
 struct csa_settings;
+struct wpa_driver_scan_params;
 
 struct ieee80211_240mhz_vendor_oper_extn {
 	u8 ccfs1;
@@ -100,6 +103,26 @@ struct ieee802_11_elems_extn {
 	u8 eht_240mhz_capab_len;
 };
 
+#ifndef CONFIG_QCN_APP_EXTN
+struct qacs_conf_extn {
+	bool rank_en;	/* Channel ranking enable (1) / disable (0) */
+	bool wradar;	/* Wideband radar handling enable (1) / disable (0) */
+	int rep_txpower_policy;/* Report/tx power policy: accepts only 1 or 2 */
+
+	/* Dwell time bounds and current dwell time in milliseconds */
+	u16 min_dwell;
+	u16 max_dwell;
+	u16 dwelltime;
+
+	/* Debug/trace controls:
+	 * - upper 0xFF00: module bitmap
+	 * - lower 0x00FF: debug level
+	 */
+	u16 dbg_module_bitmap;
+	u8 dbg_level;
+};
+#endif
+
 struct hostapd_config_extn {
 	/* Add Per-radio configuration for extn here */
 
@@ -113,10 +136,7 @@ struct hostapd_config_extn {
 	bool skip_cac;    /* Skip DFS CAC for Repeater AP */
 	int ind_rptr;    /* 1 - Independent Rep; 0 - Dependent */
 	bool qacs_enable;
-
-#ifdef CONFIG_QCN_APP_EXTN
 	struct qacs_conf_extn qacs_conf;
-#endif
 };
 
 struct hostapd_bss_config_extn {
@@ -499,6 +519,15 @@ static inline int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *c
 {
 	return -1;
 }
+
+static inline void
+acs_request_scan_add_freqs_extn(struct hostapd_channel_data *chan,
+				int **freq) {}
+
+static inline void
+acs_modify_scan_params_extn(struct hostapd_iface *iface,
+			    struct wpa_driver_scan_params *params) {}
+
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -640,6 +669,8 @@ u8 * hostapd_eid_esp_extn(struct hostapd_data *hapd, u8 *eid, size_t len);
 size_t hostapd_esp_ie_len_extn(struct hostapd_data *hapd);
 int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *cmd,
 				char *buf, size_t buflen);
+int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd, char *pos,
+				char *buf, size_t buflen);
 
 #ifndef CONFIG_QCN_APP_EXTN
 static inline struct hostapd_channel_data *
@@ -662,5 +693,9 @@ void acs_process_hostapd_scan_data(struct hostapd_iface *iface);
 int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_bss_config *conf,
 						     char *value);
 
+void acs_request_scan_add_freqs_extn(struct hostapd_channel_data *chan,
+				     int **freq);
+void acs_modify_scan_params_extn(struct hostapd_iface *iface,
+				 struct wpa_driver_scan_params *params);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
