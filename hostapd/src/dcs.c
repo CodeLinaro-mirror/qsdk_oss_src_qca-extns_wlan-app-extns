@@ -27,6 +27,7 @@ dcs_print_usage_extn(char *reply, int reply_size)
 		"dcs extn commands:\n"
 		"  dcs enable           : set DCS configuration\n"
 		"  dcs bw_reduction_ctrl : DCS bw reduction control\n"
+		"  dcs csa_tbtt		:  set DCS CSA TBTT value\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -132,6 +133,27 @@ static int hostapd_ctrl_iface_set_dcs_bw_reduction_ctrl(struct hostapd_data *hap
 	return 0;
 }
 
+static int hostapd_ctrl_iface_set_dcs_csa_tbtt(struct hostapd_data *hapd,
+					       const char *cmd, char *reply,
+					       int reply_size)
+{
+	struct hostapd_config_extn *config_extn = &hapd->iconf->conf_extn;
+	u32 val;
+
+	if (!config_extn)
+		return -1;
+
+	val = atoi(cmd);
+	if (!val || val > DCS_CSA_TBTT_MAX || val < DCS_CSA_TBTT_MIN) {
+		wpa_printf(MSG_ERROR, "Invalid value of DCS CSA TBTT");
+		return -1;
+	}
+
+	config_extn->dcs_conf.dcs_csa_tbtt = val;
+
+	return 0;
+}
+
 int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 				const char *cmd, char *reply,
 				int reply_size)
@@ -143,6 +165,9 @@ int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 		return hostapd_ctrl_iface_set_dcs_bw_reduction_ctrl(hapd,
 								    cmd + 18,
 								    reply, reply_size);
+	} else if (os_strncmp(cmd, "csa_tbtt ", 9) == 0) {
+		return hostapd_ctrl_iface_set_dcs_csa_tbtt(hapd, cmd + 9,
+							   reply, reply_size);
 	} else {
 		return dcs_print_usage_extn(reply, reply_size);
 	}
@@ -249,7 +274,7 @@ int hostapd_dcs_channel_change(struct csa_settings *settings,
 {
 	int i, ret = 0;
 
-	settings->cs_count = 5;
+	settings->cs_count = iface->conf->conf_extn.dcs_conf.dcs_csa_tbtt;
 
 	switch (new_chan_width) {
 	case CHAN_WIDTH_40:

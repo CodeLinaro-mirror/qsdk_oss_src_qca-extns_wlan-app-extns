@@ -64,6 +64,7 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 	{ "dcs", hostapd_cli_cmd_dcs_extn, NULL, \
 		"enable		: enable DCS configuration\n" \
 		"bw_reduction_ctrl	: <mask> = set DCS bw reduction control\n" \
+		"csa_tbtt	: CSA TBTT value for DCS\n" \
 	},
 #else
 #define HOSTAPD_CLI_CMDS_EXTN

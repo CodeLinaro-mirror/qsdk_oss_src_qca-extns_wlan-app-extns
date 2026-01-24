@@ -93,6 +93,10 @@ struct driver_dcs_config {
 	u16 dcs_enable;
 };
 
+#define DCS_CSA_TBTT_DEFAULT        5
+#define DCS_CSA_TBTT_MAX            30
+#define DCS_CSA_TBTT_MIN            1
+
 struct  hostapd_sta_add_params_extn {
 	struct ieee80211_240mhz_params_extn params_240mhz;
 };
@@ -199,6 +203,9 @@ struct hostapd_mu_cap_war_sta_entry_extn {
 
 struct dcs_conf_extn {
 	u16 bw_reduction_ctrl;
+
+	/* CSA TBTT value */
+	u32 dcs_csa_tbtt;
 };
 
 struct hostapd_config_extn {
