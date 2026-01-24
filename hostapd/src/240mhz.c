@@ -348,8 +348,7 @@ u16 hostapd_copy_sta_eht_240mhz_cap_extn(struct hostapd_data *hapd,
 
 	sta_extn = (struct sta_info_extn*) &sta->sta_extn;
 
-	if (!elems_extn->eht_240mhz_capab || !hapd->iconf->ieee80211be ||
-	    hapd->conf->disable_11be) {
+	if (!elems_extn->eht_240mhz_capab || !hostapd_is_eht_enabled(hapd)) {
 		os_free(sta_extn->params_240mhz.eht_240mhz_capab);
 		sta_extn->params_240mhz.eht_240mhz_capab = NULL;
 		return 0;
