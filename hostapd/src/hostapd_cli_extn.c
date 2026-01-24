@@ -58,3 +58,33 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
 
 	return hostapd_cli_cmd(ctrl, "ACS", 1, argc, argv);
 }
+
+#ifdef CONFIG_IEEE80211AC
+int hostapd_cli_cmd_get_mu_cap_war_extn(struct wpa_ctrl *ctrl,
+					     int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_MU_CAP_WAR");
+}
+
+int hostapd_cli_cmd_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc,
+					 char *argv[])
+{
+	char buf[32];
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: mu_cap_war <1/0>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "MU_CAP_WAR %s", argv[0]);
+
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("mu_cap_war cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+#endif /* CONFIG_IEEE80211AC */
+

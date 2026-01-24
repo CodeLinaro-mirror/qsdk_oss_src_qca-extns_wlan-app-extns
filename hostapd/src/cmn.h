@@ -123,6 +123,13 @@ struct qacs_conf_extn {
 };
 #endif
 
+struct hostapd_data_extn {
+#ifdef CONFIG_IEEE80211AC
+	/* Per-BSS control for MU-MIMO capability override WAR */
+	bool mu_cap_war;
+#endif /* CONFIG_IEEE80211AC */
+};
+
 struct hostapd_config_extn {
 	/* Add Per-radio configuration for extn here */
 

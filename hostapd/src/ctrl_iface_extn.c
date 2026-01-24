@@ -412,6 +412,38 @@ int hostapd_iface_rep_ap_enable_extn(struct hostapd_iface *iface, char *pos)
 	return 0;
 }
 
+#ifdef CONFIG_IEEE80211AC
+static int hostapd_ctrl_iface_mu_cap_war_extn(struct hostapd_data_extn *hapd_extn,
+					    const char *cmd)
+{
+	int val;
+
+	if (!cmd || sscanf(cmd, "%d", &val) != 1 || (val != 0 && val != 1))
+		return -1;
+
+	hapd_extn->mu_cap_war = val ? 1 : 0;
+
+	wpa_printf(MSG_DEBUG, "MU_CAP_WAR state: %s", val ? "enabled":"disabled");
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_mu_cap_war_extn(struct hostapd_data_extn *hapd_extn,
+						char *reply,
+					        size_t reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "%s\n",
+			  hapd_extn->mu_cap_war ? "Enabled" : "Disabled");
+
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+#endif /* CONFIG_IEEE80211AC */
+
 int
 hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 					char *buf, char *reply,
@@ -441,6 +473,14 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "ACS ", 4) == 0) {
 		reply_len_extn = hostapd_handle_cli_acs_extn(hapd, buf + 4,
 							     reply, reply_size);
+#ifdef CONFIG_IEEE80211AC
+	} else if (os_strncmp(buf, "MU_CAP_WAR ", 11) == 0) {
+		if (hostapd_ctrl_iface_mu_cap_war_extn(&hapd->hapd_extn, buf + 11))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_MU_CAP_WAR") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_mu_cap_war_extn(&hapd->hapd_extn, reply,
+								      reply_size);
+#endif /* CONFIG_IEEE80211AC */
 	} else {
 		return -1;
 	}
