@@ -630,3 +630,23 @@ void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 			   l->width, l->punc_bitmap);
 	}
 }
+
+/**
+ * wpa_supplicant_start_sta_scan - Handle repeater AP ACS timeout for repeater
+ * @eloop_ctx: Eloop context, cast to struct wpa_supplicant pointer
+ * @timeout_ctx: Unused timeout context (reserved for future use)
+ *
+ * Invoked by the eloop timeout mechanism while in WPA_DISCONNECTED state to
+ * detect when repeater AP ACS attempts have timed out. On timeout, set the
+ * acs_complete and requests a fresh scan to continue repeater connect logic.
+ */
+void wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx)
+{
+	struct wpa_supplicant *wpa_s = eloop_ctx;
+
+	if (wpa_s->wpa_state == WPA_DISCONNECTED) {
+		wpa_msg(wpa_s, MSG_DEBUG, "Repeater ACS timeout");
+		wpa_s->acs_complete = 1;
+		wpa_supplicant_req_scan(wpa_s, 0, 0);
+	}
+}
