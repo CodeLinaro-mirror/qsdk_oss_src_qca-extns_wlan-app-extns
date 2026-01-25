@@ -7,6 +7,8 @@
 #include "utils/common.h"
 #include "ap/hostapd.h"
 #include "esp.h"
+#include "dcs.h"
+#include "cmn.h"
 #include "utils/os.h"
 #include "common/ieee802_11_defs.h"
 #include "ap/ap_config.h"
@@ -481,7 +483,10 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn = hostapd_ctrl_iface_get_mu_cap_war_extn(&hapd->hapd_extn, reply,
 								      reply_size);
 #endif /* CONFIG_IEEE80211AC */
-	} else {
+	} else if (os_strncmp(buf, "DCS ", 4) == 0) {
+		reply_len_extn = hostapd_ctrl_iface_dcs_extn(hapd, buf + 4, reply,
+							     reply_size);
+        } else {
 		return -1;
 	}
 
