@@ -7,11 +7,42 @@
 #include "utils/common.h"
 #include "ap/hostapd.h"
 #include "esp.h"
+#include "dcs.h"
+#include "cmn.h"
 #include "utils/os.h"
 #include "common/ieee802_11_defs.h"
 #include "ap/ap_config.h"
 #include "ap/beacon.h"
+#include "ap/dfs.h"
+#include "ap/hw_features.h"
+#include "ap/ap_drv_ops.h"
+#include "hostapd_rptr_extn.h"
+#include "cmn.h"
 
+/**
+ * hostapd_ctrl_get_hw_info_extn - Return current hardware info
+ * @hapd: Pointer to the hostapd instance
+ * @buf: Caller-provided output buffer to receive stringified hw info
+ * @buflen: Size of @buf in bytes
+ *
+ * Return: Number of bytes written to @buf (excluding null terminator) on success,
+ *         or -1 on failure (e.g., invalid arguments or buffer too small).
+ */
+int hostapd_ctrl_get_hw_info_extn(struct hostapd_data *hapd, char *buf, size_t buflen)
+{
+	int ret = -1;
+	if (!hapd || !hapd->iface)
+		return ret;
+
+	if (hapd->iface->current_hw_info) {
+		ret = os_snprintf(buf, buflen,
+				  "hw_idx = %d start_freq = %d end_freq =%d\n",
+				  hapd->iface->current_hw_info->hw_idx,
+				  hapd->iface->current_hw_info->start_freq,
+				  hapd->iface->current_hw_info->end_freq);
+	}
+	return ret;
+}
 
 static int hostapd_ctrl_iface_set_esp_extn(struct hostapd_data *hapd, char *cmd)
 {
@@ -87,18 +118,36 @@ static int hostapd_ctrl_iface_get_esp_extn(struct hostapd_data *hapd,
 {
 	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
 	int ret;
+	u8 airtime, ppdu_dur, ba_window;
 
 	if (!iface_extn)
 		return -1;
+
+	if (iface_extn->esp.airtime)
+		airtime = iface_extn->esp.airtime;
+	else if (iface_extn->esp.enable)
+		airtime = iface_extn->esp.computed_airtime;
+	else
+		airtime = 0;
+
+	if (iface_extn->esp.ppdu_dur)
+		ppdu_dur = iface_extn->esp.ppdu_dur;
+	else
+		ppdu_dur = ESP_DEFAULT_PPDU_DURATION;
+
+	if (iface_extn->esp.ba_window)
+		ba_window = iface_extn->esp.ba_window;
+	else
+		ba_window = 5;
 
 	ret = os_snprintf(reply, reply_size,
 			  "airtime=%u "
 			  "ppdu_dur=%u "
 			  "ba_window=%u "
 			  "enable_esp=%u\n",
-			  iface_extn->esp.airtime,
-			  iface_extn->esp.ppdu_dur,
-			  iface_extn->esp.ba_window,
+			  airtime,
+			  ppdu_dur,
+			  ba_window,
 			  iface_extn->esp.enable);
 	if (os_snprintf_error(reply_size, ret))
 		return -1;
@@ -170,6 +219,232 @@ static int hostapd_ctrl_get_rnr_6ghz_colocated_extn(struct hostapd_data *hapd,
 	return ret;
 }
 
+/**
+ * hostapd_iface_rep_ap_enable_extn - Handle REP_AP_ENABLE control command
+ * @iface: Pointer to hostapd interface on which repeater AP is enabled
+ * @pos: Pointer to control command arguments string (e.g., freq/width/etc.)
+ *
+ * Parse repeater AP enable parameters (frequency, bandwidth, puncturing
+ * bitmap, center frequencies, and secondary offset), update interface
+ * configuration, and restart or enable the AP with appropriate DFS/CAC
+ * handling.
+ *
+ * Return: 0 on success or -1 on invalid parameters or configuration errors.
+ */
+int hostapd_iface_rep_ap_enable_extn(struct hostapd_iface *iface, char *pos)
+{
+	int freq = 0, width = 0, sec_off = 0;
+	int cf1 = 0, cf2 = 0;
+	u16 punct_bitmap = 0;
+	enum oper_chan_width oper_chwidth = CONF_OPER_CHWIDTH_USE_HT;
+	u8 op_class = 0, channel = 0;
+	enum hostapd_hw_mode hw_mode;
+	int i, ret;
+	bool skip_cac_rep = false;
+	struct hostapd_config *conf;
+	char *param;
+
+	if (!iface || !iface->conf || !pos)
+		return -1;
+
+	conf = iface->conf;
+
+	/* Parse fields */
+	param = os_strstr(pos, "freq=");
+	if (param)
+		freq = atoi(param + 5);
+
+	param = os_strstr(pos, " width=");
+	if (param)
+		width = atoi(param + 7);
+
+	param = os_strstr(pos, " punct_bitmap=");
+	if (param)
+		punct_bitmap = (u16) atoi(param + 14);
+
+	param = os_strstr(pos, " c_freq1=");
+	if (param)
+		cf1 = atoi(param + 9);
+
+	param = os_strstr(pos, " c_freq2=");
+	if (param)
+		cf2 = atoi(param + 9);
+
+	param = os_strstr(pos, " sec_off=");
+	if (param)
+		sec_off = atoi(param + 9);
+
+	if (!freq) {
+		wpa_printf(MSG_ERROR, "REP_AP_ENABLE: missing freq");
+		return -1;
+	}
+
+	/* Map provided bandwidth to oper_chwidth */
+	switch (width) {
+	case 80:
+		oper_chwidth = (cf2 ? CONF_OPER_CHWIDTH_80P80MHZ :
+			       CONF_OPER_CHWIDTH_80MHZ);
+		break;
+	case 160:
+		oper_chwidth = CONF_OPER_CHWIDTH_160MHZ;
+		break;
+	case 320:
+		oper_chwidth = CONF_OPER_CHWIDTH_320MHZ;
+		break;
+	case 40:
+	case 20:
+	default:
+		oper_chwidth = CONF_OPER_CHWIDTH_USE_HT;
+		break;
+	}
+
+	/* Determine channel/opclass and HW mode from given freq */
+	hw_mode = ieee80211_freq_to_channel_ext(freq, sec_off, oper_chwidth,
+						&op_class, &channel);
+	if (hw_mode == NUM_HOSTAPD_MODES) {
+		wpa_printf(MSG_ERROR, "REP_AP_ENABLE: invalid frequency %d", freq);
+		return -1;
+	}
+
+	/* Set center segment indices */
+	ieee80211_freq_to_chan(freq, &channel);
+	hostapd_set_oper_centr_freq_seg0_idx(conf, channel);
+	if (cf1 == 5935)
+		hostapd_set_oper_centr_freq_seg0_idx(conf, (cf1 - 5925) / 5);
+	else if (cf1 > 5950)
+		hostapd_set_oper_centr_freq_seg0_idx(conf, (cf1 - 5950) / 5);
+	else if (cf1 > 5000)
+		hostapd_set_oper_centr_freq_seg0_idx(conf, (cf1 - 5000) / 5);
+	else if (cf1 > 0)
+		ieee80211_freq_to_chan(cf1, (u8 *) &channel);
+
+	hostapd_set_oper_chwidth(conf, oper_chwidth);
+
+	if (cf2 > 0 && oper_chwidth == CONF_OPER_CHWIDTH_80P80MHZ) {
+		int seg1_idx = 0;
+		if (cf2 == 5935)
+			seg1_idx = (cf2 - 5925) / 5;
+		else if (cf2 > 5950)
+			seg1_idx = (cf2 - 5950) / 5;
+		else if (cf2 > 5000)
+			seg1_idx = (cf2 - 5000) / 5;
+		else
+			ieee80211_freq_to_chan(cf2, (u8 *) &seg1_idx);
+		hostapd_set_oper_centr_freq_seg1_idx(conf, seg1_idx);
+	} else {
+		hostapd_set_oper_centr_freq_seg1_idx(conf, 0);
+	}
+
+	conf->punct_bitmap = punct_bitmap;
+	conf->acs = 0;
+
+	/* Decide DFS/CAC skip if configured to skip */
+	if (conf->conf_extn.skip_cac) {
+		skip_cac_rep = ieee80211_is_dfs(freq, iface->hw_features,
+						iface->num_hw_features);
+	}
+	wpa_printf(MSG_INFO, "REP_AP_ENABLE: skip_cac_rep = %d", skip_cac_rep);
+
+	iface->freq = freq;
+
+	/* Restart/Enable iface if needed around DFS CAC requirement */
+	switch (iface->state) {
+	case HAPD_IFACE_ENABLED:
+		if (!skip_cac_rep && (!hostapd_is_dfs_required(iface) ||
+		    hostapd_is_dfs_chan_available(iface)))
+			break;
+		wpa_printf(MSG_INFO,
+			   "DFS CAC required on new channel, restart interface");
+		/* fallthrough */
+	default:
+		hostapd_disable_iface(iface);
+		break;
+	}
+
+	if (conf->channel && !iface->freq)
+		iface->freq = hostapd_hw_get_freq(iface->bss[0], conf->channel);
+
+	if (iface->state != HAPD_IFACE_ENABLED)
+		hostapd_enable_iface(iface);
+
+	hostapd_apply_6ghz_dynamic_puncturing(iface);
+	if (is_6ghz_freq(iface->freq) && iface->conf->enable_best_power_mode) {
+		u8 best_power_mode;
+		best_power_mode = hostapd_get_best_ap_6ghz_power_mode_for_iface(iface);
+		if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
+			iface->conf->he_6ghz_reg_pwr_type = best_power_mode;
+			wpa_printf(MSG_INFO,
+				   "%s: Best power mode for Freq %d is %d",
+				   __func__, iface->freq, best_power_mode);
+		}
+	}
+
+	for (i = 0; i < iface->num_bss; i++) {
+		struct hostapd_data *hapd = iface->bss[i];
+		hapd->conf->start_disabled = 0;
+#ifdef CONFIG_HOSTAPD_SRC_DIR
+		ret = hostapd_set_freq(hapd, conf->hw_mode, iface->freq,
+				       conf->channel,
+				       conf->enable_edmg,
+				       conf->edmg_channel,
+				       conf->ieee80211n,
+				       conf->ieee80211ac,
+				       conf->ieee80211ax,
+				       conf->ieee80211be,
+				       conf->ieee80211bn,
+				       conf->secondary_channel,
+				       hostapd_get_oper_chwidth(conf),
+				       hostapd_get_oper_centr_freq_seg0_idx(conf),
+				       hostapd_get_oper_centr_freq_seg1_idx(conf),
+				       skip_cac_rep,
+				       conf->bandwidth_device,
+				       conf->center_freq_device);
+#endif
+		wpa_printf(MSG_INFO,
+			   "REP_AP_ENABLE: set_freq for bssid " MACSTR
+			   " ret %d ifname %s",
+			   MAC2STR(hapd->own_addr), ret, hapd->conf->iface);
+		ret = ieee802_11_set_beacon(hapd);
+		wpa_printf(MSG_DEBUG,
+			   "REP_AP_ENABLE: set beacon for bssid " MACSTR
+			   " ret %d",
+			   MAC2STR(hapd->own_addr), ret);
+	}
+
+	return 0;
+}
+
+#ifdef CONFIG_IEEE80211AC
+static int hostapd_ctrl_iface_mu_cap_war_extn(struct hostapd_data_extn *hapd_extn,
+					    const char *cmd)
+{
+	int val;
+
+	if (!cmd || sscanf(cmd, "%d", &val) != 1 || (val != 0 && val != 1))
+		return -1;
+
+	hapd_extn->mu_cap_war = val ? 1 : 0;
+
+	wpa_printf(MSG_DEBUG, "MU_CAP_WAR state: %s", val ? "enabled":"disabled");
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_mu_cap_war_extn(struct hostapd_data_extn *hapd_extn,
+						char *reply,
+					        size_t reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "%s\n",
+			  hapd_extn->mu_cap_war ? "Enabled" : "Disabled");
+
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+#endif /* CONFIG_IEEE80211AC */
 
 int
 hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
@@ -192,6 +467,25 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
         } else if (os_strncmp(buf, "GET_RNR_6GHZ_COLOCATED", 22) == 0) {
 		reply_len_extn = hostapd_ctrl_get_rnr_6ghz_colocated_extn(hapd, buf + 22, reply,
 									  reply_size);
+	} else if (os_strcmp(buf, "GET_HW_INFO") == 0) {
+		reply_len_extn = hostapd_ctrl_get_hw_info_extn(hapd, reply, reply_size);
+	} else if (os_strncmp(buf, "REP_AP_ENABLE ", 14) == 0) {
+		if (hostapd_iface_rep_ap_enable_extn(hapd->iface, buf + 14))
+			reply_len_extn = -1;
+	} else if (os_strncmp(buf, "ACS ", 4) == 0) {
+		reply_len_extn = hostapd_handle_cli_acs_extn(hapd, buf + 4,
+							     reply, reply_size);
+#ifdef CONFIG_IEEE80211AC
+	} else if (os_strncmp(buf, "MU_CAP_WAR ", 11) == 0) {
+		if (hostapd_ctrl_iface_mu_cap_war_extn(&hapd->hapd_extn, buf + 11))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_MU_CAP_WAR") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_mu_cap_war_extn(&hapd->hapd_extn, reply,
+								      reply_size);
+#endif /* CONFIG_IEEE80211AC */
+	} else if (os_strncmp(buf, "DCS ", 4) == 0) {
+		reply_len_extn = hostapd_ctrl_iface_dcs_extn(hapd, buf + 4, reply,
+							     reply_size);
         } else {
 		return -1;
 	}
@@ -202,6 +496,50 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		os_memcpy(reply, "FAIL\n", 5);
 		*reply_len = 5;
 	}
+
+	return 0;
+}
+
+int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_bss_config *conf,
+						     char *value)
+{
+	char *end;
+	unsigned long v;
+	u8 optional_elem_size, vendor_elem_size;
+
+	v = strtoul(value, &end, 0); /* accepts 0x-prefixed hex or decimal */
+	if (end == value || *end != '\0') {
+		wpa_printf(MSG_ERROR, "CTRL: nontx_profile_ie_size: invalid value '%s'", value);
+		return -1;
+	}
+
+	if (v > 0xFFFF) {
+		wpa_printf(MSG_ERROR, "CTRL: nontx_profile_ie_size: out of range '%s'", value);
+		return -1;
+	}
+
+	optional_elem_size = (v >> 8) & 0xFF;
+	vendor_elem_size = v & 0xFF;
+
+	wpa_printf(MSG_INFO,
+		   "CTRL: Optional elem size: %u max limit: %d vendor elem size: %u max limit: %d",
+		   optional_elem_size, MBSSID_NONTX_OPTIONAL_ELEM_SIZE, vendor_elem_size,
+		   MBSSID_NONTX_VENDOR_ELEM_SIZE);
+
+	if (optional_elem_size > MBSSID_NONTX_OPTIONAL_ELEM_SIZE) {
+		wpa_printf(MSG_ERROR, "CTRL: Optional elem size %u bytes exceeds max limit %d",
+			   optional_elem_size, MBSSID_NONTX_OPTIONAL_ELEM_SIZE);
+		return -1;
+	}
+
+	if (vendor_elem_size > MBSSID_NONTX_VENDOR_ELEM_SIZE) {
+		wpa_printf(MSG_ERROR, "CTRL: Vendor elem size %u bytes exceeds max limit %d",
+			   vendor_elem_size, MBSSID_NONTX_VENDOR_ELEM_SIZE);
+		return -1;
+	}
+
+	conf->bss_extn.nontx_optional_elem_size = optional_elem_size;
+	conf->bss_extn.nontx_vendor_elem_size = vendor_elem_size;
 
 	return 0;
 }
@@ -244,9 +582,36 @@ int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *valu
 			wpa_printf(MSG_ERROR, "Failed to update beacon");
 			return -1;
 		}
+
+	} else if (os_strcasecmp(cmd, "nontx_profile_elem_size") == 0) {
+		ret = hostapd_set_nontx_optional_vendor_elem_size_extn(hapd->conf, value);
+		if (ret < 0) {
+			wpa_printf(MSG_ERROR, "Failed to set nontx_profile_elem_size");
+			return -1;
+		}
+		return ret;
 	}
+
 	return 0;
 }
+
+int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *cmd,
+				char *buf, size_t buflen)
+{
+	int res;
+
+	if (os_strcasecmp(cmd, "nontx_profile_elem_size") == 0) {
+		res = os_snprintf(buf, buflen, "Optional elem size = %u\nVendor elem size = %u\n",
+				  hapd->conf->bss_extn.nontx_optional_elem_size,
+				  hapd->conf->bss_extn.nontx_vendor_elem_size);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	}
+
+	return -1;
+}
+
 
 int hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
 				   size_t buflen, size_t curr_len)

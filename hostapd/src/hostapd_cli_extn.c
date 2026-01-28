@@ -32,7 +32,6 @@ int hostapd_cli_cmd_set_esp_extn(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, buf);
 }
 
-
 int hostapd_cli_cmd_get_esp_extn(struct wpa_ctrl *ctrl, int argc,
 				 char *argv[])
 {
@@ -49,4 +48,52 @@ int hostapd_cli_cmd_get_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl,
 						int argc, char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "GET_RNR_6GHZ_COLOCATED");
+}
+
+int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc < 1) {
+		printf("Invalid ACS command: needs 1 argument atleast\n");
+	}
+
+	return hostapd_cli_cmd(ctrl, "ACS", 1, argc, argv);
+}
+
+#ifdef CONFIG_IEEE80211AC
+int hostapd_cli_cmd_get_mu_cap_war_extn(struct wpa_ctrl *ctrl,
+					     int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_MU_CAP_WAR");
+}
+
+int hostapd_cli_cmd_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc,
+					 char *argv[])
+{
+	char buf[32];
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: mu_cap_war <1/0>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "MU_CAP_WAR %s", argv[0]);
+
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("mu_cap_war cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+#endif /* CONFIG_IEEE80211AC */
+
+int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc < 1) {
+		printf("Invalid dcs_enable command: needs at least 1 argument\n");
+		return -1;
+	}
+
+	return hostapd_cli_cmd(ctrl, "DCS", 1, argc, argv);
 }

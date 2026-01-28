@@ -1,0 +1,461 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ */
+
+#include "includes.h"
+#include "utils/common.h"
+#include "ap/hostapd.h"
+#include "esp.h"
+#include "utils/os.h"
+#include "common/ieee802_11_defs.h"
+#include "ap/ap_config.h"
+#include "cmn.h"
+
+
+static int
+acs_print_usage_extn(char *reply, int reply_size)
+{
+	int ret;
+
+	ret = os_snprintf(
+		reply, reply_size,
+		"acs extn commands:\n"
+		"  acs get_status           : get ACS current status\n"
+		"  acs rank_en <1|0>        : enable/disable channel ranking\n"
+		"  acs get_rank_en          : get channel ranking enable state\n"
+		"  acs qacs_enable <1|0>    : enable/disable QACS extension\n"
+		"  acs get_qacs_enable      : get QACS extension enable state\n"
+		"  acs noscan <1|0>         : enable/disable noscan mode\n"
+		"  acs get_noscan           : get noscan mode state\n"
+		"  acs dfs_exclude <1|0>    : enable/disable DFS channel exclusion\n"
+		"  acs get_dfs_exclude      : get DFS channel exclusion state\n"
+		"  acs dwelltime <ms>       : set dwell time in milliseconds\n"
+		"  acs get_dwell            : get dwell time in milliseconds\n"
+		"  acs dbgtrace <value>     : set debug (0x00FF=level, 0xFF00=module mask)\n"
+		"  acs get_dbgtrace         : get debug mask\n"
+		"  acs wradar <0|1>         : enable/disable excluding weather radar channels\n"
+		"  acs get_wradar           : get weather radar handling state\n"
+		"  acs txpwr_opt <1|2>      : set the tx pwr optimization state(1 = optimize throughput, 2 = optimize range)\n"
+		"  acs get_txpwr_opt        : get tx power optimization state\n"
+		"  acs 6g_only_psc <1|0>    : restrict 6 GHz to PSC channels only\n"
+		"  acs get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n"
+		);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_acs_get_status_extn(struct hostapd_iface *iface,
+		const char *pos,
+		char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS status: %s\n",
+			      (iface->state == HAPD_IFACE_ACS) ?
+			      "Inprogress" : "Idle");
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_acs_set_rank_en_extn(struct hostapd_config_extn *conf_extn,
+					const char *pos,
+					char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val == 0 || val == 1) {
+		conf_extn->qacs_conf.rank_en = val;
+		return 0;
+	}
+
+	wpa_printf(MSG_ERROR, "%s: Invalid value", __func__);
+	return -1;
+}
+
+static int hostapd_acs_get_rank_en_extn(struct hostapd_config_extn *conf_extn,
+					const char *pos,
+					char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS rank_en: %d\n",
+			      conf_extn->qacs_conf.rank_en);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_acs_set_qacs_enable_extn(struct hostapd_config_extn *conf_extn,
+					    const char *pos,
+					    char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val == 0 || val == 1) {
+		conf_extn->qacs_enable = val;
+		return 0;
+	}
+
+	wpa_printf(MSG_ERROR, "%s: Invalid value", __func__);
+	return -1;
+}
+
+static int hostapd_acs_get_qacs_enable_extn(struct hostapd_config_extn *conf_extn,
+					    const char *pos,
+					    char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS qacs_enable: %d\n",
+			      conf_extn->qacs_enable);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_acs_set_noscan_extn(struct hostapd_config *conf,
+				       const char *pos,
+				       char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val == 0 || val == 1) {
+		conf->noscan = val;
+		return 0;
+	}
+
+	wpa_printf(MSG_ERROR, "%s: Invalid value", __func__);
+	return -1;
+}
+
+static int hostapd_acs_get_noscan_extn(struct hostapd_config *conf,
+				       const char *pos,
+				       char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS noscan: %d\n", conf->noscan);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_acs_set_dfs_exclude_extn(struct hostapd_config *conf,
+					    const char *pos,
+					    char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val == 0 || val == 1) {
+		conf->acs_exclude_dfs = val;
+		return 0;
+	}
+
+	wpa_printf(MSG_ERROR, "%s: Invalid value", __func__);
+	return -1;
+}
+
+static int hostapd_acs_get_dfs_exclude_extn(struct hostapd_config *conf,
+					    const char *pos,
+					    char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS dfs_exclude: %d\n",
+			      conf->acs_exclude_dfs);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_acs_set_dwelltime_extn(struct hostapd_config_extn *conf_extn,
+					  const char *pos,
+					  char *reply, size_t reply_size)
+{
+	u16 acs_dwell = atoi(pos);
+
+	if (acs_dwell <= conf_extn->qacs_conf.max_dwell &&
+	    acs_dwell >= conf_extn->qacs_conf.min_dwell) {
+		conf_extn->qacs_conf.dwelltime = acs_dwell;
+		return 0;
+	}
+
+	wpa_printf(MSG_ERROR, "Dwell time must be between %d milliseconds and %d milliseconds",
+		   conf_extn->qacs_conf.min_dwell,
+		   conf_extn->qacs_conf.max_dwell);
+	return -1;
+}
+
+static int hostapd_acs_get_dwell_extn(struct hostapd_config_extn *conf_extn,
+				      const char *pos,
+				      char *reply, size_t reply_size)
+{
+
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS min_dwelltime: %d\n"
+			      "ACS max_dwelltime: %d\n"
+			      "ACS dwelltime: %d\n",
+			      conf_extn->qacs_conf.min_dwell,
+			      conf_extn->qacs_conf.max_dwell,
+			      conf_extn->qacs_conf.dwelltime);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_acs_set_dbgtrace_extn(struct hostapd_config_extn *conf_extn,
+					 const char *pos,
+					 char *reply, size_t reply_size)
+{
+	/* Expected format: "<value>"
+	 * Lower 0x00FF bits -> debug level
+	 * Upper 0xFF00 bits -> module bitmap
+	 * Example: "0x0201" means module_bitmap=0x02, dbg_level=0x01
+	 */
+	char *endptr;
+	unsigned long val;
+
+	if (!conf_extn || !pos)
+		return -1;
+
+	/* Parse combined value (hex or decimal) */
+	val = strtoul(pos, &endptr, 0);
+	if (endptr == pos)
+		goto invalid;
+
+	/* Extract fields */
+	conf_extn->qacs_conf.dbg_module_bitmap = (u_int16_t)((val & 0xFF00) >> 8);
+	conf_extn->qacs_conf.dbg_level = (int)(val & 0x00FF);
+
+	return 0;
+
+invalid:
+	wpa_printf(MSG_ERROR, "%s: Invalid value. Usage: acs dbgtrace <value> (0xFF00=module mask, 0x00FF=debug level)", __func__);
+	return -1;
+}
+
+static int hostapd_acs_get_dbgtrace_extn(struct hostapd_config_extn *conf_extn,
+					 const char *pos,
+					 char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS Debug Trace: module_bitmap=0x%04x, debug_level=%d\n",
+			      conf_extn->qacs_conf.dbg_module_bitmap,
+			      conf_extn->qacs_conf.dbg_level);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_acs_set_wradar_extn(struct hostapd_config_extn *conf_extn,
+				       const char *pos,
+				       char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val == 0 || val == 1) {
+		conf_extn->qacs_conf.wradar = val;
+		return 0;
+	}
+
+	wpa_printf(MSG_ERROR, "%s: Invalid value", __func__);
+	return -1;
+}
+
+static int hostapd_acs_get_wradar_extn(struct hostapd_config_extn *conf_extn,
+				       const char *pos,
+				       char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS Weather Radar: %d\n",
+			      conf_extn->qacs_conf.wradar);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_acs_set_txpwr_opt_extn(struct hostapd_config_extn *conf_extn,
+					  const char *pos,
+					  char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val == 1 || val == 2) {
+		conf_extn->qacs_conf.rep_txpower_policy = val;
+		return 0;
+	}
+
+	wpa_printf(MSG_ERROR, "%s: Invalid value", __func__);
+	return -1;
+}
+
+static int hostapd_acs_get_txpwr_opt_extn(struct hostapd_config_extn *conf_extn,
+					  const char *pos,
+					  char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS Tx power policy: %d\n",
+			      conf_extn->qacs_conf.rep_txpower_policy);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_acs_set_6g_only_psc_extn(struct hostapd_config *conf,
+					    const char *pos,
+					    char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val == 0 || val == 1) {
+		conf->acs_exclude_6ghz_non_psc = val;
+		return 0;
+	}
+
+	wpa_printf(MSG_ERROR, "%s: Invalid value", __func__);
+	return -1;
+}
+
+static int hostapd_acs_get_6g_only_psc_extn(struct hostapd_config *conf,
+					    const char *pos,
+					    char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS get_6g_only_psc: %d\n",
+			      conf->acs_exclude_6ghz_non_psc);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
+				char *pos, char *buf,
+				size_t buflen)
+{
+	struct hostapd_config_extn *conf_extn;
+	struct hostapd_config *conf;
+
+	if (!hapd->iface || !hapd->iface->conf)
+		return -1;
+
+	conf = hapd->iface->conf;
+	conf_extn  = &hapd->iface->conf->conf_extn;
+
+	if (os_strncmp(pos, "get_status", 10) == 0) {
+		return hostapd_acs_get_status_extn(hapd->iface, pos,
+						   buf, buflen);
+
+	} else if (os_strncmp(pos, "rank_en ", 8) == 0) {
+		return hostapd_acs_set_rank_en_extn(conf_extn, pos + 8,
+						    buf, buflen);
+
+	} else if (os_strncmp(pos, "get_rank_en", 11) == 0) {
+		return hostapd_acs_get_rank_en_extn(conf_extn, pos,
+						    buf, buflen);
+
+	} else if (os_strncmp(pos, "qacs_enable ", 12) == 0) {
+		return hostapd_acs_set_qacs_enable_extn(conf_extn, pos + 12,
+							buf, buflen);
+
+	} else if (os_strncmp(pos, "get_qacs_enable", 16) == 0) {
+		return hostapd_acs_get_qacs_enable_extn(conf_extn, pos,
+							buf, buflen);
+
+	} else if (os_strncmp(pos, "noscan ", 7) == 0) {
+		return hostapd_acs_set_noscan_extn(conf, pos + 7, buf, buflen);
+
+	} else if (os_strncmp(pos, "get_noscan", 10) == 0) {
+		return hostapd_acs_get_noscan_extn(conf, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "dfs_exclude ", 12) == 0) {
+		return hostapd_acs_set_dfs_exclude_extn(conf, pos + 12,
+							buf, buflen);
+
+	} else if (os_strncmp(pos, "get_dfs_exclude", 15) == 0) {
+		return hostapd_acs_get_dfs_exclude_extn(conf, pos,
+							buf, buflen);
+
+	} else if (os_strncmp(pos, "dwelltime ", 10) == 0) {
+		return hostapd_acs_set_dwelltime_extn(conf_extn, pos + 9,
+						      buf, buflen);
+
+	} else if (os_strncmp(pos, "get_dwell", 9) == 0) {
+		return hostapd_acs_get_dwell_extn(conf_extn, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "dbgtrace ", 9) == 0) {
+		return hostapd_acs_set_dbgtrace_extn(conf_extn, pos + 9,
+						     buf, buflen);
+
+	} else if (os_strncmp(pos, "get_dbgtrace", 12) == 0) {
+		return hostapd_acs_get_dbgtrace_extn(conf_extn, pos,
+						     buf, buflen);
+
+	} else if (os_strncmp(pos, "wradar ", 7) == 0) {
+		return hostapd_acs_set_wradar_extn(conf_extn, pos + 7,
+						   buf, buflen);
+
+	} else if (os_strncmp(pos, "get_wradar", 10) == 0) {
+		return hostapd_acs_get_wradar_extn(conf_extn, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "txpwr_opt ", 10) == 0) {
+		return hostapd_acs_set_txpwr_opt_extn(conf_extn, pos + 10,
+						      buf, buflen);
+
+	} else if (os_strncmp(pos, "get_txpwr_opt", 13) == 0) {
+		return hostapd_acs_get_txpwr_opt_extn(conf_extn, pos,
+						      buf, buflen);
+
+	} else if (os_strncmp(pos, "6g_only_psc ", 12) == 0) {
+		return hostapd_acs_set_6g_only_psc_extn(conf, pos + 12,
+							buf, buflen);
+
+	} else if (os_strncmp(pos, "get_6g_only_psc", 15) == 0) {
+		return hostapd_acs_get_6g_only_psc_extn(conf, pos,
+							buf, buflen);
+
+	} else {
+		return acs_print_usage_extn(buf, buflen);
+	}
+}
+
+void acs_request_scan_add_freqs_extn(struct hostapd_channel_data *chan,
+				    int **freq)
+{
+	if (!(chan->flag & HOSTAPD_CHAN_DISABLED)) {
+		**freq = chan->freq;
+		(*freq)++;
+	}
+}
+
+void acs_modify_scan_params_extn(struct hostapd_iface *iface,
+				 struct wpa_driver_scan_params *params)
+{
+	if (!params)
+		return;
+
+	if (iface->conf->conf_extn.qacs_conf.dwelltime) {
+		params->duration =
+			iface->conf->conf_extn.qacs_conf.dwelltime;
+		params->duration_mandatory = 1;
+	}
+}
