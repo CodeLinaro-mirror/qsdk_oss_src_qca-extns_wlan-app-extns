@@ -226,6 +226,9 @@ struct hostapd_mu_cap_war_sta_entry_extn {
 #endif /* CONFIG_IEEE80211AC */
 
 struct dcs_conf_extn {
+	/* Last configured DCS enable value */
+	u16 enable_bitmap;
+
 	u16 bw_reduction_ctrl;
 
 	/* CSA TBTT value */
