@@ -777,12 +777,17 @@ qacs_find_ideal_chan(struct hostapd_iface *iface)
 	return NULL;
 }
 
+static inline int
+acs_process_hostapd_scan_data(struct hostapd_iface *iface)
+{
+	wpa_printf(MSG_ERROR, "QACS is not supported");
+	return -EOPNOTSUPP;
+}
 #else
 struct hostapd_channel_data *
 qacs_find_ideal_chan(struct hostapd_iface *iface);
+int acs_process_hostapd_scan_data(struct hostapd_iface *iface);
 #endif /*CONFIG_QCN_APP_EXTN */
-
-void acs_process_hostapd_scan_data(struct hostapd_iface *iface);
 
 #define MBSSID_NONTX_OPTIONAL_ELEM_SIZE 128
 #define MBSSID_NONTX_VENDOR_ELEM_SIZE  80
