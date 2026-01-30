@@ -641,6 +641,7 @@ acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
 	return -EOPNOTSUPP;
 }
 
+static inline int
 qca_nl80211_handle_dcs_config_evt_extn(struct i802_bss *bss,
 				       u8 *data, size_t len)
 
@@ -652,6 +653,19 @@ static inline int
 intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 			    struct hostapd_channel_data ***chandef_list,
 			    int *awgn_interference_freqs)
+{
+	return -1;
+}
+
+static inline void
+update_chan_params(struct hostapd_data *hapd, int cf1, int cf2,
+		   enum chan_width chwidth)
+{
+}
+
+static inline int
+hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd, const char *cmd, char *reply,
+			    int reply_size)
 {
 	return -1;
 }
