@@ -42,6 +42,11 @@ struct wpa_supplicant;
 struct wpa_bss;
 struct wpa_connect_work;
 struct csa_settings;
+struct ubus_context;
+struct blob_buf;
+struct uc_value;
+struct uc_vm;
+struct ieee80211_mgmt;
 struct wpa_driver_scan_params;
 struct dl_list;
 
@@ -203,6 +208,7 @@ struct hostapd_config_extn {
 	bool skip_cac;    /* Skip DFS CAC for Repeater AP */
 	int ind_rptr;    /* 1 - Independent Rep; 0 - Dependent */
 	bool qacs_enable;
+	bool uplink_csa;
 	struct qacs_conf_extn qacs_conf;
 	struct chan_params cur_chan_params;
 };
@@ -791,6 +797,39 @@ void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 					  const struct ieee80211_neighbor_ap_info *ap_info,
 					  const u8 *mld_params, u8 link_id);
 void hostapd_csa_bitmap_update_extn(struct hostapd_iface *iface, int freq);
+int hostapd_send_uplink_csa_extn(struct hostapd_iface *iface,
+				 int channel, int freq,
+				 int secondary_channel,
+				 u8 current_vht_oper_chwidth,
+				 u8 oper_centr_freq_seg0_idx,
+				 u8 oper_centr_freq_seg1_idx,
+				 u16 punct_bitmap);
+void hostapd_uplink_cancel_disconnect_timeout_extn(struct hostapd_iface *iface);
+void hostapd_ucode_trigger_bhsta_disconnect_extn(struct hostapd_iface *iface);
+struct ubus_context *ubus_ap_fetch_context_extn(void);
+struct blob_buf *ubus_ap_fetch_bbuf_extn(void);
+struct uc_value *ucode_ap_fetch_iface_reg_extn(void);
+struct uc_vm *ucode_ap_fetch_vm_extn(void);
+bool hostapd_uplink_csa_hdl_extn(struct hostapd_data *hapd,
+				 const u8 *buf, size_t len);
+int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
+				       int channel, int freq,
+				       int secondary_channel,
+				       u8 current_vht_oper_chwidth,
+				       u8 oper_centr_freq_seg0_idx,
+				       u8 oper_centr_freq_seg1_idx,
+				       u16 punct_bitmap);
+int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
+		  int chan_offset, int chan_width, int cf1,
+		  int cf2, u32 state, u16 radar_bitmap);
+
+struct uc_value *uc_wpas_notify_uplink_csa_extn(struct uc_vm *vm, size_t nargs);
+struct uc_value *uc_wpas_iface_reconnect_extn(struct uc_vm *vm, size_t nargs);
+bool hostapd_uplink_csa_hdl(struct hostapd_data *hapd,
+			    const u8 *buf, size_t len);
+int handle_action_extn(struct hostapd_data *hapd,
+		       const struct ieee80211_mgmt *mgmt, size_t len,
+		       unsigned int freq);
 int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 					 bool is_dfs, char *wpa_state,
 					 struct csa_settings *csa);

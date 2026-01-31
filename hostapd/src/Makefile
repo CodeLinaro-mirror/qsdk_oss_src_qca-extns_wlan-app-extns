@@ -10,6 +10,9 @@ OBJS+= \
 	qcn_extns/esp.o \
 	qcn_extns/rnr.o \
 	qcn_extns/macaddr.o \
+	qcn_extns/dfs_extn.o \
+	qcn_extns/ucode_extn.o \
+	qcn_extns/wpa_supplicant_extn.o \
 	qcn_extns/acs_extn.o \
 	qcn_extns/mucapwar.o \
 	qcn_extns/dcs.o
