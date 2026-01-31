@@ -238,6 +238,12 @@ int qca_nl80211_handle_dcs_config_evt_extn(struct i802_bss *bss,
 	if (tb[QCA_WLAN_VENDOR_ATTR_DCS_LINK_ID])
 		dcs_intf_event->link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_DCS_LINK_ID]);
 
+	if (tb[QCA_WLAN_VENDOR_ATTR_DCS_ENABLE])
+		dcs_intf_event->type = nla_get_u16(tb[QCA_WLAN_VENDOR_ATTR_DCS_ENABLE]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_BITMAP])
+		dcs_intf_event->chan_bw_interference_bitmap = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_BITMAP]);
+
 	wpa_supplicant_event(bss->ctx, EVENT_DCS_INTF, &event);
 
 	return 0;

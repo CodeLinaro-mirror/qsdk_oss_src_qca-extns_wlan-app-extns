@@ -117,6 +117,7 @@ struct dcs_intf_event {
 	u32 cf2;
 	u32 chan_bw_interference_bitmap;
 	u8 link_id;
+	u16 type;
 };
 
 struct chan_params {
@@ -876,5 +877,6 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 				int *awgn_interference_freqs);
 void update_chan_params(struct hostapd_data *hapd, int cf1, int cf2,
 			enum chan_width chwidth);
+
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

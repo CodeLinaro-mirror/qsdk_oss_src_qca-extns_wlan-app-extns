@@ -15,6 +15,7 @@
 #include "common/wpa_ctrl.h"
 #include "cmn.h"
 #include "dcs.h"
+#include "common/hw_features_common.h"
 
 static int
 dcs_print_usage_extn(char *reply, int reply_size)
@@ -271,27 +272,47 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
                                 union wpa_event_data *data)
 {
 	enum chan_width ch_width;
-	u32 freq, cf1, cf2, intf_bitmap;
-	struct csa_settings settings = {};
+	u16 type;
+	u32 freq, cf1, cf2, intf_bitmap, bw;
+	struct dcs_intf_event *dcs_intf_event = &data->event_data_extn.dcs_intf_event;
+	struct csa_settings settings ={};
 	int new_chan_width, new_centre_freq, new_freq, ret;
 
 	freq = hapd->iface->freq;
 	cf1 = hapd->iface->conf->conf_extn.cur_chan_params.cf1;
 	cf2 = hapd->iface->conf->conf_extn.cur_chan_params.cf2;
 	ch_width = hapd->iface->conf->conf_extn.cur_chan_params.chan_width;
+	type = dcs_intf_event->type;
 
-	intf_bitmap = DCS_SEG_PRI20;
+	if (type != DCS_OBSS_INTF) {
+		intf_bitmap = DCS_SEG_PRI20;
 
-	ret = find_random_channel(hapd->iface, &new_freq, freq, cf1, cf2, intf_bitmap, ch_width, &new_chan_width, &new_centre_freq);
-	if (ret < 0) {
-		wpa_printf(MSG_ERROR, "finding random channel failed, dropping event");
-		return;
+		ret = find_random_channel(hapd->iface, &new_freq, freq, cf1, cf2, intf_bitmap, ch_width, &new_chan_width, &new_centre_freq);
+		if (ret < 0) {
+			wpa_printf(MSG_ERROR, "finding random channel failed, dropping event");
+			return;
+		}
+
+		settings.freq_params.freq = new_freq;
+	} else {
+		u32 start_freq;
+		intf_bitmap = dcs_intf_event->chan_bw_interference_bitmap;
+		settings.freq_params.freq = freq;
+		new_chan_width = ch_width;
+		new_centre_freq = cf1;
+
+		bw = channel_width_to_int(new_chan_width);
+
+		start_freq = cf1-(bw/2);
+
+		if (!is_punct_bitmap_valid(bw, (freq - start_freq)/20, intf_bitmap)) {
+			wpa_printf(MSG_ERROR, "Puncture Bitmap is invalid, dropping this event!!");
+			return;
+		}
+		settings.freq_params.punct_bitmap = intf_bitmap;
 	}
 
-	settings.freq_params.freq = new_freq;
-	settings.freq_params.punct_bitmap = intf_bitmap;
-
-	wpa_printf(MSG_DEBUG, "input freq=%d, ch_width=%d, cf1=%d cf2=%d intf_bitmap:0x%x", freq, ch_width, cf1, cf2, intf_bitmap);
+	wpa_printf(MSG_DEBUG, "type=%d, input freq=%d, ch_width=%d, cf1=%d cf2=%d intf_bitmap:0x%x", type, freq, ch_width, cf1, cf2, intf_bitmap);
 
 	ret = hostapd_dcs_channel_change(&settings, hapd->iface, new_chan_width, new_centre_freq);
 	return;
