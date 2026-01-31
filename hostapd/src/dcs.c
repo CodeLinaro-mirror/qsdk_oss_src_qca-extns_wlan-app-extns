@@ -33,6 +33,7 @@ dcs_print_usage_extn(char *reply, int reply_size)
 		"  dcs random_chan_bitmap : set random channel bitmask"
 		"  (Bit(0)=CW, Bit(1)=WLAN, Bit(2)=AWGN, Bit(4)=OBSS, 0=Disabled)\n"
 		"  dcs get_enable   : get DCS enable value\n"
+		"  dcs sim              : DCS simulator\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -48,6 +49,15 @@ int hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 		return -1;
 
 	return hapd->driver->dcs_config(hapd->drv_priv, link_id, params);
+}
+
+int hostapd_drv_dcs_sim_trigger(struct hostapd_data *hapd, u8 link_id,
+				struct driver_dcs_sim *params)
+{
+	if (!hapd->driver || !hapd->driver->dcs_sim)
+		return -1;
+
+	return hapd->driver->dcs_sim(hapd->drv_priv, link_id, params);
 }
 
 static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
@@ -377,6 +387,92 @@ static int hostapd_ctrl_iface_get_dcs_enable(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int hostapd_ctrl_iface_dcs_sim(struct hostapd_data *hapd,
+				      const char *cmd, char *reply,
+				      int reply_size)
+{
+	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
+	struct driver_dcs_sim drv_dcs_sim;
+	unsigned long val_ul;
+	unsigned long intf_bitmap_ul;
+	u32 intf_bitmap = 0x0;
+	u16 val;
+	char *end = NULL;
+	char *input = NULL, *token, *saveptr = NULL;
+
+	if (!iface_extn)
+		return -1;
+
+	(void) reply;
+	(void) reply_size;
+
+	while (*cmd == ' ')
+		cmd++;
+	if (*cmd == '\0') {
+		wpa_printf(MSG_ERROR, "DCS_SIM: empty value");
+		return -1;
+	}
+
+	errno = 0;
+	val_ul = strtoul(cmd, &end, 0);
+	if (errno != 0 || end == cmd) {
+		wpa_printf(MSG_ERROR, "DCS_SIM: invalid value '%s'", cmd);
+		return -1;
+	}
+	while (end && *end == ' ')
+		end++;
+	if (val_ul > 0xFFFF) {
+		wpa_printf(MSG_ERROR, "DCS_SIM: value out of range '%s'", cmd);
+		return -1;
+	}
+
+	val = (u16) val_ul;
+	if (val != DCS_CW_INTF && val != DCS_WLAN_INTF && val != DCS_OBSS_INTF) {
+		wpa_printf(MSG_ERROR, "DCS_SIM: invalid value 0x%04x", val);
+		return -1;
+	}
+
+	if (end && *end != '\0') {
+		input = os_strdup(end);
+		if (!input)
+			return -1;
+
+		token = strtok_r(input, " ", &saveptr);
+		while (token) {
+			if (os_strncmp(token, "intf_bitmap=", 12) == 0) {
+				char *bitmap_str = token + 12;
+				char *bitmap_end = NULL;
+
+				errno = 0;
+				intf_bitmap_ul = strtoul(bitmap_str, &bitmap_end, 0);
+				if (errno != 0 || bitmap_end == bitmap_str ||
+				    *bitmap_end != '\0' ||
+				    intf_bitmap_ul > 0xFFFFFFFFUL) {
+					wpa_printf(MSG_ERROR,
+						   "DCS_SIM: invalid intf_bitmap '%s'",
+						   bitmap_str);
+					os_free(input);
+					return -1;
+				}
+				intf_bitmap = (u32) intf_bitmap_ul;
+			} else {
+				intf_bitmap = 0xFFFF;
+			}
+
+			token = strtok_r(NULL, " ", &saveptr);
+		}
+		os_free(input);
+	}
+
+	os_memset(&drv_dcs_sim, 0, sizeof(drv_dcs_sim));
+	drv_dcs_sim.type = val;
+	drv_dcs_sim.intf_bitmap = intf_bitmap;
+	wpa_printf(MSG_DEBUG, "DCS_SIM: val=%u (0x%04x), intf_bitmap=0x%x",
+		   val, val, intf_bitmap);
+
+	return hostapd_drv_dcs_sim_trigger(hapd, hapd->mld_link_id, &drv_dcs_sim);
+}
+
 int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 				const char *cmd, char *reply,
 				int reply_size)
@@ -404,6 +500,9 @@ int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 	} else if (os_strcmp(cmd, "get_enable") == 0) {
 		return hostapd_ctrl_iface_get_dcs_enable(hapd, cmd, reply,
 							 reply_size);
+	} else if (os_strncmp(cmd, "sim ", 4) == 0) {
+		return hostapd_ctrl_iface_dcs_sim(hapd, cmd + 4,
+						  reply, reply_size);
 	} else {
 		return dcs_print_usage_extn(reply, reply_size);
 	}

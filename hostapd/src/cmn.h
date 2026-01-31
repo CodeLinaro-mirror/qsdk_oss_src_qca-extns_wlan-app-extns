@@ -121,6 +121,13 @@ struct driver_dcs_config {
 #define DCS_VALID_COCH_THR          BIT(6)
 #define DCS_VALID_USER_MAX_CU       BIT(7)
 
+#define BASE_6G_FREQ 5950
+
+struct driver_dcs_sim {
+	u16 type;
+	u32 intf_bitmap;
+};
+
 struct  hostapd_sta_add_params_extn {
 	struct ieee80211_240mhz_params_extn params_240mhz;
 };
@@ -474,6 +481,13 @@ hostapd_free_bss_index_extn(struct hostapd_data *hapd)
 inline int wpa_driver_nl80211_dcs_config_extn(void *priv,
 					      u8 link_id,
 					      struct driver_dcs_config *params)
+{
+	return -1;
+}
+
+inline int wpa_driver_nl80211_dcs_sim_extn(void *priv,
+					   u8 link_id,
+					   struct driver_dcs_sim *params)
 {
 	return -1;
 }
@@ -841,6 +855,8 @@ void wpa_driver_nl80211_sta_add_extn(void *priv,
 				     struct hostapd_sta_add_params *params);
 int wpa_driver_nl80211_dcs_config_extn(void *priv, u8 link_id,
 				       struct driver_dcs_config *params);
+int wpa_driver_nl80211_dcs_sim_extn(void *priv, u8 link_id,
+				    struct driver_dcs_sim *params);
 int hostapd_drv_fetch_and_set_vendor_bssid_extn(struct hostapd_data *hapd);
 void hostapd_free_bss_index_extn(struct hostapd_data *hapd);
 bool hostapd_dfs_get_valid_punc_bitmap_extn(int chan_freq,

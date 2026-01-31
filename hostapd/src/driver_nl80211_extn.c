@@ -550,3 +550,51 @@ fail:
 		nlmsg_free(msg);
 	return ret;
 }
+
+int wpa_driver_nl80211_dcs_sim_extn(void *priv, u8 link_id,
+				    struct driver_dcs_sim *params)
+{
+	struct nl_msg *msg;
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nlattr *attr;
+	int ret = 0;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Configure DCS SIM");
+	if (drv->nlmode != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR)) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_DCS_SIM)) {
+		goto error;
+	}
+
+	attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!attr)
+		goto error;
+
+	if ((link_id != NL80211_DRV_LINK_ID_NA &&
+	     nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_DCS_SIM_LINK_ID, link_id)) ||
+	     nla_put_u16(msg, QCA_WLAN_VENDOR_ATTR_DCS_SIM_TYPE,
+			 params->type))
+		goto error;
+
+	if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_DCS_SIM_INTERFERENCE_BITMAP, params->intf_bitmap))
+		goto error;
+
+	nla_nest_end(msg, attr);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+				"nl80211: DCS SIM failed=%d (%s)",
+				ret, strerror(-ret));
+	}
+	return 0;
+error:
+	nlmsg_free(msg);
+	wpa_printf(MSG_DEBUG, "nl80211: Could not configure DCS SIM on link %d", link_id);
+	return -1;
+}
