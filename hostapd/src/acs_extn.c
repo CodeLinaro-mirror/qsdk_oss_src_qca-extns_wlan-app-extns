@@ -148,6 +148,7 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs 6g_only_psc <1|0>    : restrict 6 GHz to PSC channels only\n"
 		"  acs get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n"
 		"  acs invoke <0|1>         : invoke ACS (0=dynamicACS+CSA)|(1=DynamicACS)\n"
+		"  acs show_report          : print last ACS report\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -155,6 +156,148 @@ acs_print_usage_extn(char *reply, int reply_size)
 
 	return ret;
 }
+
+static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
+				   int nchans, struct qacs_data_extn *data_extn,
+				   char *reply, size_t reply_size)
+{
+	int ret;
+	char *pos = reply;
+	char *end = reply + reply_size;
+
+	/* ---- Single header ---- */
+	ret = os_snprintf(pos, end - pos,
+			" Freq(chan)      BSS    NF   Load  Sec   SRP  Grade  Radar    Eff   Power   Rank\n");
+	if (os_snprintf_error(end - pos, ret)) {
+		return (int)(pos - reply);
+	}
+	pos += ret;
+
+	ret = os_snprintf(pos, end - pos,
+			"-------------------------------------------------------------------------------------\n");
+	if (os_snprintf_error(end - pos, ret)) {
+		return (int)(pos - reply);
+	}
+	pos += ret;
+
+	/* ---- Rows ---- */
+	for (int i = 0; i < nchans; i++) {
+		const struct qacs_dbg_info_per_band *r = &report[i];
+
+		/* Skip uninitialized entries */
+		              if (!r->chan_freq)
+		                      continue;
+
+		const int has_plus  = (r->center_freq1 != 0);
+		const int has_minus = (r->center_freq2 != 0);
+
+		if (has_plus || has_minus) {
+
+			if (has_plus) {
+				ret = os_snprintf(pos, end - pos,
+						" %4u(%3u %4u)  %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d\n",
+						r->chan_freq, r->ieee_chan, r->center_freq1,
+						r->chan_nbss, r->noisefloor, r->chan_load,
+						r->sec_chan, r->chan_nbss_srp, r->chan_grade,
+						(unsigned) r->chan_radar_noise,
+						r->chan_efficiency_1, r->power_1, r->rank_1);
+
+				if (os_snprintf_error(end - pos, ret))
+					return (int)(pos - reply);
+				pos += ret;
+			}
+
+			/* Row 2 : center_freq2 → seg1 / HT40− */
+			if (has_minus) {
+				ret = os_snprintf(pos, end - pos,
+						" %4u(%3u %4u)  %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d\n",
+						r->chan_freq, r->ieee_chan, r->center_freq2,
+						r->chan_nbss, r->noisefloor, r->chan_load,
+						r->sec_chan, r->chan_nbss_srp, r->chan_grade,
+						(unsigned) r->chan_radar_noise,
+						r->chan_efficiency, r->power, r->rank);
+
+				if (os_snprintf_error(end - pos, ret))
+					return (int)(pos - reply);
+				pos += ret;
+			}
+
+			continue;
+		}
+
+		else {
+			ret = os_snprintf(pos, end - pos,
+					" %4u(%3u)      %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d\n",
+					r->chan_freq, r->ieee_chan,
+					r->chan_nbss, r->noisefloor, r->chan_load,
+					r->sec_chan, r->chan_nbss_srp, r->chan_grade,
+					(unsigned)r->chan_radar_noise, r->chan_efficiency, r->power, r->rank);
+			if (os_snprintf_error(end - pos, ret))
+				return (int)(pos - reply);
+			pos += ret;
+
+			continue;
+		}
+
+	}
+
+	if(data_extn->is_fallback_chan) {
+		ret = os_snprintf(pos, end - pos,
+				"All channels are rejected. Selecting the first non excluded channel without CW interfernce \n");
+		if (os_snprintf_error(end - pos, ret)) {
+			return (int)(pos - reply);
+		}
+		pos += ret;
+	}
+
+	ret = os_snprintf(pos, end - pos,
+			"Best channel %d selected for Bandwidth %d\n",data_extn->best_chan,data_extn->bw);
+	if (os_snprintf_error(end - pos, ret)) {
+		return (int)(pos - reply);
+	}
+
+	pos += ret;
+
+	return (int)(pos - reply);
+}
+
+static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
+		const char *pos,
+		char *reply, size_t reply_size)
+{
+	int len = 0;
+
+	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+	struct qacs_data_extn *data_extn = ICM_GET_EXTN_DATA_PTR(mode);
+	if (!mode) {
+		wpa_printf(MSG_ERROR,
+				"No current mode selected (interface not initialized?)");
+		return -1;
+	}
+
+	int nchans = mode->num_channels;
+	struct qacs_dbg_info_per_band *acs_report =
+		calloc(nchans, sizeof(*acs_report));
+	if (!acs_report) {
+		wpa_printf(MSG_ERROR, "Memory allocation failed");
+		return -1;
+	}
+
+	/* Call the ICM/ACS API for the currently selected band/mode */
+	int ret = qacs_scan_report(mode, acs_report);
+	if (ret <= 0) {
+		wpa_printf(MSG_ERROR, "No ACS report available");
+		free(acs_report);
+		return -1;
+	}
+
+	/* Print the report to the reply buffer */
+	len = print_acs_report_to_buf(acs_report, nchans, data_extn ,reply, reply_size);
+
+	free(acs_report);
+	return len;
+}
+
 
 static int hostapd_acs_run_extn(struct hostapd_data *hapd, const char *pos,
 				char *reply, size_t reply_size)
@@ -575,6 +718,9 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 
 	} else if (os_strncmp(pos, "invoke ", 7) == 0) {
 		return hostapd_acs_run_extn(hapd, pos + 7, buf, buflen);
+
+	} else if (os_strncmp(pos, "show_report", 11) == 0) {
+		return hostapd_acs_show_report_extn(hapd, pos, buf, buflen);
 
 	} else {
 		return acs_print_usage_extn(buf, buflen);
