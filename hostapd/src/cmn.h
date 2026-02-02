@@ -678,6 +678,31 @@ int hostapd_is_dfs_overlap_extn(struct hostapd_iface *iface,
 				enum chan_width width,
 				int center_freq, u16 punct_bitmap);
 void hostapd_modify_supported_op_class_for_320mhz_extn(int freq, u8 *op_class);
+
+/* static declaration of this function is present in hostapd */
+u16 get_lower_bandwidth_puncture_pattern(u16 prifreq, u16 cur_pat,
+					 u16 cur_cenfreq, u16 cur_bw,
+					 u16 target_bw);
+
+/**
+ * hostapd_handle_5ghz_320mhz_bw_indication_extn - Update BW Indication IE
+ * parameters for non-standard 5 GHz 320 MHz operation
+ * @hapd: hostapd data structure
+ * @chan1: Pointer to CCFS0 (input: 320 MHz CCFS0, output: effective CCFS0)
+ * @chan2: Pointer to CCFS1 (input: 320 MHz CCFS1, output: effective CCFS1)
+ * @punct_bitmap: Pointer to puncture bitmap (input: 320 MHz, output: effective)
+ * @bandwidth: Pointer to bandwidth (output: effective bandwidth in MHz)
+ *
+ * Caller is expected to invoke this only for non-standard 5 GHz 320 MHz
+ * operation with puncturing. The function derives the effective standard
+ * bandwidth (160/80/40/20 MHz) and the corresponding puncture bitmap.
+ *
+ * Returns: 0 on success, -1 on error
+ */
+int hostapd_handle_5ghz_320mhz_bw_indication_extn(struct hostapd_data *hapd,
+						  u8 *chan1, u8 *chan2,
+						  u16 *punct_bitmap,
+						  int *bandwidth);
 bool hostapd_skip_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, u32 type);
 bool hostapd_rnr_6ghz_override_extn(struct hostapd_data *hapd);
 bool hostapd_rnr_colocated_ess_indication_extn(struct hostapd_data *hapd);
