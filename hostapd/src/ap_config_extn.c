@@ -38,8 +38,8 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->qacs_conf.min_dwell = 50;        /* msec */
 	conf_extn->qacs_conf.max_dwell = 250;       /* msec */
 	conf_extn->qacs_conf.dwelltime = 200;   /* msec */
-        conf_extn->qacs_conf.dbg_module_bitmap = 0x0004; /* QACS_MODULE_ID_SELECTOR */
-	conf_extn->qacs_conf.dbg_level = 2; /* QACS_DEBUG_LEVEL_DEFAULT */
+        conf_extn->qacs_conf.dbg_module_bitmap = 0x00; /* bitmap of QACS debug modules id */
+	conf_extn->qacs_conf.dbg_level = 0; /* QACS debug level */
 }
 
 void
@@ -114,12 +114,13 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		 * Upper 0xFF00 bits -> module bitmap
 		 * Example: "0x0201" means module_bitmap=0x02, dbg_level=0x01
 		 */
-		char *endptr = NULL;
+		char *endptr;
 		unsigned long val = strtoul(pos, &endptr, 0);
-		if (endptr == pos) {
+		if (*endptr) {
 			wpa_printf(MSG_ERROR, "%s: Invalid acs_dbgtrace value '%s' (0xFF00=module mask, 0x00FF=debug level)", __func__, pos);
 			return -1;
 		}
+
 		conf_extn->qacs_conf.dbg_module_bitmap = (u_int16_t)((val & 0xFF00) >> 8);
 		conf_extn->qacs_conf.dbg_level = (int)(val & 0x00FF);
 
