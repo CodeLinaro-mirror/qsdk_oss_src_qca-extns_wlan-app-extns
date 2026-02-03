@@ -388,7 +388,7 @@ static int rropinfo_handler(struct nl_msg *msg, void *arg)
 	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
 		  genlmsg_attrlen(gnlh, 0), NULL);
 
-	if (tb[NL80211_ATTR_VENDOR_DATA])
+	if (!tb[NL80211_ATTR_VENDOR_DATA])
 		goto fail;
 
 	struct nlattr *nl_vendor = tb[NL80211_ATTR_VENDOR_DATA];
@@ -468,7 +468,7 @@ int driver_nl80211_vendor_get_chan_rropinfo(void *ctx,
 	int ret = -1;
 	struct nl_msg *msg = NULL;
 	struct i802_bss *bss = ctx;
-	struct wpa_driver_nl80211_data *drv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
 	struct nlattr *params;
 
 	wpa_printf(MSG_DEBUG, "nl80211: driver_nl80211_vendor_get_chan_rropinfo start: radio_idx: %d", radio_idx);
