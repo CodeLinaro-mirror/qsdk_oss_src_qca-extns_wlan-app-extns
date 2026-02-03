@@ -6,20 +6,19 @@
 #include "includes.h"
 #include "common.h"
 #include <sys/un.h>
-#include <libubox/uloop.h>
-#include <libubus.h>
 #include "utils/includes.h"
 #include "utils/includes.h"
+#include "utils/ucode.h"
 #include <ap/hostapd.h>
 #include "ucode_extn.h"
 #include "dfs_extn.h"
 #include "ap/beacon.h"
 #include "ap/ap_drv_ops.h"
-#include <libubox/uloop.h>
 #include "../wpa_supplicant/wpa_supplicant_i.h"
 #include "wpa_supplicant_extn.h"
 #include "cmn.h"
 
+#ifdef UCODE_SUPPORT
 void hostapd_ucode_notify_uplink_csa(struct hostapd_iface *hapd, int event, u8 channel,
 				     int freq, int csa_count, u8 new_ch_width,
 				     u8 ch_seg_0, u8 ch_seg_1,
@@ -244,3 +243,16 @@ uc_value_t *uc_wpas_iface_reconnect_extn(uc_vm_t *vm, size_t nargs)
 	wpas_request_connection(wpa_s);
 	return ucv_boolean_new(1);
 }
+
+#else
+void hostapd_ucode_notify_uplink_csa(struct hostapd_iface *hapd, int event, u8 channel,
+				     int freq, int csa_count, u8 new_ch_width,
+				     u8 ch_seg_0, u8 ch_seg_1,
+				     struct dfs_nol_ie_list *nol_list)
+{
+}
+
+void hostapd_ucode_trigger_bhsta_disconnect(struct hostapd_iface *hapd)
+{
+}
+#endif /* UCODE_SUPPORT */

@@ -5,7 +5,6 @@
 
 #include "includes.h"
 #include "common.h"
-#include <libubus.h>
 #include "config.h"
 #include "../wpa_supplicant/wpa_supplicant_i.h"
 #include "../wpa_supplicant/driver_i.h"
@@ -57,6 +56,42 @@
  * 1 = stop transmitting until the scheduled channel switch (CSA).
  */
 #define UPLINK_CSA_MODE_STOP_TX 1
+
+bool wpas_ap_link_address_extn(struct wpa_supplicant *wpa_s, const u8 *addr)
+{
+	int i;
+
+	if (!wpa_s->valid_links)
+		return false;
+
+	for_each_link(wpa_s->valid_links, i) {
+		if (ether_addr_equal(wpa_s->links[i].bssid, addr))
+			return true;
+	}
+
+	return false;
+}
+
+
+int wpa_drv_send_action_extn(struct wpa_supplicant *wpa_s, unsigned int freq,
+			unsigned int wait, const u8 *dst, const u8 *src,
+			const u8 *bssid, const u8 *data, size_t data_len,
+			int no_cck)
+{
+	if (!wpa_s->driver->send_action)
+		return -1;
+
+	if (data_len > 0 && data[0] != WLAN_ACTION_PUBLIC) {
+		if (wpas_ap_link_address_extn(wpa_s, dst))
+			dst = wpa_s->ap_mld_addr;
+
+		if (wpas_ap_link_address_extn(wpa_s, bssid))
+			bssid = wpa_s->ap_mld_addr;
+	}
+
+	return wpa_s->driver->send_action(wpa_s->drv_priv, freq, wait, dst, src,
+					  bssid, data, data_len, no_cck, -1);
+}
 
 int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 			    u8 cs_count, u8 ch_seg_0, u8 ch_seg_1,
@@ -131,9 +166,9 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 	}
 
 send_action:
-	res = wpa_drv_send_action(wpa_s, wpa_s->assoc_freq, 0, wpa_s->bssid,
-				  wpa_s->own_addr, wpa_s->bssid,
-				  wpabuf_head(buf), wpabuf_len(buf), 0);
+	res = wpa_drv_send_action_extn(wpa_s, wpa_s->assoc_freq, 0, wpa_s->bssid,
+				       wpa_s->own_addr, wpa_s->bssid,
+				       wpabuf_head(buf), wpabuf_len(buf), 0);
 	if (res < 0)
 		wpa_printf(MSG_ERROR,
 			   "Failed to send uplink CSA action frame");
