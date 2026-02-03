@@ -17,7 +17,8 @@
 #include "utils/eloop.h"
 #include "hostapd_external_interface.h"
 
-#define HOSTAPD_IF_ASYNC_SOCKET_PATH "/var/run/hostapd/hostapd_if_eloop.sock"
+#define HOSTAPD_IF_ASYNC_SOCKET_PATH "/var/run/hostapd/hostapd_if_eloop"
+static char hostapd_if_layer_socket_path[100];
 
 /*
  * Server socket (bound, registered with eloop)
@@ -593,7 +594,9 @@ int hostapd_if_eloop_init(void)
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
-	os_strlcpy(addr.sun_path, HOSTAPD_IF_ASYNC_SOCKET_PATH,
+	os_snprintf(hostapd_if_layer_socket_path, sizeof(hostapd_if_layer_socket_path),
+		    "%s_%d.sock", HOSTAPD_IF_ASYNC_SOCKET_PATH, getpid());
+	os_strlcpy(addr.sun_path, hostapd_if_layer_socket_path,
 		sizeof(addr.sun_path));
 
 	/*
@@ -606,9 +609,9 @@ int hostapd_if_eloop_init(void)
 			wpa_printf(MSG_WARNING,
 				   "hostapd_if: Socket path in use, "
 				   "removing stale socket: %s",
-				   HOSTAPD_IF_ASYNC_SOCKET_PATH);
+				   hostapd_if_layer_socket_path);
 
-			unlink(HOSTAPD_IF_ASYNC_SOCKET_PATH);
+			unlink(hostapd_if_layer_socket_path);
 
 			/*
 			 * Retry bind after unlink
@@ -637,7 +640,7 @@ int hostapd_if_eloop_init(void)
 
 	wpa_printf(MSG_DEBUG,
 		   "hostapd_if: Server socket bound to %s (fd=%d)",
-		   HOSTAPD_IF_ASYNC_SOCKET_PATH,
+		   hostapd_if_layer_socket_path,
 		   hostapd_if_eloop_server_sock);
 
 	/*
@@ -656,7 +659,7 @@ int hostapd_if_eloop_init(void)
 			   strerror(errno));
 		eloop_unregister_read_sock(hostapd_if_eloop_server_sock);
 		close(hostapd_if_eloop_server_sock);
-		unlink(HOSTAPD_IF_ASYNC_SOCKET_PATH);
+		unlink(hostapd_if_layer_socket_path);
 		hostapd_if_eloop_server_sock = -1;
 		return -1;
 	}
@@ -672,7 +675,7 @@ int hostapd_if_eloop_init(void)
 		close(hostapd_if_eloop_sock);
 		eloop_unregister_read_sock(hostapd_if_eloop_server_sock);
 		close(hostapd_if_eloop_server_sock);
-		unlink(HOSTAPD_IF_ASYNC_SOCKET_PATH);
+		unlink(hostapd_if_layer_socket_path);
 		hostapd_if_eloop_sock = -1;
 		hostapd_if_eloop_server_sock = -1;
 		return -1;
@@ -708,7 +711,7 @@ void hostapd_if_eloop_deinit(void)
 	if (hostapd_if_eloop_server_sock >= 0) {
 		eloop_unregister_read_sock(hostapd_if_eloop_server_sock);
 		close(hostapd_if_eloop_server_sock);
-		unlink(HOSTAPD_IF_ASYNC_SOCKET_PATH);
+		unlink(hostapd_if_layer_socket_path);
 		hostapd_if_eloop_server_sock = -1;
 	}
 
