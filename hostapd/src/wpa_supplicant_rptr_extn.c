@@ -494,10 +494,25 @@ void wpa_supp_pre_connect_state_handle_extn(struct wpa_supplicant *wpa_s, struct
 	int center_freq1, center_freq2;
 	s8 hw_idx;
 	bool is_dfs = false;
+	char links_buf[1024];
+	char *pos, *end;
+	bool first;
 
 	if (wpa_s && bss) {
 		if (!is_zero_ether_addr(bss->mld_addr)) {
-			/* MLO Pre-connect Handling */
+			/*
+			 * MLO Pre-connect Handling
+			 *
+			 * Send a single PRE-CONNECTING message per MLD, aggregating
+			 * all per-link information in a comma-separated list. Each
+			 * link contributes one tuple of:
+			 *   hw_idx,freq,c_freq1,c_freq2,width,punc_bitmap,is_dfs
+			 */
+			pos = links_buf;
+			end = links_buf + sizeof(links_buf) - 1;
+			first = true;
+
+			links_buf[0] = '\0';
 			for_each_link(bss->valid_links, i) {
 				ieee80211_freq_to_channel_ext(bss->mld_links[i].freq,
 							      0, 1, &op_class, &channel);
@@ -515,18 +530,39 @@ void wpa_supp_pre_connect_state_handle_extn(struct wpa_supplicant *wpa_s, struct
 					   bss->mld_links[i].freq, center_freq1, center_freq2,
 					   bss->mld_links[i].width, bss->mld_links[i].punc_bitmap, is_dfs);
 
-				os_snprintf((char *)msg, sizeof(msg),
-					"%s hw_idx = %d ifname = %s"
-					"freq = %d c_freq1 = %d c_freq2 = %d width = %d punc_bitmap = %d"
-					"is_dfs = %d", WPA_EVENT_PRE_CONNECTING, hw_idx, wpa_s->ifname,
-					bss->mld_links[i].freq, center_freq1, center_freq2,
-					bss->mld_links[i].width, bss->mld_links[i].punc_bitmap, is_dfs);
+				if (!first) {
+					if (pos + 1 >= end)
+						break;
+					*pos++ = ';';
+				}
+				first = false;
 
-				wpa_msg_ctrl(wpa_s, MSG_INFO, "%s", (char *)msg);
+				/* Count one pre-connect operation per MLD */
 				wpa_s->pre_connect_cnt++;
+
+				int n = os_snprintf(pos, end - pos,
+						"%d,%d,%d,%d,%d,%d,%d",
+						hw_idx,
+						bss->mld_links[i].freq,
+						center_freq1,
+						center_freq2,
+						bss->mld_links[i].width,
+						bss->mld_links[i].punc_bitmap,
+						is_dfs);
+				if (os_snprintf_error(end - pos, n))
+					break;
+				pos += n;
+			}
+
+			if (!first) {
+				os_snprintf((char *)msg, sizeof(msg),
+					"%s ifname = %s links = %s",
+					WPA_EVENT_PRE_CONNECTING, wpa_s->ifname,
+					links_buf);
+				wpa_msg_ctrl(wpa_s, MSG_INFO, "%s", (char *)msg);
 			}
 		} else {
-			/* Legacy Pre-connect Handling */
+			/* Legacy Pre-connect Handling (single-link "links" entry) */
 			ieee80211_freq_to_channel_ext(bss->freq, 0, 1,
 						      &op_class, &channel);
 			center_freq1 = ieee80211_chan_to_freq(NULL, op_class,
@@ -542,13 +578,20 @@ void wpa_supp_pre_connect_state_handle_extn(struct wpa_supplicant *wpa_s, struct
 				   bss->freq, center_freq1, center_freq2, bss->max_cw,
 				   bss->punc_bitmap, is_dfs);
 
-			os_snprintf((char *)msg, sizeof(msg),
-				"%s hw_idx = %d ifname = %s"
-				"freq = %d c_freq1 = %d c_freq2 = %d width = %d punc_bitmap = %d"
-				"is_dfs = %d", WPA_EVENT_PRE_CONNECTING, hw_idx,
-				wpa_s->ifname, bss->freq, center_freq1, center_freq2,
-				bss->max_cw, bss->punc_bitmap, is_dfs);
+			os_snprintf(links_buf, sizeof(links_buf),
+				    "%d,%d,%d,%d,%d,%d,%d",
+				    hw_idx,
+				    bss->freq,
+				    center_freq1,
+				    center_freq2,
+				    bss->max_cw,
+				    bss->punc_bitmap,
+				    is_dfs);
 
+			os_snprintf((char *)msg, sizeof(msg),
+				"%s ifname = %s links = %s",
+				WPA_EVENT_PRE_CONNECTING, wpa_s->ifname,
+				links_buf);
 			wpa_msg_ctrl(wpa_s, MSG_INFO, "%s", (char *)msg);
 			wpa_s->pre_connect_cnt++;
 		}
