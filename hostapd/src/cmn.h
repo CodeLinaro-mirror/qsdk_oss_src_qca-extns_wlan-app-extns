@@ -196,6 +196,10 @@ struct hostapd_mu_cap_war_sta_entry_extn {
 
 #endif /* CONFIG_IEEE80211AC */
 
+struct dcs_conf_extn {
+	u16 bw_reduction_ctrl;
+};
+
 struct hostapd_config_extn {
 	/* Add Per-radio configuration for extn here */
 
@@ -212,6 +216,7 @@ struct hostapd_config_extn {
 	bool uplink_csa;
 	struct qacs_conf_extn qacs_conf;
 	struct chan_params cur_chan_params;
+	struct dcs_conf_extn dcs_conf;
 };
 
 struct hostapd_bss_config_extn {
@@ -246,6 +251,13 @@ struct hostapd_hw_modes_extn {
 #ifdef CONFIG_QCN_APP_EXTN
 	struct qacs_data_extn qacs_extn;
 #endif
+};
+
+enum hostapd_dcs_intf_type {
+	DCS_CW_INTF     = 0x0001,
+	DCS_WLAN_INTF   = 0x0002,
+	DCS_AWGN_INTF   = 0x0004,
+	DCS_OBSS_INTF   = 0x0010,
 };
 
 int get_centre_freq_6g(int chan_idx, int chan_width, int *centre_freq);
@@ -676,6 +688,12 @@ hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd, const char *cmd, char *re
 {
 	return -1;
 }
+
+static bool
+dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf, u16 dcs_intf_type)
+{
+	return false;
+}
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -916,6 +934,6 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 				int *awgn_interference_freqs);
 void update_chan_params(struct hostapd_data *hapd, int cf1, int cf2,
 			enum chan_width chwidth);
-
+bool dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf, u16 dcs_intf_type);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

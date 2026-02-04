@@ -30,12 +30,6 @@ enum hostapd_dcs_chan_seg {
        DCS_SEG_SEC160      = 0xFF00,
 };
 
-enum hostapd_dcs_intf_type {
-       DCS_CW_INTF     = 0x0001,
-       DCS_WLAN_INTF   = 0x0002,
-       DCS_OBSS_INTF   = 0x0010,
-};
-
 enum dcs_cmd_type {
 	GET_DCS_CONFIG,
 	SET_DCS_CONFIG,

@@ -26,6 +26,7 @@ dcs_print_usage_extn(char *reply, int reply_size)
 		reply, reply_size,
 		"dcs extn commands:\n"
 		"  dcs enable           : set DCS configuration\n"
+		"  dcs bw_reduction_ctrl : DCS bw reduction control\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -86,6 +87,51 @@ static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
 	return hostapd_drv_dcs_config(hapd, hapd->mld_link_id, &drv_dcs_conf);
 }
 
+static int hostapd_ctrl_iface_set_dcs_bw_reduction_ctrl(struct hostapd_data *hapd,
+							const char *cmd, char *reply,
+							int reply_size)
+{
+	struct hostapd_config_extn *config_extn = &hapd->iconf->conf_extn;
+	unsigned long val_ul;
+	u16 val;
+	char *end = NULL;
+
+	while (*cmd == ' ')
+		cmd++;
+	if (*cmd == '\0') {
+		wpa_printf(MSG_ERROR, "DCS_BW_REDUCTION: empty value");
+		return -1;
+	}
+
+	errno = 0;
+	val_ul = strtoul(cmd, &end, 0);
+	if (errno != 0 || end == cmd) {
+		wpa_printf(MSG_ERROR,
+			   "DCS_BW_REDUCTION: invalid value '%s'", cmd);
+		return -1;
+	}
+	while (end && *end == ' ')
+		end++;
+	if (end && *end != '\0') {
+		wpa_printf(MSG_ERROR,
+			   "DCS_BW_REDUCTION: trailing characters in value '%s'",
+			   cmd);
+		return -1;
+	}
+	if (val_ul > 0xFFFF) {
+		wpa_printf(MSG_ERROR,
+			   "DCS_BW_REDUCTION: value out of range '%s'", cmd);
+		return -1;
+	}
+
+	val = (u16) val_ul;
+	wpa_printf(MSG_DEBUG,
+		   "DCS_BW_REDUCTION: bw_reduction_ctrl=%u (0x%04x)", val, val);
+	config_extn->dcs_conf.bw_reduction_ctrl = val;
+
+	return 0;
+}
+
 int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 				const char *cmd, char *reply,
 				int reply_size)
@@ -93,6 +139,10 @@ int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 	if (os_strncmp(cmd, "enable ", 7) == 0) {
 		return hostapd_ctrl_iface_dcs_config(hapd, cmd + 7,
 						     reply, reply_size);
+	} else if (os_strncmp(cmd, "bw_reduction_ctrl ", 18) == 0) {
+		return hostapd_ctrl_iface_set_dcs_bw_reduction_ctrl(hapd,
+								    cmd + 18,
+								    reply, reply_size);
 	} else {
 		return dcs_print_usage_extn(reply, reply_size);
 	}
@@ -323,4 +373,24 @@ void update_chan_params(struct hostapd_data *hapd, int cf1, int cf2, enum chan_w
 	hapd->iface->conf->conf_extn.cur_chan_params.cf1 = cf1;
         hapd->iface->conf->conf_extn.cur_chan_params.cf2 = cf2;
         hapd->iface->conf->conf_extn.cur_chan_params.chan_width = chwidth;
+}
+
+bool dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf,
+				   u16 dcs_intf_type)
+{
+	struct hostapd_config_extn *conf_extn;
+
+	if (!conf)
+		return true;
+
+	conf_extn = &conf->conf_extn;
+
+	wpa_printf(MSG_DEBUG, "bw_reduction_ctrl=%u (0x%04x)",
+		   conf_extn->dcs_conf.bw_reduction_ctrl,
+		   conf_extn->dcs_conf.bw_reduction_ctrl);
+
+	if (conf_extn->dcs_conf.bw_reduction_ctrl & DCS_AWGN_INTF)
+		return true;
+
+	return false;
 }
