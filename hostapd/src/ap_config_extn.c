@@ -16,6 +16,7 @@
 #include "common/ieee802_11_defs.h"
 #include "ap/ap_config.h"
 #include "cmn.h"
+#include "ap/ieee802_11.h"
 #include "dcs.h"
 
 void
@@ -64,9 +65,9 @@ hostapd_config_defaults_bss_extn(struct hostapd_bss_config *bss)
 
 	/* Configure bss defaults for extensions */
 	bss_extn->nontx_optional_elem_size =
-		MBSSID_NONTX_OPTIONAL_ELEM_SIZE;
+		MBSSID_NON_TX_DEF_OPTIONAL_ELEM_SIZE;
 	bss_extn->nontx_vendor_elem_size =
-		MBSSID_NONTX_VENDOR_ELEM_SIZE;
+		MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE;
 }
 
 int
