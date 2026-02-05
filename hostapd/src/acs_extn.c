@@ -201,7 +201,7 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 						r->chan_nbss, r->noisefloor, r->chan_load,
 						r->sec_chan, r->chan_nbss_srp, r->chan_grade,
 						(unsigned) r->chan_radar_noise,
-						r->chan_efficiency_1, r->power_1, r->rank_1);
+						r->chan_efficiency_1, r->txpower, r->rank_1);
 
 				if (os_snprintf_error(end - pos, ret))
 					return (int)(pos - reply);
@@ -216,7 +216,7 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 						r->chan_nbss, r->noisefloor, r->chan_load,
 						r->sec_chan, r->chan_nbss_srp, r->chan_grade,
 						(unsigned) r->chan_radar_noise,
-						r->chan_efficiency, r->power, r->rank);
+						r->chan_efficiency, r->txpower, r->rank);
 
 				if (os_snprintf_error(end - pos, ret))
 					return (int)(pos - reply);
@@ -232,7 +232,7 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 					r->chan_freq, r->ieee_chan,
 					r->chan_nbss, r->noisefloor, r->chan_load,
 					r->sec_chan, r->chan_nbss_srp, r->chan_grade,
-					(unsigned)r->chan_radar_noise, r->chan_efficiency, r->power, r->rank);
+					(unsigned)r->chan_radar_noise, r->chan_efficiency, r->txpower, r->rank);
 			if (os_snprintf_error(end - pos, ret))
 				return (int)(pos - reply);
 			pos += ret;
@@ -244,7 +244,15 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 
 	if(data_extn->is_fallback_chan) {
 		ret = os_snprintf(pos, end - pos,
-				"All channels are rejected. Selecting the first non excluded channel without CW interfernce \n");
+				"ACS_SUCCESS: Current channel is selected Random channel algorithm\n");
+		if (os_snprintf_error(end - pos, ret)) {
+			return (int)(pos - reply);
+		}
+		pos += ret;
+	}
+	else {
+		ret = os_snprintf(pos, end - pos,
+				"ACS_SUCCESS: Current channel is selected by ACS algorithm\n");
 		if (os_snprintf_error(end - pos, ret)) {
 			return (int)(pos - reply);
 		}
