@@ -52,7 +52,7 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 		"get_dbgtrace         : get debug/trace mask\n" \
 		"wradar <0|1>         : enable/disable excluding weather radar channels\n" \
 		"get_wradar           : get weather radar handling state\n" \
-		"txpwr_opt <1|2>      : set the tx pwr optimization state(1 = optimize throughput, 2 = optimize range)\n" \
+		"txpwr_opt <0|1|2>    : set the tx pwr optimization state(0 = disable, 1 = optimize throughput, 2 = optimize range)\n" \
 		"get_txpwr_opt        : get tx power optimization state\n" \
 		"6g_only_psc <1|0>    : restrict 6 GHz to PSC channels only\n" \
 		"get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n" \
