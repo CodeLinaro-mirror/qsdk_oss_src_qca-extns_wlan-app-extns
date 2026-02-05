@@ -157,6 +157,7 @@ acs_print_usage_extn(char *reply, int reply_size)
 	return ret;
 }
 
+#ifdef CONFIG_QCN_APP_EXTN
 static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 				   int nchans, struct qacs_data_extn *data_extn,
 				   char *reply, size_t reply_size)
@@ -297,7 +298,14 @@ static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
 	free(acs_report);
 	return len;
 }
-
+#else
+static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
+		const char *pos,
+		char *reply, size_t reply_size)
+{
+	return -1;
+}
+#endif
 
 static int hostapd_acs_run_extn(struct hostapd_data *hapd, const char *pos,
 				char *reply, size_t reply_size)
