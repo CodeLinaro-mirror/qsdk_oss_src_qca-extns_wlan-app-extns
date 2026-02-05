@@ -33,7 +33,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	/*configure qacs_default here*/
 	conf_extn->qacs_enable = 0;                 /* QACS disabled */
 	conf_extn->qacs_conf.wradar = 1;            /* wradar reject enabled */
-	conf_extn->qacs_conf.rep_txpower_policy = 1;/* Option pwr Tput */
+	conf_extn->qacs_conf.rep_txpower_policy = 0;/* Option pwr disabled */
 	conf_extn->qacs_conf.rank_en = 1;           /* rank enabled */
 	conf_extn->qacs_conf.min_dwell = 50;        /* msec */
 	conf_extn->qacs_conf.max_dwell = 250;       /* msec */
@@ -103,7 +103,7 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "acs_txpwr_opt") == 0) {
 		int val = atoi(pos);
 		if (val != 1 && val != 2)
-			val = 1;
+			val = 0;
 		conf_extn->qacs_conf.rep_txpower_policy = val;
 	} else if (os_strcmp(buf, "acs_rank_en") == 0) {
 		conf_extn->qacs_conf.rank_en = atoi(pos);

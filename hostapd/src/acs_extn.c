@@ -143,7 +143,7 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs get_dbgtrace         : get debug mask\n"
 		"  acs wradar <0|1>         : enable/disable excluding weather radar channels\n"
 		"  acs get_wradar           : get weather radar handling state\n"
-		"  acs txpwr_opt <1|2>      : set the tx pwr optimization state(1 = optimize throughput, 2 = optimize range)\n"
+		"  acs txpwr_opt <0|1|2>    : set the tx pwr optimization state(0 = disable, 1 = optimize throughput, 2 = optimize range)\n"
 		"  acs get_txpwr_opt        : get tx power optimization state\n"
 		"  acs 6g_only_psc <1|0>    : restrict 6 GHz to PSC channels only\n"
 		"  acs get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n"
@@ -436,12 +436,12 @@ static int hostapd_acs_set_txpwr_opt_extn(struct hostapd_config_extn *conf_extn,
 {
 	int val = atoi(pos);
 
-	if (val == 1 || val == 2) {
+	if (val == 0 || val == 1 || val == 2) {
 		conf_extn->qacs_conf.rep_txpower_policy = val;
 		return 0;
 	}
 
-	wpa_printf(MSG_ERROR, "%s: Invalid value", __func__);
+	wpa_printf(MSG_ERROR, "%s: Invalid value: %d", __func__, val);
 	return -1;
 }
 
