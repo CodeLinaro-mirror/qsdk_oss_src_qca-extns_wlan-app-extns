@@ -716,6 +716,13 @@ reduced_chan_width(int *new_chan_width, int chan_width, int freq,
 		   u32 chan_bw_interference_bitmap)
 {
 }
+
+static inline int
+hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
+			      char *buf, size_t buflen)
+{
+	return -1;
+}
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -965,5 +972,7 @@ bool awgn_bw_range_available(struct hostapd_hw_modes *mode,
 void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
 			struct hostapd_hw_modes *mode,
 			u32 chan_bw_interference_bitmap);
+int hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
+				  char *buf, size_t buflen);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
