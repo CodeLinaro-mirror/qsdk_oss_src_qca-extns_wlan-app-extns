@@ -49,6 +49,7 @@ struct uc_vm;
 struct ieee80211_mgmt;
 struct wpa_driver_scan_params;
 struct dl_list;
+struct hostapd_hw_modes;
 
 struct ieee80211_240mhz_vendor_oper_extn {
 	u8 ccfs1;
@@ -694,6 +695,27 @@ dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf, u16 dcs_intf_type)
 {
 	return false;
 }
+
+static struct hostapd_channel_data *
+get_chan_data_by_freq(struct hostapd_hw_modes *mode, int freq)
+{
+	return NULL;
+}
+
+static inline bool
+awgn_bw_range_available(struct hostapd_hw_modes *mode,
+			struct hostapd_channel_data *primary,
+			int chan_width)
+{
+	return false;
+}
+
+static inline void
+reduced_chan_width(int *new_chan_width, int chan_width, int freq,
+		   struct hostapd_hw_modes *mode,
+		   u32 chan_bw_interference_bitmap)
+{
+}
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -935,5 +957,13 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 void update_chan_params(struct hostapd_data *hapd, int cf1, int cf2,
 			enum chan_width chwidth);
 bool dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf, u16 dcs_intf_type);
+struct hostapd_channel_data *
+get_chan_data_by_freq(struct hostapd_hw_modes *mode, int freq);
+bool awgn_bw_range_available(struct hostapd_hw_modes *mode,
+			     struct hostapd_channel_data *primary,
+			     int chan_width);
+void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
+			struct hostapd_hw_modes *mode,
+			u32 chan_bw_interference_bitmap);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

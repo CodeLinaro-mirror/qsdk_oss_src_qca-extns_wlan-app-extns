@@ -394,3 +394,94 @@ bool dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf,
 
 	return false;
 }
+
+struct hostapd_channel_data *
+get_chan_data_by_freq(struct hostapd_hw_modes *mode, int freq)
+{
+	int i;
+
+	if (!mode)
+		return NULL;
+
+	for (i = 0; i < mode->num_channels; i++) {
+		if (mode->channels[i].freq == freq)
+			return &mode->channels[i];
+	}
+
+	return NULL;
+}
+
+bool awgn_bw_range_available(struct hostapd_hw_modes *mode,
+		struct hostapd_channel_data *primary,
+		int chan_width)
+{
+	int centre_freq, start_freq, end_freq, freq;
+
+	if (!mode || !primary)
+		return false;
+
+	if (chan_width <= CHAN_WIDTH_20)
+		return chan_pri_allowed(primary);
+
+	if (get_centre_freq_6g(primary->chan, chan_width, &centre_freq))
+		return false;
+
+	start_freq = (centre_freq - channel_width_to_int(chan_width) / 2) + 10;
+	end_freq = (centre_freq + channel_width_to_int(chan_width) / 2) - 10;
+
+	for (freq = start_freq; freq <= end_freq; freq += 20) {
+		struct hostapd_channel_data *ch;
+
+		ch = get_chan_data_by_freq(mode, freq);
+		if (!ch || (ch->flag & HOSTAPD_CHAN_DISABLED))
+			return false;
+	}
+
+	return true;
+}
+
+void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
+		struct hostapd_hw_modes *mode,
+		u32 chan_bw_interference_bitmap)
+{
+	struct hostapd_channel_data *chan_data;
+
+	if (!new_chan_width) {
+		wpa_printf(MSG_ERROR, "AWGN: reduced_chan_width: invalid args");
+		return;
+	}
+
+	chan_data = get_chan_data_by_freq(mode, freq);
+	if (!chan_data) {
+		wpa_printf(MSG_ERROR,
+			   "AWGN: reduced_chan_width: no channel found for freq %d",
+			   freq);
+		*new_chan_width = CHAN_WIDTH_20;
+		return;
+	}
+
+	if ((chan_width > CHAN_WIDTH_160) &&
+	    !(chan_bw_interference_bitmap & DCS_SEG_SEC80) &&
+	    !(chan_bw_interference_bitmap & DCS_SEG_SEC40) &&
+	    !(chan_bw_interference_bitmap & DCS_SEG_SEC20)) {
+		*new_chan_width = CHAN_WIDTH_160;
+	} else if ((chan_width > CHAN_WIDTH_80) &&
+		   !(chan_bw_interference_bitmap & DCS_SEG_SEC40) &&
+		   !(chan_bw_interference_bitmap & DCS_SEG_SEC20)) {
+		*new_chan_width = CHAN_WIDTH_80;
+	} else if (chan_width > CHAN_WIDTH_40 &&
+		   !(chan_bw_interference_bitmap & DCS_SEG_SEC20)) {
+		*new_chan_width = CHAN_WIDTH_40;
+	} else {
+		*new_chan_width = CHAN_WIDTH_20;
+	}
+
+	while (*new_chan_width > CHAN_WIDTH_20 &&
+	       !awgn_bw_range_available(mode, chan_data, *new_chan_width))
+		*new_chan_width = get_next_max_width(*new_chan_width);
+
+	wpa_printf(MSG_DEBUG,
+		   "AWGN: reduced bandwidth %d -> %d on channel %d (%d) bitmap=0x%x",
+		   chan_width, *new_chan_width, chan_data->freq, chan_data->chan,
+		   chan_bw_interference_bitmap);
+}
