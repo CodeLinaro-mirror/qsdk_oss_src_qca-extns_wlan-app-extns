@@ -334,29 +334,42 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 	len = end - pos;
 
 	wb_cs_ie = get_ie(pos, len, WLAN_EID_WIDE_BW_CHSWITCH);
-	if (!wb_cs_ie || wb_cs_ie[1] < IEEE80211_WB_CSA_IE_MIN_LEN)
-		return;
+	if (wb_cs_ie && wb_cs_ie[1] >= IEEE80211_WB_CSA_IE_MIN_LEN) {
+		ch_width = wb_cs_ie[IEEE80211_WB_CSA_IE_CH_WIDTH_OFFSET];
+		cf0 = wb_cs_ie[IEEE80211_WB_CSA_IE_CF0_OFFSET];
+		cf1 = wb_cs_ie[IEEE80211_WB_CSA_IE_CF1_OFFSET];
+		wpa_printf(MSG_DEBUG, "uplink_csa: wide band ie: cf0 %u cf1 %u chwidth %d",
+			   cf0, cf1, ch_width);
+	} else {
+		wpa_printf(MSG_DEBUG, "uplink_csa: no wide band ie, assuming 20MHz");
+		ch_width = 0;
+		cf0 = new_chan;
+		cf1 = 0;
+	}
 
-	ch_width = wb_cs_ie[IEEE80211_WB_CSA_IE_CH_WIDTH_OFFSET];
-	cf0 = wb_cs_ie[IEEE80211_WB_CSA_IE_CF0_OFFSET];
-	cf1 = wb_cs_ie[IEEE80211_WB_CSA_IE_CF1_OFFSET];
-
-	wpa_printf(MSG_DEBUG, "uplink_csa: wide band ie: cf0 %u cf1 %u chwidth %d",
-		   cf0, cf1, ch_width);
 	freq = hostapd_hw_get_freq(hapd, new_chan);
 
-	if (cf0 < new_chan)
-		sec_chan = -1;
-	else if (cf0 > new_chan)
-		sec_chan = 1;
-	else
+	if (ch_width == 0) {
 		sec_chan = 0;
+	} else {
+		if (cf0 < new_chan)
+			sec_chan = -1;
+		else if (cf0 > new_chan)
+			sec_chan = 1;
+		else
+			sec_chan = 0;
+	}
 
 	wpa_printf(MSG_DEBUG, "uplink_csa: chanel change prams: cf0 %u cf1 %u sec %u chwidth %u",
 		   cf0, cf1, sec_chan, ch_width);
 
-	pos = wb_cs_ie + IEEE80211_WB_CSA_IE_TOTAL_LEN;
-	len = end - pos;
+	if (!wb_cs_ie) {
+		pos = cs_ie + IEEE80211_CSA_IE_TOTAL_LEN;
+		len = end - pos;
+	} else {
+		pos = wb_cs_ie + IEEE80211_WB_CSA_IE_TOTAL_LEN;
+		len = end - pos;
+	}
 
 	while (len >= 2) {
 		u8 ie_id = *pos;
