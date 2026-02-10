@@ -847,6 +847,11 @@ hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 {
 	return -1;
 }
+
+static inline void
+dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap)
+{
+}
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -1113,5 +1118,6 @@ int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd,
 				enum dynamic_acs_action_extn acs_action);
 int hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 			   struct driver_dcs_config *params);
+void dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

@@ -1029,3 +1029,18 @@ int get_centre_freq(struct hostapd_channel_data *first_chan,
 	return get_centre_freq_from_first_freq(first_chan->freq, chan_width,
 					       centre_freq);
 }
+
+void dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap)
+{
+	struct driver_dcs_config drv_dcs_conf;
+
+	os_memset(&drv_dcs_conf, 0, sizeof(drv_dcs_conf));
+	drv_dcs_conf.dcs_enable = enable_bitmap;
+	drv_dcs_conf.cmd_type = SET_DCS_CONFIG;
+
+	wpa_printf(MSG_DEBUG, "Setting DCS enable value: 0x%04x",
+		   drv_dcs_conf.dcs_enable);
+
+	if (hostapd_drv_dcs_config(hapd, hapd->mld_link_id, &drv_dcs_conf) < 0)
+		wpa_printf(MSG_INFO, "DCS enable configuration failed");
+}
