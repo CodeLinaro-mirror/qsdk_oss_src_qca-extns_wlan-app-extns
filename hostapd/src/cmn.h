@@ -107,6 +107,11 @@ struct driver_dcs_config {
 	u8 user_max_cu;
 };
 
+enum dcs_cmd_type {
+	GET_DCS_CONFIG,
+	SET_DCS_CONFIG,
+};
+
 #define DCS_CSA_TBTT_DEFAULT        5
 #define DCS_CSA_TBTT_MAX            30
 #define DCS_CSA_TBTT_MIN            1
@@ -835,6 +840,13 @@ hostapd_trigger_dynamic_acs(struct hostapd_data *hapd,
 {
 	return -1;
 }
+
+static inline int
+hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
+		       struct driver_dcs_config *params)
+{
+	return -1;
+}
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -1099,5 +1111,7 @@ bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num);
 int chan_pri_allowed(const struct hostapd_channel_data *chan);
 int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd,
 				enum dynamic_acs_action_extn acs_action);
+int hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
+			   struct driver_dcs_config *params);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

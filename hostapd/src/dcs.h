@@ -34,11 +34,6 @@ enum hostapd_dcs_chan_seg {
        DCS_SEG_SEC160      = 0xFF00,
 };
 
-enum dcs_cmd_type {
-	GET_DCS_CONFIG,
-	SET_DCS_CONFIG,
-};
-
 #define DCS_PHYERR_PENALTY		500
 #define DCS_PHYERR_THRESHOLD		300
 #define DCS_RADARERR_THRESHOLD		1000
