@@ -35,6 +35,15 @@ enum dcs_cmd_type {
 	SET_DCS_CONFIG,
 };
 
+#define DCS_PHYERR_PENALTY		500
+#define DCS_PHYERR_THRESHOLD		300
+#define DCS_RADARERR_THRESHOLD		1000
+#define DCS_COCH_INTR_THRESHOLD	30
+#define DCS_TXERR_THRESHOLD		30
+#define DCS_USER_MAX_CU		50
+#define DCS_INTR_DETECTION_THR		6
+#define DCS_SAMPLE_SIZE		50
+
 int hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 			   struct driver_dcs_config *params);
 void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,

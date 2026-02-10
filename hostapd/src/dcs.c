@@ -28,6 +28,8 @@ dcs_print_usage_extn(char *reply, int reply_size)
 		"  dcs enable           : set DCS configuration\n"
 		"  dcs bw_reduction_ctrl : DCS bw reduction control\n"
 		"  dcs csa_tbtt		:  set DCS CSA TBTT value\n"
+		"  dcs set_wlan_intr_params: set DCS WLAN INTR PARAMS\n"
+		"  dcs get_wlan_intr_params: get DCS WLAN INTR PARAMS\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -50,6 +52,7 @@ static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
 					 int reply_size)
 {
 	struct driver_dcs_config drv_dcs_conf;
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
 	char *end;
 	unsigned long v;
 
@@ -84,6 +87,26 @@ static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
 
 	drv_dcs_conf.dcs_enable = (u16) v;
 	drv_dcs_conf.cmd_type = SET_DCS_CONFIG;
+
+	/* Send current defaults to driver on enable */
+	drv_dcs_conf.valid_mask =
+		DCS_VALID_INTR_DET_THR |
+		DCS_VALID_PHYERR_PENALTY |
+		DCS_VALID_PHYERR_THR |
+		DCS_VALID_RADARERR_THR |
+		DCS_VALID_TXERR_THR |
+		DCS_VALID_SAMPLE_SIZE |
+		DCS_VALID_COCH_THR |
+		DCS_VALID_USER_MAX_CU;
+
+	drv_dcs_conf.intr_detection_threshold = conf_extn->dcs_conf.intr_detection_threshold;
+	drv_dcs_conf.phyerr_penalty = conf_extn->dcs_conf.phyerr_penalty;
+	drv_dcs_conf.phyerr_threshold = conf_extn->dcs_conf.phyerr_threshold;
+	drv_dcs_conf.radarerr_threshold = conf_extn->dcs_conf.radarerr_threshold;
+	drv_dcs_conf.txerr_threshold = conf_extn->dcs_conf.txerr_threshold;
+	drv_dcs_conf.sample_size = conf_extn->dcs_conf.sample_size;
+	drv_dcs_conf.coch_intr_threshold = conf_extn->dcs_conf.coch_intr_threshold;
+	drv_dcs_conf.user_max_cu = conf_extn->dcs_conf.user_max_cu;
 
 	return hostapd_drv_dcs_config(hapd, hapd->mld_link_id, &drv_dcs_conf);
 }
@@ -154,6 +177,117 @@ static int hostapd_ctrl_iface_set_dcs_csa_tbtt(struct hostapd_data *hapd,
 	return 0;
 }
 
+static int hostapd_ctrl_iface_set_wlan_intr_params(struct hostapd_data *hapd,
+						   const char *cmd, char *reply,
+						   int reply_size)
+{
+	/* Parse space-separated key value pairs */
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	struct driver_dcs_config conf;
+	char *dup, *token, *saveptr;
+	int err = 0;
+
+	os_memset(&conf, 0, sizeof(conf));
+	conf.cmd_type = SET_DCS_CONFIG;
+
+	/* No defaults here; only send user-configured overrides via valid_mask */
+
+	dup = os_strdup(cmd);
+	if (!dup)
+		return -1;
+
+	token = strtok_r(dup, " ", &saveptr);
+	while (token) {
+		const char *key = token;
+		const char *valstr = strtok_r(NULL, " ", &saveptr);
+		long v;
+		char *end = NULL;
+
+		if (!valstr) {
+			err = -1;
+			break;
+		}
+
+		errno = 0;
+		v = strtol(valstr, &end, 10);
+		if (errno || end == valstr) {
+			err = -1;
+			break;
+		}
+
+		if (os_strcmp(key, "phyerr_penalty") == 0) {
+			conf.phyerr_penalty = (u32) v;
+			conf.valid_mask |= DCS_VALID_PHYERR_PENALTY;
+			conf_extn->dcs_conf.phyerr_penalty = conf.phyerr_penalty;
+		} else if (os_strcmp(key, "phyerr_threshold") == 0) {
+			conf.phyerr_threshold = (u32) v;
+			conf.valid_mask |= DCS_VALID_PHYERR_THR;
+			conf_extn->dcs_conf.phyerr_threshold = conf.phyerr_threshold;
+		} else if (os_strcmp(key, "radarerr_threshold") == 0) {
+			conf.radarerr_threshold = (u32) v;
+			conf.valid_mask |= DCS_VALID_RADARERR_THR;
+			conf_extn->dcs_conf.radarerr_threshold = conf.radarerr_threshold;
+		} else if (os_strcmp(key, "coch_intr_threshold") == 0) {
+			conf.coch_intr_threshold = (u8) v;
+			conf.valid_mask |= DCS_VALID_COCH_THR;
+			conf_extn->dcs_conf.coch_intr_threshold = conf.coch_intr_threshold;
+		} else if (os_strcmp(key, "txerr_threshold") == 0) {
+			conf.txerr_threshold = (u32) v;
+			conf.valid_mask |= DCS_VALID_TXERR_THR;
+			conf_extn->dcs_conf.txerr_threshold = conf.txerr_threshold;
+		} else if (os_strcmp(key, "user_max_cu") == 0) {
+			conf.user_max_cu = (u8) v;
+			conf.valid_mask |= DCS_VALID_USER_MAX_CU;
+			conf_extn->dcs_conf.user_max_cu = conf.user_max_cu;
+		} else if (os_strcmp(key,
+			   "intr_detection_threshold") == 0) {
+			conf.intr_detection_threshold = (u32) v;
+			conf.valid_mask |= DCS_VALID_INTR_DET_THR;
+			conf_extn->dcs_conf.intr_detection_threshold = conf.intr_detection_threshold;
+		} else if (os_strcmp(key, "sample_size") == 0) {
+			conf.sample_size = (u32) v;
+			conf.valid_mask |= DCS_VALID_SAMPLE_SIZE;
+			conf_extn->dcs_conf.sample_size = conf.sample_size;
+		} else {
+			wpa_printf(MSG_ERROR, "Unknown DCS param: %s", key);
+			err = -1;
+			break;
+		}
+
+		token = strtok_r(NULL, " ", &saveptr);
+	}
+
+	os_free(dup);
+	if (err)
+		return -1;
+
+	return hostapd_drv_dcs_config(hapd, hapd->mld_link_id, &conf);
+}
+
+static int hostapd_ctrl_iface_get_wlan_intr_params(struct hostapd_data *hapd,
+						   const char *cmd, char *reply,
+						   int reply_size)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	int ret;
+
+	ret = os_snprintf(reply, reply_size,
+			  "phyerr_penalty=%u phyerr_threshold=%u radarerr_threshold=%u coch_intr_threshold=%u\ntxerr_threshold=%u user_max_cu=%u intr_detection_threshold=%u\nsample_size=%u\n",
+			  conf_extn->dcs_conf.phyerr_penalty,
+			  conf_extn->dcs_conf.phyerr_threshold,
+			  conf_extn->dcs_conf.radarerr_threshold,
+			  conf_extn->dcs_conf.coch_intr_threshold,
+			  conf_extn->dcs_conf.txerr_threshold,
+			  conf_extn->dcs_conf.user_max_cu,
+			  conf_extn->dcs_conf.intr_detection_threshold,
+			  conf_extn->dcs_conf.sample_size);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
 int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 				const char *cmd, char *reply,
 				int reply_size)
@@ -168,6 +302,13 @@ int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(cmd, "csa_tbtt ", 9) == 0) {
 		return hostapd_ctrl_iface_set_dcs_csa_tbtt(hapd, cmd + 9,
 							   reply, reply_size);
+	} else if (os_strncmp(cmd, "set_wlan_intr_params ", 21) == 0) {
+		return hostapd_ctrl_iface_set_wlan_intr_params(hapd, cmd + 21,
+							       reply,
+							       reply_size);
+	} else if (os_strcmp(cmd, "get_wlan_intr_params") == 0) {
+		return hostapd_ctrl_iface_get_wlan_intr_params(hapd, cmd, reply,
+							       reply_size);
 	} else {
 		return dcs_print_usage_extn(reply, reply_size);
 	}

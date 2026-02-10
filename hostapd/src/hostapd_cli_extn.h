@@ -19,6 +19,8 @@ int hostapd_cli_cmd_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc, char *argv[
 #endif /* CONFIG_IEEE80211AC */
 
 int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_set_dcs_wlan_intr_params(struct wpa_ctrl *ctrl, int argc,
+					    char *argv[]);
 #ifdef CONFIG_QCN_EXTN
 int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
 		    int min_args, int argc, char *argv[]);
@@ -65,6 +67,7 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 		"enable		: enable DCS configuration\n" \
 		"bw_reduction_ctrl	: <mask> = set DCS bw reduction control\n" \
 		"csa_tbtt	: CSA TBTT value for DCS\n" \
+		"wlan_intr_params	: phyerr_penalty <val> phyerr_threshold <val> radarerr_threshold <val> coch_intr_threshold <val> txerr_threshold <val> user_max_cu <val> intr_detection_threshold <val> sample_size <val> = set DCS WLAN INTR params\n" \
 	},
 #else
 #define HOSTAPD_CLI_CMDS_EXTN

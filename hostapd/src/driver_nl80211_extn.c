@@ -337,7 +337,9 @@ int wpa_driver_nl80211_dcs_config_extn(void *priv, u8 link_id,
 	struct nlattr *attr;
 	int ret = 0;
 
-	wpa_printf(MSG_DEBUG, "nl80211: Configure DCS");
+	wpa_printf(MSG_DEBUG, "nl80211: Configure DCS (cmd_type=%u valid_mask=0x%x)",
+		   params->cmd_type, params->valid_mask);
+
 	if (drv->nlmode != NL80211_IFTYPE_AP)
 		return -EOPNOTSUPP;
 
@@ -359,6 +361,49 @@ int wpa_driver_nl80211_dcs_config_extn(void *priv, u8 link_id,
 			params->dcs_enable)) {
 		wpa_printf(MSG_DEBUG,"nl80211: Failed to configure DCS params");
 		goto error;
+	}
+
+	/* Optional params when SET */
+	if (params->cmd_type == SET_DCS_CONFIG) {
+		if (params->valid_mask & DCS_VALID_INTR_DET_THR)
+			if (nla_put_u32(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_DETECTION_THRESHOLD,
+			    params->intr_detection_threshold))
+				goto error;
+		if (params->valid_mask & DCS_VALID_PHYERR_PENALTY)
+			if (nla_put_u32(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_PHY_ERR_PENALTY,
+			    params->phyerr_penalty))
+				goto error;
+		if (params->valid_mask & DCS_VALID_PHYERR_THR)
+			if (nla_put_u32(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_PHY_ERR_THRESHOLD,
+			    params->phyerr_threshold))
+				goto error;
+		if (params->valid_mask & DCS_VALID_RADARERR_THR)
+			if (nla_put_u32(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_RADAR_ERR_THRESHOLD,
+			    params->radarerr_threshold))
+				goto error;
+		if (params->valid_mask & DCS_VALID_TXERR_THR)
+			if (nla_put_u32(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_TX_ERR_THRESHOLD,
+			    params->txerr_threshold))
+				goto error;
+		if (params->valid_mask & DCS_VALID_SAMPLE_SIZE)
+			if (nla_put_u32(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_DETECTION_WINDOW,
+			    params->sample_size))
+				goto error;
+		if (params->valid_mask & DCS_VALID_COCH_THR)
+			if (nla_put_u8(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_COCHANNEL_INTERFERENCE_THRESHOLD,
+			    params->coch_intr_threshold))
+				goto error;
+		if (params->valid_mask & DCS_VALID_USER_MAX_CU)
+			if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_DCS_MAX_CU,
+			    params->user_max_cu))
+				goto error;
 	}
 	nla_nest_end(msg, attr);
 
