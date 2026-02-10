@@ -685,19 +685,32 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 	u16 type;
 	u32 freq, cf1, cf2, intf_bitmap, bw;
 	struct dcs_intf_event *dcs_intf_event = &data->event_data_extn.dcs_intf_event;
+	struct hostapd_iface *iface = hapd->iface;
 	struct csa_settings settings ={};
 	int new_chan_width, new_centre_freq, new_freq, ret;
+	u8 rand_chan_bitmap;
 
-	freq = hapd->iface->freq;
-	cf1 = hapd->iface->conf->conf_extn.cur_chan_params.cf1;
-	cf2 = hapd->iface->conf->conf_extn.cur_chan_params.cf2;
-	ch_width = hapd->iface->conf->conf_extn.cur_chan_params.chan_width;
+	freq = iface->freq;
+	cf1 = iface->conf->conf_extn.cur_chan_params.cf1;
+	cf2 = iface->conf->conf_extn.cur_chan_params.cf2;
+	ch_width = iface->conf->conf_extn.cur_chan_params.chan_width;
 	type = dcs_intf_event->type;
+
+	rand_chan_bitmap = iface->conf->conf_extn.dcs_conf.dcs_random_chan_bitmap;
+
+	if ((type == DCS_CW_INTF || type == DCS_WLAN_INTF ||
+	     type == DCS_OBSS_INTF) &&
+	    !(rand_chan_bitmap & type)) {
+		hostapd_trigger_dynamic_acs(hapd, CHANNEL_CHANGE_CSA);
+		return;
+	}
 
 	if (type != DCS_OBSS_INTF) {
 		intf_bitmap = DCS_SEG_PRI20;
 
-		ret = find_random_channel(hapd->iface, &new_freq, freq, cf1, cf2, intf_bitmap, ch_width, &new_chan_width, &new_centre_freq);
+		ret = find_random_channel(iface, &new_freq, freq, cf1, cf2,
+					  intf_bitmap, ch_width, &new_chan_width,
+					  &new_centre_freq);
 		if (ret < 0) {
 			wpa_printf(MSG_ERROR, "finding random channel failed, dropping event");
 			return;
