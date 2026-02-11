@@ -32,6 +32,7 @@ dcs_print_usage_extn(char *reply, int reply_size)
 		"  dcs get_wlan_intr_params: get DCS WLAN INTR PARAMS\n"
 		"  dcs random_chan_bitmap : set random channel bitmask"
 		"  (Bit(0)=CW, Bit(1)=WLAN, Bit(2)=AWGN, Bit(4)=OBSS, 0=Disabled)\n"
+		"  dcs get_enable   : get DCS enable value\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -53,8 +54,8 @@ static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
 					 const char *cmd, char *reply,
 					 int reply_size)
 {
-	struct driver_dcs_config drv_dcs_conf;
 	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	struct driver_dcs_config drv_dcs_conf;
 	char *end;
 	unsigned long v;
 
@@ -89,6 +90,7 @@ static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
 
 	drv_dcs_conf.dcs_enable = (u16) v;
 	drv_dcs_conf.cmd_type = SET_DCS_CONFIG;
+	conf_extn->dcs_conf.enable_bitmap = (u16) v;
 
 	/* Send current defaults to driver on enable */
 	drv_dcs_conf.valid_mask =
@@ -359,6 +361,22 @@ static int hostapd_ctrl_iface_set_random_chan_en(struct hostapd_data *hapd,
 	return 0;
 }
 
+static int hostapd_ctrl_iface_get_dcs_enable(struct hostapd_data *hapd,
+					     const char *cmd, char *reply,
+					     int reply_size)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	int ret;
+
+	ret = os_snprintf(reply, reply_size, "dcs_enable=%u\n",
+			  conf_extn->dcs_conf.enable_bitmap);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
 int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 				const char *cmd, char *reply,
 				int reply_size)
@@ -383,6 +401,9 @@ int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(cmd, "random_chan_bitmap ", 19) == 0) {
 		return hostapd_ctrl_iface_set_random_chan_en(hapd, cmd + 19,
 							     reply, reply_size);
+	} else if (os_strcmp(cmd, "get_enable") == 0) {
+		return hostapd_ctrl_iface_get_dcs_enable(hapd, cmd, reply,
+							 reply_size);
 	} else {
 		return dcs_print_usage_extn(reply, reply_size);
 	}
