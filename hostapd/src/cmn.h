@@ -300,6 +300,7 @@ enum hostapd_dcs_intf_type {
 	DCS_CW_INTF     = 0x0001,
 	DCS_WLAN_INTF   = 0x0002,
 	DCS_AWGN_INTF   = 0x0004,
+	DCS_AFC_INTF    = 0x0008,
 	DCS_OBSS_INTF   = 0x0010,
 };
 
