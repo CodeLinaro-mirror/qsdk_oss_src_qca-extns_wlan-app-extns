@@ -16,6 +16,7 @@
 #include "common/ieee802_11_defs.h"
 #include "ap/ap_config.h"
 #include "cmn.h"
+#include "dcs.h"
 
 void
 hostapd_config_defaults_extn(struct hostapd_config *conf)
@@ -41,6 +42,17 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->qacs_conf.dwelltime = 200;   /* msec */
         conf_extn->qacs_conf.dbg_module_bitmap = 0x00; /* bitmap of QACS debug modules id */
 	conf_extn->qacs_conf.dbg_level = 0; /* QACS debug level */
+
+	/* DCS defaults: initialize values; valid_mask reflects only user overrides */
+	os_memset(&conf_extn->dcs_conf, 0, sizeof(conf_extn->dcs_conf));
+	conf_extn->dcs_conf.intr_detection_threshold = DCS_INTR_DETECTION_THR;
+	conf_extn->dcs_conf.phyerr_penalty = DCS_PHYERR_PENALTY;
+	conf_extn->dcs_conf.phyerr_threshold = DCS_PHYERR_THRESHOLD;
+	conf_extn->dcs_conf.radarerr_threshold = DCS_RADARERR_THRESHOLD;
+	conf_extn->dcs_conf.txerr_threshold = DCS_TXERR_THRESHOLD;
+	conf_extn->dcs_conf.sample_size = DCS_SAMPLE_SIZE;
+	conf_extn->dcs_conf.coch_intr_threshold = DCS_COCH_INTR_THRESHOLD;
+	conf_extn->dcs_conf.user_max_cu = DCS_USER_MAX_CU;
 }
 
 void

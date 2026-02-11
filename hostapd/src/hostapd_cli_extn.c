@@ -97,3 +97,42 @@ int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
 
 	return hostapd_cli_cmd(ctrl, "DCS", 1, argc, argv);
 }
+
+static int hostapd_cli_send_dcs_param_values(struct wpa_ctrl *ctrl,
+					     const char *base,
+					     int argc, char *argv[])
+{
+	char buf[1024];
+	int pos, i, r;
+
+	pos = os_snprintf(buf, sizeof(buf), "%s", base);
+
+	if (os_snprintf_error(sizeof(buf), pos))
+		return -1;
+
+	for (i = 0; i < argc; i++) {
+		r = os_snprintf(buf + pos, sizeof(buf) - pos, "%s%s",
+				    (pos > 0 ? " " : ""), argv[i]);
+		if (os_snprintf_error(sizeof(buf), pos + r))
+			return -1;
+		pos += r;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_set_dcs_wlan_intr_params(struct wpa_ctrl *ctrl, int argc,
+				   char *argv[])
+{
+	if (argc < 2) {
+		printf("Invalid dcs_params: need <key> <val> \n");
+		return -1;
+	}
+
+	/* Allow odd argc so users can pass tokens like 'phyerr_penalty
+	 * 10' etc.
+	 * We'll send through as provided; ctrl side will validate.
+	 */
+	return hostapd_cli_send_dcs_param_values(ctrl, "DCS_PARAMS", argc,
+						 argv);
+}

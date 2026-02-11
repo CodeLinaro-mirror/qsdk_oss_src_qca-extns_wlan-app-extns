@@ -92,11 +92,34 @@ struct ieee80211_240mhz_params_extn {
 struct driver_dcs_config {
 	u8 cmd_type;
 	u16 dcs_enable;
+
+	/* Bitmask indicating which fields below are valid */
+	u32 valid_mask;
+
+	/* DCS configuration parameters */
+	u32 intr_detection_threshold;
+	u32 phyerr_penalty;
+	u32 phyerr_threshold;
+	u32 radarerr_threshold;
+	u32 txerr_threshold;
+	u32 sample_size;
+	u8 coch_intr_threshold;
+	u8 user_max_cu;
 };
 
 #define DCS_CSA_TBTT_DEFAULT        5
 #define DCS_CSA_TBTT_MAX            30
 #define DCS_CSA_TBTT_MIN            1
+
+/* valid_mask bits for driver_dcs_config */
+#define DCS_VALID_INTR_DET_THR      BIT(0)
+#define DCS_VALID_PHYERR_PENALTY    BIT(1)
+#define DCS_VALID_PHYERR_THR        BIT(2)
+#define DCS_VALID_RADARERR_THR      BIT(3)
+#define DCS_VALID_TXERR_THR         BIT(4)
+#define DCS_VALID_SAMPLE_SIZE       BIT(5)
+#define DCS_VALID_COCH_THR          BIT(6)
+#define DCS_VALID_USER_MAX_CU       BIT(7)
 
 struct  hostapd_sta_add_params_extn {
 	struct ieee80211_240mhz_params_extn params_240mhz;
@@ -207,6 +230,16 @@ struct dcs_conf_extn {
 
 	/* CSA TBTT value */
 	u32 dcs_csa_tbtt;
+
+	/* Stored DCS WLAN interference parameters */
+	u32 intr_detection_threshold;
+	u32 phyerr_penalty;
+	u32 phyerr_threshold;
+	u32 radarerr_threshold;
+	u32 txerr_threshold;
+	u32 sample_size;
+	u8 coch_intr_threshold;
+	u8 user_max_cu;
 };
 
 struct hostapd_config_extn {
