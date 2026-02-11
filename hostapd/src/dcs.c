@@ -30,6 +30,8 @@ dcs_print_usage_extn(char *reply, int reply_size)
 		"  dcs csa_tbtt		:  set DCS CSA TBTT value\n"
 		"  dcs set_wlan_intr_params: set DCS WLAN INTR PARAMS\n"
 		"  dcs get_wlan_intr_params: get DCS WLAN INTR PARAMS\n"
+		"  dcs random_chan_bitmap : set random channel bitmask"
+		"  (Bit(0)=CW, Bit(1)=WLAN, Bit(2)=AWGN, Bit(4)=OBSS, 0=Disabled)\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -288,6 +290,75 @@ static int hostapd_ctrl_iface_get_wlan_intr_params(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_random_chan_en(struct hostapd_data *hapd,
+						 const char *cmd, char *reply,
+						 int reply_size)
+{
+	struct hostapd_config_extn *config_extn;
+	char *end = NULL;
+	unsigned long tmp;
+	u16 val;
+
+	if (!hapd || !hapd->iconf) {
+		wpa_printf(MSG_ERROR, "hapd/iconf is NULL");
+		return -1;
+	}
+
+	config_extn = &hapd->iconf->conf_extn;
+	if (!config_extn)
+		return -1;
+
+	while (cmd && isspace((unsigned char)*cmd))
+		cmd++;
+
+	if (!cmd || *cmd == '\0') {
+		wpa_printf(MSG_ERROR, "Empty bitmap value");
+		return -1;
+	}
+
+	errno = 0;
+	tmp = strtoul(cmd, &end, 0);
+
+	if (errno != 0 || end == cmd) {
+		wpa_printf(MSG_ERROR, "Invalid bitmap value: '%s'", cmd);
+		return -1;
+	}
+
+	while (*end && isspace((unsigned char)*end))
+		end++;
+	if (*end != '\0') {
+		wpa_printf(MSG_ERROR, "Trailing garbage in bitmap value: '%s'", cmd);
+		return -1;
+	}
+
+	if (tmp > 0xFFFFUL) {
+		wpa_printf(MSG_ERROR, "Bitmap out of range (0..0xFFFF): 0x%lx", tmp);
+		return -1;
+	}
+
+	val = (u16) tmp;
+
+	/*
+	 * Update this mask based on what bits are actually valid.
+	 * Example below allows only bits 0..4 (i.e., 0x001F).
+	 * For a full 16-bit bitmap with all bits valid, remove this check.
+	 */
+	if (val & ~0x001Fu) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid bitmask 0x%04x (only bits 0..4 allowed)",
+			   val);
+		return -1;
+	}
+
+	config_extn->dcs_conf.dcs_random_chan_bitmap = val;
+
+	wpa_printf(MSG_DEBUG, "Bitmap set to 0x%04x (%u)",
+		   config_extn->dcs_conf.dcs_random_chan_bitmap,
+		   config_extn->dcs_conf.dcs_random_chan_bitmap);
+
+	return 0;
+}
+
 int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 				const char *cmd, char *reply,
 				int reply_size)
@@ -309,6 +380,9 @@ int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 	} else if (os_strcmp(cmd, "get_wlan_intr_params") == 0) {
 		return hostapd_ctrl_iface_get_wlan_intr_params(hapd, cmd, reply,
 							       reply_size);
+	} else if (os_strncmp(cmd, "random_chan_bitmap ", 19) == 0) {
+		return hostapd_ctrl_iface_set_random_chan_en(hapd, cmd + 19,
+							     reply, reply_size);
 	} else {
 		return dcs_print_usage_extn(reply, reply_size);
 	}
@@ -555,7 +629,7 @@ bool dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf,
 		   conf_extn->dcs_conf.bw_reduction_ctrl,
 		   conf_extn->dcs_conf.bw_reduction_ctrl);
 
-	if (conf_extn->dcs_conf.bw_reduction_ctrl & DCS_AWGN_INTF)
+	if (conf_extn->dcs_conf.bw_reduction_ctrl & dcs_intf_type)
 		return true;
 
 	return false;

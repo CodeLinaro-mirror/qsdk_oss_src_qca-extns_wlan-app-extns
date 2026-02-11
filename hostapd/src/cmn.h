@@ -240,6 +240,13 @@ struct dcs_conf_extn {
 	u32 sample_size;
 	u8 coch_intr_threshold;
 	u8 user_max_cu;
+
+	/* Random channel selection enable bitmap
+	 * 0 = Disabled.
+	 * BIT(0) = CW, BIT(1) = WLAN, BIT(2) = AWGN, BIT(4) = OBSS
+	 * BITs 5..7 reserved.
+	 */
+	u8 dcs_random_chan_bitmap;
 };
 
 struct hostapd_config_extn {
