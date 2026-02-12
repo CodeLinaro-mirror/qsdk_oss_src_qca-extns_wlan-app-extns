@@ -769,12 +769,11 @@ get_chan_data_by_freq(struct hostapd_hw_modes *mode, int freq)
 	return NULL;
 }
 
-static inline bool
-awgn_bw_range_available(struct hostapd_hw_modes *mode,
-			struct hostapd_channel_data *primary,
-			int chan_width)
+static inline int
+is_chan_range_available(struct hostapd_hw_modes *mode,
+			int first_chan_idx, int num_chans)
 {
-	return false;
+	return -1;
 }
 
 static inline void
@@ -787,6 +786,46 @@ reduced_chan_width(int *new_chan_width, int chan_width, int freq,
 static inline int
 hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
 			      char *buf, size_t buflen)
+{
+	return -1;
+}
+
+static inline int
+intf_chan_range_available_5g(struct hostapd_hw_modes *mode,
+			     int first_chan_idx, int num_chans)
+{
+	return -1;
+}
+
+static inline int
+intf_chan_range_available_2g(struct hostapd_hw_modes *mode,
+			     int first_chan_idx, int num_chans)
+{
+	return -1;
+}
+
+static inline int
+get_centre_freq(struct hostapd_channel_data *first_chan,
+		int chan_width, int *centre_freq)
+{
+	return -1;
+}
+
+static inline int
+intf_chan_range_available_6g(struct hostapd_hw_modes *mode,
+			     int first_chan_idx, int num_chans)
+{
+	return -1;
+}
+
+static bool
+is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
+{
+	return false;
+}
+
+static inline int
+chan_pri_allowed(const struct hostapd_channel_data *chan)
 {
 	return -1;
 }
@@ -1035,13 +1074,22 @@ void update_chan_params(struct hostapd_data *hapd, int cf1, int cf2,
 bool dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf, u16 dcs_intf_type);
 struct hostapd_channel_data *
 get_chan_data_by_freq(struct hostapd_hw_modes *mode, int freq);
-bool awgn_bw_range_available(struct hostapd_hw_modes *mode,
-			     struct hostapd_channel_data *primary,
-			     int chan_width);
+int is_chan_range_available(struct hostapd_hw_modes *mode,
+				 int first_chan_idx, int num_chans);
 void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
 			struct hostapd_hw_modes *mode,
 			u32 chan_bw_interference_bitmap);
 int hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
 				  char *buf, size_t buflen);
+int intf_chan_range_available_5g(struct hostapd_hw_modes *mode,
+				 int first_chan_idx, int num_chans);
+int intf_chan_range_available_2g(struct hostapd_hw_modes *mode,
+				 int first_chan_idx, int num_chans);
+int get_centre_freq(struct hostapd_channel_data *first_chan,
+		    int chan_width, int *centre_freq);
+int intf_chan_range_available_6g(struct hostapd_hw_modes *mode,
+				 int first_chan_idx, int num_chans);
+bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num);
+int chan_pri_allowed(const struct hostapd_channel_data *chan);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

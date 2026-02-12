@@ -582,8 +582,8 @@ int find_random_channel(struct hostapd_iface *iface, int *new_freq,
 		   chan_data->freq, chan_data->chan);
 
 	if (*new_chan_width > CHAN_WIDTH_20) {
-		ret = get_centre_freq_6g(chan_data->chan, *new_chan_width,
-					 new_centre_freq);
+		ret = get_centre_freq(chan_data, *new_chan_width,
+				      new_centre_freq);
 		if (ret) {
 			wpa_printf(MSG_ERROR,
 				   "CW : couldn't find centre freq for chan : %d"
@@ -844,4 +844,174 @@ void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
 		   "AWGN: reduced bandwidth %d -> %d on channel %d (%d) bitmap=0x%x",
 		   chan_width, *new_chan_width, chan_data->freq, chan_data->chan,
 		   chan_bw_interference_bitmap);
+}
+
+/*
+ * intf_chan_range_available_5g - check whether the channel can operate
+ * in the given bandwidth in 5 GHz.
+ * @first_chan_idx - channel index of the first 20 MHz channel in a segment
+ * @num_chans - number of 20 MHz channels needed for the operating bandwidth
+ */
+int intf_chan_range_available_5g(struct hostapd_hw_modes *mode,
+				 int first_chan_idx, int num_chans)
+{
+	struct hostapd_channel_data *first_chan;
+	int allowed_40_5g[] = { 36, 44, 52, 60, 100, 108, 116, 124, 132, 140,
+		149, 157, 165, 173 };
+	int allowed_80_5g[] = { 36, 52, 100, 116, 132, 149, 165 };
+	int allowed_160_5g[] = { 36, 100, 149 };
+	int *allowed_arr = NULL;
+	int allowed_arr_size = 0;
+	int i;
+
+	if (!mode || first_chan_idx < 0 || first_chan_idx >= mode->num_channels)
+		return 0;
+
+	first_chan = &mode->channels[first_chan_idx];
+	if (!is_5ghz_freq(first_chan->freq))
+		return 0;
+
+	if (!chan_pri_allowed(first_chan)) {
+		wpa_printf(MSG_DEBUG,
+				"INTF: 5 GHz primary channel not allowed");
+		return 0;
+	}
+
+	/* 20 MHz channel, so no need to check the range */
+	if (num_chans == 1)
+		return 1;
+
+	switch (num_chans) {
+		case 2:
+			allowed_arr_size = ARRAY_SIZE(allowed_40_5g);
+			allowed_arr = allowed_40_5g;
+			break;
+		case 4:
+			allowed_arr_size = ARRAY_SIZE(allowed_80_5g);
+			allowed_arr = allowed_80_5g;
+			break;
+		case 8:
+			allowed_arr_size = ARRAY_SIZE(allowed_160_5g);
+			allowed_arr = allowed_160_5g;
+			break;
+		default:
+			return 0;
+	}
+
+	for (i = 0; i < allowed_arr_size; i++) {
+		if (first_chan->chan == allowed_arr[i])
+			break;
+	}
+
+	if (i == allowed_arr_size)
+		return 0;
+
+	/* Check whether all the 20 MHz channels in the given operating range are enabled */
+	for (i = 1; i <= num_chans - 1; i++) {
+		if (is_chan_disabled(mode, first_chan->chan + i * 4))
+			return 0;
+	}
+
+	return 1;
+}
+
+/*
+ * intf_chan_range_available_2g - check whether the channel can operate
+ * in the given bandwidth in 2.4 GHz.
+ * @first_chan_idx - channel index of the first 20 MHz channel in a segment
+ * @num_chans - number of 20 MHz channels needed for the operating bandwidth
+ *
+ * Note: For 2.4 GHz, only 20 MHz and 40 MHz (HT40+) are considered here. The
+ * first channel is treated as the primary 20 MHz channel and the 40 MHz range
+ * is assumed to extend "above" (i.e., secondary channel at +4).
+ */
+int intf_chan_range_available_2g(struct hostapd_hw_modes *mode,
+				 int first_chan_idx, int num_chans)
+{
+	struct hostapd_channel_data *first_chan;
+	int i;
+
+	if (!mode || first_chan_idx < 0 || first_chan_idx >= mode->num_channels)
+		return 0;
+
+	first_chan = &mode->channels[first_chan_idx];
+	if (!is_24ghz_freq(first_chan->freq))
+		return 0;
+
+	if (!chan_pri_allowed(first_chan)) {
+		wpa_printf(MSG_DEBUG,
+			   "INTF: 2.4 GHz primary channel not allowed");
+		return 0;
+	}
+
+	/* 20 MHz channel, so no need to check the range */
+	if (num_chans == 1)
+		return 1;
+
+	/* 2.4 GHz does not support > 40 MHz */
+	if (num_chans != 2)
+		return 0;
+
+	/* HT40+ is possible only for primary channels 1..9 (secondary at +4). */
+	if (first_chan->chan < 1 || first_chan->chan > 9)
+		return 0;
+
+	/* Check whether the secondary 20 MHz channel is enabled */
+	for (i = 1; i <= num_chans - 1; i++) {
+		if (is_chan_disabled(mode, first_chan->chan + i * 4))
+			return 0;
+	}
+
+	return 1;
+}
+
+static int get_centre_freq_from_first_freq(int first_freq, int chan_width,
+					   int *centre_freq)
+{
+	int bw;
+
+	if (!centre_freq)
+		return -1;
+
+	*centre_freq = 0;
+
+	if (chan_width == CHAN_WIDTH_80P80)
+		return -1;
+
+	bw = channel_width_to_int(chan_width);
+	if (bw <= 0)
+		return -1;
+
+	/* Centre frequency from first 20 MHz channel centre frequency */
+	*centre_freq = first_freq + (bw / 2) - 10;
+	return 0;
+}
+
+int is_chan_range_available(struct hostapd_hw_modes *mode,
+				   int first_chan_idx, int num_chans)
+{
+	struct hostapd_channel_data *first_chan;
+
+	if (!mode || first_chan_idx < 0 || first_chan_idx >= mode->num_channels)
+		return 0;
+
+	first_chan = &mode->channels[first_chan_idx];
+	if (is_6ghz_freq(first_chan->freq))
+		return intf_chan_range_available_6g(mode, first_chan_idx, num_chans);
+	if (is_5ghz_freq(first_chan->freq))
+		return intf_chan_range_available_5g(mode, first_chan_idx, num_chans);
+	if (is_24ghz_freq(first_chan->freq))
+		return intf_chan_range_available_2g(mode, first_chan_idx, num_chans);
+
+	return 0;
+}
+
+int get_centre_freq(struct hostapd_channel_data *first_chan,
+		    int chan_width, int *centre_freq)
+{
+	if (chan_width == CHAN_WIDTH_20_NOHT)
+		chan_width = CHAN_WIDTH_20;
+
+	return get_centre_freq_from_first_freq(first_chan->freq, chan_width,
+					       centre_freq);
 }

@@ -6,6 +6,10 @@
 #ifndef DCS_H
 #define DCS_H
 
+#define BASE_24G_FREQ 2407
+#define BASE_5G_FREQ 5000
+#define BASE_49G_FREQ 4000
+
 #define ALLOWED_DCS_MASK 0x0013
 
 enum hostapd_dcs_chan_seg {
