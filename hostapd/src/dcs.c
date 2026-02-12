@@ -34,6 +34,9 @@ dcs_print_usage_extn(char *reply, int reply_size)
 		"  (Bit(0)=CW, Bit(1)=WLAN, Bit(2)=AWGN, Bit(4)=OBSS, 0=Disabled)\n"
 		"  dcs get_enable   : get DCS enable value\n"
 		"  dcs sim              : DCS simulator\n"
+		"  dcs get_random_chan_en	: get DCS random channel enable state\n"
+		"  dcs get_csa_tbtt		: get DCS CSA TBTT value\n"
+		"  dcs get_bw_reduction_ctrl  : get DCS BW reduction control value\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -474,10 +477,59 @@ static int hostapd_ctrl_iface_dcs_sim(struct hostapd_data *hapd,
 	return hostapd_drv_dcs_sim_trigger(hapd, hapd->mld_link_id, &drv_dcs_sim);
 }
 
+static int hostapd_ctrl_iface_g_dcs_random_chan_en(struct hostapd_config_extn
+						   *conf_extn, const char *pos,
+						   char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "DCS get_random_chan_en: 0x%x\n",
+			      conf_extn->dcs_conf.dcs_random_chan_bitmap);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_ctrl_iface_g_dcs_csa_tbtt(struct hostapd_config_extn *conf_extn,
+					     const char *pos, char *reply,
+					     size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "DCS get_csa_tbtt: %d\n",
+			      conf_extn->dcs_conf.dcs_csa_tbtt);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_ctrl_iface_g_dcs_bw_reduction_ctrl(struct hostapd_config_extn
+							*conf_extn, const char *pos,
+							char *reply,size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "DCS get_bw_reduction_ctrl: 0x%x\n",
+			      conf_extn->dcs_conf.bw_reduction_ctrl);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
 int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 				const char *cmd, char *reply,
 				int reply_size)
 {
+	struct hostapd_config_extn *conf_extn;
+
+	if (!hapd->iface || !hapd->iface->conf)
+		return -1;
+
+	conf_extn  = &hapd->iface->conf->conf_extn;
+
 	if (os_strncmp(cmd, "enable ", 7) == 0) {
 		return hostapd_ctrl_iface_dcs_config(hapd, cmd + 7,
 						     reply, reply_size);
@@ -504,6 +556,16 @@ int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(cmd, "sim ", 4) == 0) {
 		return hostapd_ctrl_iface_dcs_sim(hapd, cmd + 4,
 						  reply, reply_size);
+	} else if (os_strcmp(cmd, "get_random_chan_en") == 0) {
+		return hostapd_ctrl_iface_g_dcs_random_chan_en(conf_extn, cmd,
+							       reply, reply_size);
+	} else if (os_strcmp(cmd, "get_csa_tbtt") == 0) {
+		return hostapd_ctrl_iface_g_dcs_csa_tbtt(conf_extn, cmd, reply,
+							 reply_size);
+	} else if (os_strcmp(cmd, "get_bw_reduction_ctrl") == 0) {
+		return hostapd_ctrl_iface_g_dcs_bw_reduction_ctrl(conf_extn, cmd,
+								  reply,
+								  reply_size);
 	} else {
 		return dcs_print_usage_extn(reply, reply_size);
 	}
