@@ -829,6 +829,13 @@ chan_pri_allowed(const struct hostapd_channel_data *chan)
 {
 	return -1;
 }
+
+static inline int
+hostapd_trigger_dynamic_acs(struct hostapd_data *hapd,
+			    enum dynamic_acs_action_extn acs_action)
+{
+	return -1;
+}
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -1091,5 +1098,7 @@ int intf_chan_range_available_6g(struct hostapd_hw_modes *mode,
 				 int first_chan_idx, int num_chans);
 bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num);
 int chan_pri_allowed(const struct hostapd_channel_data *chan);
+int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd,
+				enum dynamic_acs_action_extn acs_action);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

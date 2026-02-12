@@ -315,35 +315,40 @@ static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
 }
 #endif
 
-static int hostapd_acs_run_extn(struct hostapd_data *hapd, const char *pos,
-				char *reply, size_t reply_size)
+int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd, enum dynamic_acs_action_extn acs_action)
 {
-	int acs_run_op;
-	struct hostapd_iface *iface = hapd->iface;
-	int status;
+        struct hostapd_iface *iface = hapd->iface;
+        int status;
 
-	acs_run_op = atoi(pos);
 
-	if (acs_run_op != 0 && acs_run_op != 1)
-		return -1;
+        if (iface->iface_extn.dynamic_acs_action) {
+                wpa_printf(MSG_ERROR, "Dynamic ACS is already in progress");
+                return -1;
+        }
 
-	if (iface->iface_extn.dynamic_acs_action) {
-		wpa_printf(MSG_ERROR, "Dynamic ACS is already in progress");
-		return -1;
-	}
+        iface->iface_extn.dynamic_acs_action = acs_action;
 
-	iface->iface_extn.dynamic_acs_action = acs_run_op == 1 ?
-					       NO_CHANNEL_CHANGE :
-					       CHANNEL_CHANGE_CSA;
+        status = acs_init(iface);
+        if (status != HOSTAPD_CHAN_ACS) {
+                wpa_printf(MSG_ERROR, "Could not start ACS, error: %d", status);
+                iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+                return -1;
+        }
 
-	status = acs_init(iface);
-	if (status != HOSTAPD_CHAN_ACS) {
-		wpa_printf(MSG_ERROR, "Could not start ACS, error: %d", status);
-		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
-		return -1;
-	}
+        return 0;
+}
 
-	return 0;
+static int hostapd_acs_run_extn(struct hostapd_data *hapd, const char *pos,
+                                char *reply, size_t reply_size)
+{
+        int acs_run_op;
+
+        acs_run_op = atoi(pos);
+
+        if (acs_run_op != 0 && acs_run_op != 1)
+                return -1;
+
+        return hostapd_trigger_dynamic_acs(hapd, (acs_run_op == 1 ? NO_CHANNEL_CHANGE : CHANNEL_CHANGE_CSA));
 }
 
 static int hostapd_acs_get_status_extn(struct hostapd_iface *iface,
