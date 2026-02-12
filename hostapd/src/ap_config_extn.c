@@ -54,7 +54,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->dcs_conf.coch_intr_threshold = DCS_COCH_INTR_THRESHOLD;
 	conf_extn->dcs_conf.user_max_cu = DCS_USER_MAX_CU;
 
-	conf_extn->dcs_conf.enable_bitmap = ALLOWED_DCS_MASK;   /* DCS enabled */
+	conf_extn->dcs_conf.enable_bitmap = 0;   /* DCS disabled */
 }
 
 void
