@@ -53,6 +53,8 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->dcs_conf.sample_size = DCS_SAMPLE_SIZE;
 	conf_extn->dcs_conf.coch_intr_threshold = DCS_COCH_INTR_THRESHOLD;
 	conf_extn->dcs_conf.user_max_cu = DCS_USER_MAX_CU;
+
+	conf_extn->dcs_conf.enable_bitmap = ALLOWED_DCS_MASK;   /* DCS enabled */
 }
 
 void
@@ -165,6 +167,35 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 
 		conf_extn->qacs_conf.dwelltime = dt;
 
+	} else if (os_strcmp(buf, "dcs_enable") == 0) {
+		char *endptr;
+		unsigned long v;
+
+		while (*pos == ' ' || *pos == '\t')
+			pos++;
+
+		errno = 0;
+		v = strtoul(pos, &endptr, 0);
+		while (*endptr == ' ' || *endptr == '\t')
+			endptr++;
+		if (errno != 0 || endptr == pos || *endptr != '\0' ||
+		    v > 0xFFFF) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid value for dcs_enable '%s' (expected 16-bit value)",
+				   line, pos);
+			conf_extn->dcs_conf.enable_bitmap = 0;
+			return 0;
+		}
+
+		if (v & ~ALLOWED_DCS_MASK) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid value for dcs_enable '%s' (allowed bits mask: 0x%04x)",
+				   line, pos, ALLOWED_DCS_MASK);
+			conf_extn->dcs_conf.enable_bitmap = 0;
+			return 0;
+		}
+
+		conf_extn->dcs_conf.enable_bitmap = (u16) v;
 	} else {
 		return -1;
 	}

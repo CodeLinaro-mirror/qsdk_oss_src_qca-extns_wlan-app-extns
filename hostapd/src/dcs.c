@@ -98,6 +98,7 @@ static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
 		return -1;
 	}
 
+	os_memset(&drv_dcs_conf, 0, sizeof(drv_dcs_conf));
 	drv_dcs_conf.dcs_enable = (u16) v;
 	drv_dcs_conf.cmd_type = SET_DCS_CONFIG;
 	conf_extn->dcs_conf.enable_bitmap = (u16) v;
