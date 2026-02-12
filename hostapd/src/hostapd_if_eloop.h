@@ -6,6 +6,6 @@
 #ifndef __HOSTAPD_IF_ELOOP_
 #define __HOSTAPD_IF_ELOOP_
 void hostapd_if_eloop_inbound_handlers(struct hostapd_external_app_object *);
-int hostapd_if_eloop_init(void);
+int hostapd_if_eloop_init(enum hostapd_if_eloop_type type);
 #endif
 
