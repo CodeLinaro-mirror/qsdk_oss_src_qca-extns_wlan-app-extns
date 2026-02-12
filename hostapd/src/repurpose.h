@@ -38,6 +38,12 @@ hostapd_is_repurpose_disabled_11be_extn(const struct hostapd_bss_config *bss)
 {
 	return false;
 }
+
+static inline int
+hostapd_drv_notify_link_repurpose_extn(struct hostapd_data *hapd, u8 link_id)
+{
+	return 0;
+}
 #else /* CONFIG_QCN_EXTN */
 int
 hostapd_config_check_bss_repurpose_mode_extn(const struct hostapd_config *conf,
@@ -54,5 +60,8 @@ hostapd_is_repurpose_disabled_11ax_extn(const struct hostapd_bss_config *bss);
 
 bool
 hostapd_is_repurpose_disabled_11be_extn(const struct hostapd_bss_config *bss);
+
+int
+hostapd_drv_notify_link_repurpose_extn(struct hostapd_data *hapd, u8 link_id);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* REPURPOSE_H */
