@@ -91,7 +91,7 @@ int hostapd_cli_cmd_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc,
 int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	if (argc < 1) {
-		printf("Invalid dcs_enable command: needs at least 1 argument\n");
+		printf("Invalid dcs_enable command: need atleast 1 argument\n");
 		return -1;
 	}
 
