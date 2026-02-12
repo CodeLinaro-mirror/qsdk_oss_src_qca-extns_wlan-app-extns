@@ -22,6 +22,65 @@
 #include "ap/sta_info.h"
 #include "cmn.h"
 #include "240mhz.h"
+#include "ap/ieee802_11.h"
+
+
+int hostapd_handle_5ghz_320mhz_bw_indication_extn(struct hostapd_data *hapd,
+							  u8 *chan1, u8 *chan2,
+							  u16 *punct_bitmap,
+							  int *bandwidth)
+{
+	u8 pri_chan = hapd->cs_freq_params.channel;
+	u8 ccfs1_160 = 0;
+	u8 start_chan_160;
+	u16 pri_freq;
+	u16 center_freq_320;
+	u16 original_punct_bitmap = *punct_bitmap;
+	u16 truncated_punct_bitmap;
+	u16 pri_chan_bit_pos;
+
+	center_freq_320 = ieee80211_chan_to_freq(NULL, hapd->iconf->op_class,
+							 *chan1);
+	if (center_freq_320 <= 0)
+		return -1;
+
+	/*
+	 * Map the non-standard 5 GHz "320 MHz" operation to a legal 160 MHz
+	 * channel by choosing the standard 160 MHz center channel that contains
+	 * the CSA primary frequency. For primaries that do not belong to any
+	 * standard 160 MHz block (e.g., ch132-144), this returns 0 and BW Ind
+	 * should be skipped.
+	 */
+	ccfs1_160 = acs_get_bw_center_chan(hapd->cs_freq_params.freq, ACS_BW160);
+	if (!ccfs1_160)
+		return -1;
+
+	pri_freq = ieee80211_chan_to_freq(NULL, hapd->iconf->op_class, pri_chan);
+	if (pri_freq <= 0)
+		return -1;
+
+	truncated_punct_bitmap =
+		get_lower_bandwidth_puncture_pattern(pri_freq,
+						     original_punct_bitmap,
+						     center_freq_320, 320, 160);
+	*punct_bitmap = truncated_punct_bitmap & 0xFF;
+
+	start_chan_160 = ccfs1_160 - 14;
+	pri_chan_bit_pos = (pri_chan - start_chan_160) / 4;
+	if (!is_punct_bitmap_valid(160, pri_chan_bit_pos, *punct_bitmap))
+		return -1;
+
+	/*
+	 * Return a legal 5 GHz 160 MHz representation for BW Indication IE:
+	 * - chan1 as CCFS1 (160 MHz center)
+	 * - chan2 cleared; hostapd_eid_bw_indication() will derive CCFS0/CCFS1.
+	 */
+	*bandwidth = CHWIDTH_160;
+	*chan1 = ccfs1_160;
+	*chan2 = 0;
+
+	return 0;
+}
 
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
