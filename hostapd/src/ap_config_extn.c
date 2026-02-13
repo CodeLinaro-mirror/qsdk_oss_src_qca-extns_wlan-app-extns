@@ -196,7 +196,7 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		}
 
 		conf_extn->dcs_conf.enable_bitmap = (u16) v;
-	} else if (os_strcmp(buf, "dcs random_chan_bitmap") == 0) {
+	} else if (os_strcmp(buf, "dcs_random_chan_bitmap") == 0) {
 		/*
 		 * Parse and set DCS random channel enable bitmap from hostapd.conf.
 		 * Accept numeric values (decimal or hex like 0x1F). Validate range
