@@ -196,6 +196,56 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		}
 
 		conf_extn->dcs_conf.enable_bitmap = (u16) v;
+	} else if (os_strcmp(buf, "dcs random_chan_bitmap") == 0) {
+		/*
+		 * Parse and set DCS random channel enable bitmap from hostapd.conf.
+		 * Accept numeric values (decimal or hex like 0x1F). Validate range
+		 * and allowed bits (0..4 i.e., 0x001F) to align with CLI handling.
+		 */
+		unsigned long tmp;
+		char *endptr = NULL;
+		u16 val;
+
+		errno = 0;
+		tmp = strtoul(pos, &endptr, 0);
+		if (errno != 0 || endptr == pos) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid dcs random_chan_bitmap value '%s'",
+				   line, pos);
+			return -1;
+		}
+
+		while (endptr && *endptr == ' ')
+			endptr++;
+
+		if (endptr && *endptr != '\0') {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: trailing characters in dcs random_chan_bitmap '%s'",
+				   line, pos);
+			return -1;
+		}
+
+		if (tmp > 0xFFFFUL) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: dcs random_chan_bitmap out of range '%s'",
+				   line, pos);
+			return -1;
+		}
+
+		val = (u16) tmp;
+		/* Allow only bits 0..4; update mask if needed. */
+		if (val & ~0x001Fu) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid dcs random_chan_bitmap 0x%04x (only bits 0..4 allowed)",
+				   line, val);
+			return -1;
+		}
+
+		conf_extn->dcs_conf.dcs_random_chan_bitmap = val;
+		wpa_printf(MSG_DEBUG,
+			   "DCS: dcs_random_chan_bitmap set to 0x%04x (%u)",
+			   conf_extn->dcs_conf.dcs_random_chan_bitmap,
+			   conf_extn->dcs_conf.dcs_random_chan_bitmap);
 	} else {
 		return -1;
 	}
