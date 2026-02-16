@@ -748,11 +748,17 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 	u16 type;
 	u32 freq, cf1, cf2, intf_bitmap, bw;
 	struct dcs_intf_event *dcs_intf_event = &data->event_data_extn.dcs_intf_event;
-	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_iface *iface;
+	struct hostapd_data *link_hapd;
 	struct csa_settings settings ={};
 	int new_chan_width, new_centre_freq, new_freq, ret;
 	u8 rand_chan_bitmap;
 
+	link_hapd = switch_link_hapd(hapd, dcs_intf_event->link_id);
+	if (!link_hapd)
+		return;
+
+	iface = link_hapd->iface;
 	freq = iface->freq;
 	cf1 = iface->conf->conf_extn.cur_chan_params.cf1;
 	cf2 = iface->conf->conf_extn.cur_chan_params.cf2;
@@ -764,7 +770,7 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 	if ((type == DCS_CW_INTF || type == DCS_WLAN_INTF ||
 	     type == DCS_OBSS_INTF) &&
 	    !(rand_chan_bitmap & type)) {
-		hostapd_trigger_dynamic_acs(hapd, CHANNEL_CHANGE_CSA);
+		hostapd_trigger_dynamic_acs(link_hapd, CHANNEL_CHANGE_CSA);
 		return;
 	}
 
@@ -800,7 +806,7 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_DEBUG, "type=%d, input freq=%d, ch_width=%d, cf1=%d cf2=%d intf_bitmap:0x%x", type, freq, ch_width, cf1, cf2, intf_bitmap);
 
-	ret = hostapd_dcs_channel_change(&settings, hapd->iface, new_chan_width, new_centre_freq);
+	ret = hostapd_dcs_channel_change(&settings, link_hapd->iface, new_chan_width, new_centre_freq);
 	return;
 }
 
