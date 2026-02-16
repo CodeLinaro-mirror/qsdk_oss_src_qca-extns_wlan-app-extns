@@ -199,13 +199,6 @@ void wpa_bss_check_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
 					   bss->punc_bitmap);
 			}
 			break;
-		} else if (attr_id == QCN_HE_240_MHZ_MAX_ELEM_LEN) {
-			wpa_dbg(wpa_s, MSG_ERROR,
-				"5G 320MHz check: Found 240MHz attribute but invalid length: "
-				"attr_len=%u (expected %zu-%u)",
-				attr_len,
-				sizeof(struct ieee80211_240mhz_vendor_oper_extn_v2),
-				QCN_HE_240_MHZ_MAX_ELEM_LEN);
 		}
 		off += 2 + attr_len;
 	}
