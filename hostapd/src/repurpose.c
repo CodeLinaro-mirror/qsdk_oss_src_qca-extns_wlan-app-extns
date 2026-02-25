@@ -43,27 +43,49 @@ hostapd_config_check_bss_repurpose_mode_extn(const struct hostapd_config *conf,
 	return 0;
 }
 
+/**
+ * hostapd_is_repurpose_disabled_11ax_extn - Checks if repurpose has disabled
+ * 11AX mode on the given BSS or not.
+ * @bss: BSS config of the BSS.
+ *
+ * This helper function checks if repurpose feature had disabled 11ax capability
+ * from the BSS or not. If no repurpose_mode configured then it returns false.
+ * This does not really check if BSS has ieee80211ax=1 and disable_11ax=0.
+ * So, use it along with appropriate mld_ap or ieee80211ax or disable_11ax check
+ * from caller when it returns false.
+ *
+ * Return: True if BSS repurposed to mode lesser than 11ax, false otherwise.
+ */
 bool
 hostapd_is_repurpose_disabled_11ax_extn(const struct hostapd_bss_config *bss)
 {
-#ifdef CONFIG_IEEE80211BE
-	if (bss->mld_ap &&
-	    hostapd_is_valid_repurpose_mode_extn(bss->bss_extn.repurpose_mode) &&
+	if (hostapd_is_valid_repurpose_mode_extn(bss->bss_extn.repurpose_mode) &&
 	    bss->bss_extn.repurpose_mode < REPURPOSE_11AX)
 		return true;
-#endif /* CONFIG_IEEE80211BE */
+
 	return false;
 }
 
+/**
+ * hostapd_is_repurpose_disabled_11be_extn - Checks if repurpose has disabled
+ * 11BE mode on the given BSS or not.
+ * @bss: BSS config of the BSS.
+ *
+ * This helper function checks if repurpose feature had disabled 11be capability
+ * from the BSS or not. If no repurpose_mode configured then it returns false.
+ * This does not really check if BSS has ieee80211be=1 and disable_11be=0.
+ * So, use it along with appropriate mld_ap or ieee80211be or disable_11be check
+ * from caller when it return false.
+ *
+ * Return: True if the BSS repurposed to mode lesser than 11be, false otherwise.
+ */
 bool
 hostapd_is_repurpose_disabled_11be_extn(const struct hostapd_bss_config *bss)
 {
-#ifdef CONFIG_IEEE80211BE
-	if (bss->mld_ap &&
-	    hostapd_is_valid_repurpose_mode_extn(bss->bss_extn.repurpose_mode) &&
+	if (hostapd_is_valid_repurpose_mode_extn(bss->bss_extn.repurpose_mode) &&
 	    bss->bss_extn.repurpose_mode < REPURPOSE_11BE)
 		return true;
-#endif /* CONFIG_IEEE80211BE */
+
 	return false;
 }
 
