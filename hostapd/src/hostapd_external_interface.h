@@ -184,6 +184,7 @@ struct hostapd_if_event {
 		struct {
 			int ok;
 			uint16_t status;
+			uint16_t aid;
 		} assoc_resp_completion;
 
 		struct {
