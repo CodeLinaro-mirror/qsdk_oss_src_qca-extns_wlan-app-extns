@@ -6,6 +6,7 @@
 #include "utils/includes.h"
 #include <netlink/genl/genl.h>
 #include "utils/common.h"
+#include "utils/eloop.h"
 #include "common/qca-vendor.h"
 #include "drivers/driver.h"
 #include "drivers/driver_nl80211.h"
@@ -16,6 +17,156 @@
 #include "cmn.h"
 #include "dcs.h"
 #include "common/hw_features_common.h"
+
+static void hostapd_dcs_reenable_timeout(void *eloop_ctx, void *timeout_ctx);
+
+static void hostapd_dcs_apply_enable_bitmap(struct hostapd_iface *iface,
+						    u16 enable_bitmap)
+{
+	struct hostapd_data *hapd;
+
+	if (!iface || !iface->conf || !iface->bss || !iface->num_bss)
+		return;
+
+	hapd = iface->bss[0];
+	if (!hapd)
+		return;
+
+	dcs_enable_init(hapd, enable_bitmap);
+}
+
+static void hostapd_dcs_rate_limit_reset(struct hostapd_iface *iface)
+{
+	struct hostapd_iface_extn *iface_extn;
+
+	if (!iface)
+		return;
+
+	iface_extn = &iface->iface_extn;
+	iface_extn->dcs_trigger_count = 0;
+	os_memset(iface_extn->dcs_trigger_ts, 0,
+		  sizeof(iface_extn->dcs_trigger_ts));
+	iface_extn->dcs_disabled_excessive_triggers = false;
+	iface_extn->dcs_excess_trigger_enable_bitmap = 0;
+	iface_extn->dcs_excess_trigger_restore_bitmap = 0;
+
+	if (iface_extn->dcs_reenable_timer_set) {
+		eloop_cancel_timeout(hostapd_dcs_reenable_timeout, iface, NULL);
+		iface_extn->dcs_reenable_timer_set = false;
+	}
+}
+
+static void hostapd_dcs_rate_limit_update(struct hostapd_iface *iface, u16 type)
+{
+	struct hostapd_iface_extn *iface_extn;
+	struct os_reltime now, diff;
+	unsigned int ix;
+	bool disable_dcs = false;
+	u16 cur_enable, new_enable;
+
+	if (!iface || !iface->conf)
+		return;
+
+	if (type != DCS_WLAN_INTF)
+		return;
+
+	iface_extn = &iface->iface_extn;
+	if (iface_extn->dcs_disabled_excessive_triggers) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: WLAN interference event ignored (already auto-disabled; trigger_count=%u)",
+			   iface_extn->dcs_trigger_count);
+		return;
+	}
+
+	cur_enable = iface->conf->conf_extn.dcs_conf.enable_bitmap;
+	if (!(cur_enable & DCS_WLAN_INTF)) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: WLAN interference rate-limit skipped (DCS_WLAN_INTF not enabled; enable_bitmap=0x%04x)",
+			   cur_enable);
+		return;
+	}
+
+	os_get_reltime(&now);
+
+	if (iface_extn->dcs_trigger_count >= (HOSTAPD_DCS_MAX_TRIGGERS - 1)) {
+		os_reltime_sub(&now, &iface_extn->dcs_trigger_ts[0], &diff);
+		wpa_printf(MSG_ERROR,
+			   "DCS: WLAN interference trigger window check: count=%u oldest_age=%lu sec (limit=%u sec)",
+			   iface_extn->dcs_trigger_count, (unsigned long) diff.sec,
+			   HOSTAPD_DCS_AGING_TIME_SEC);
+		if (diff.sec < HOSTAPD_DCS_AGING_TIME_SEC) {
+			disable_dcs = true;
+		} else {
+			for (ix = 0; ix < (iface_extn->dcs_trigger_count - 1);
+			     ix++) {
+				iface_extn->dcs_trigger_ts[ix] =
+					iface_extn->dcs_trigger_ts[ix + 1];
+			}
+			iface_extn->dcs_trigger_count--;
+		}
+	}
+
+	if (disable_dcs) {
+		new_enable = cur_enable & ~DCS_WLAN_INTF;
+		iface_extn->dcs_disabled_excessive_triggers = true;
+		iface_extn->dcs_excess_trigger_restore_bitmap = cur_enable;
+		iface_extn->dcs_excess_trigger_enable_bitmap = new_enable;
+		iface_extn->dcs_trigger_count = 0;
+
+		wpa_printf(MSG_ERROR,
+			   "DCS: disabling WLAN interference handling (0x%04x -> 0x%04x); too many triggers within %u sec",
+			   cur_enable, new_enable,
+			   HOSTAPD_DCS_AGING_TIME_SEC);
+
+		hostapd_dcs_apply_enable_bitmap(iface, new_enable);
+
+		if (!iface_extn->dcs_reenable_timer_set) {
+			eloop_register_timeout(HOSTAPD_DCS_REENABLE_TIME_SEC, 0,
+					       hostapd_dcs_reenable_timeout,
+					       iface, NULL);
+			iface_extn->dcs_reenable_timer_set = true;
+		}
+		wpa_printf(MSG_ERROR,
+			   "DCS: WLAN interference handling auto-disabled (for %u sec)",
+			   HOSTAPD_DCS_REENABLE_TIME_SEC);
+		return;
+	}
+
+	if (iface_extn->dcs_trigger_count < HOSTAPD_DCS_MAX_TRIGGERS) {
+		iface_extn->dcs_trigger_ts[iface_extn->dcs_trigger_count] = now;
+		iface_extn->dcs_trigger_count++;
+	}
+	wpa_printf(MSG_ERROR,
+		   "DCS: WLAN interference trigger recorded (new_count=%u)",
+		   iface_extn->dcs_trigger_count);
+}
+
+static void hostapd_dcs_reenable_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_iface *iface = eloop_ctx;
+	struct hostapd_iface_extn *iface_extn;
+
+	if (!iface || !iface->conf)
+		return;
+
+	iface_extn = &iface->iface_extn;
+	iface_extn->dcs_reenable_timer_set = false;
+	iface_extn->dcs_trigger_count = 0;
+
+	if (!iface_extn->dcs_disabled_excessive_triggers)
+		return;
+
+	wpa_printf(MSG_ERROR,
+		   "DCS: re-enabling WLAN interference handling (0x%04x -> 0x%04x) after timeout",
+		   iface_extn->dcs_excess_trigger_enable_bitmap,
+		   iface_extn->dcs_excess_trigger_restore_bitmap);
+	hostapd_dcs_apply_enable_bitmap(
+		iface, iface_extn->dcs_excess_trigger_restore_bitmap);
+
+	iface_extn->dcs_disabled_excessive_triggers = false;
+	iface_extn->dcs_excess_trigger_enable_bitmap = 0;
+	iface_extn->dcs_excess_trigger_restore_bitmap = 0;
+}
 
 static int
 dcs_print_usage_extn(char *reply, int reply_size)
@@ -58,6 +209,7 @@ int hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 int hostapd_drv_dcs_sim_trigger(struct hostapd_data *hapd, u8 link_id,
 				struct driver_dcs_sim *params)
 {
+
 	if (!hapd->driver || !hapd->driver->dcs_sim)
 		return -1;
 
@@ -69,9 +221,17 @@ static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
 					 int reply_size)
 {
 	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
 	struct driver_dcs_config drv_dcs_conf;
 	char *end;
 	unsigned long v;
+	u16 cur_enable;
+	u16 req_enable;
+	u16 apply_enable;
+	u16 req_non_wlan;
+	u16 restore_wlan_bit;
+	bool wlan_bit_changed;
+	bool cooldown_active;
 
 	(void) reply;
 	(void) reply_size;
@@ -102,10 +262,35 @@ static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
 		return -1;
 	}
 
+	cur_enable = conf_extn->dcs_conf.enable_bitmap;
+	req_enable = (u16) v;
+	apply_enable = req_enable;
+	req_non_wlan = req_enable & ~DCS_WLAN_INTF;
+	cooldown_active = iface_extn->dcs_disabled_excessive_triggers;
+	wlan_bit_changed = !!((cur_enable ^ req_enable) & DCS_WLAN_INTF);
+
+	if (wlan_bit_changed) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: reset rate-limit state due to WLAN bit change (0x%04x -> 0x%04x)",
+			   cur_enable, req_enable);
+		hostapd_dcs_rate_limit_reset(hapd->iface);
+	} else if (cooldown_active) {
+		restore_wlan_bit =
+			iface_extn->dcs_excess_trigger_restore_bitmap & DCS_WLAN_INTF;
+		apply_enable = req_non_wlan;
+		iface_extn->dcs_excess_trigger_enable_bitmap = apply_enable;
+		iface_extn->dcs_excess_trigger_restore_bitmap =
+			req_non_wlan | restore_wlan_bit;
+		wpa_printf(MSG_ERROR,
+			   "DCS: preserving WLAN cooldown timer; active=0x%04x restore=0x%04x",
+			   iface_extn->dcs_excess_trigger_enable_bitmap,
+			   iface_extn->dcs_excess_trigger_restore_bitmap);
+	}
+
 	os_memset(&drv_dcs_conf, 0, sizeof(drv_dcs_conf));
-	drv_dcs_conf.dcs_enable = (u16) v;
+	drv_dcs_conf.dcs_enable = apply_enable;
 	drv_dcs_conf.cmd_type = SET_DCS_CONFIG;
-	conf_extn->dcs_conf.enable_bitmap = (u16) v;
+	conf_extn->dcs_conf.enable_bitmap = req_enable;
 
 	/* Send current defaults to driver on enable */
 	drv_dcs_conf.valid_mask =
@@ -743,7 +928,7 @@ int hostapd_dcs_channel_change(struct csa_settings *settings,
 }
 
 void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
-                                union wpa_event_data *data)
+				 union wpa_event_data *data)
 {
 	enum chan_width ch_width;
 	u16 type;
@@ -754,12 +939,14 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 	struct csa_settings settings ={};
 	int new_chan_width, new_centre_freq, new_freq, ret;
 	u8 rand_chan_bitmap;
+	struct hostapd_iface_extn *iface_extn;
 
 	link_hapd = switch_link_hapd(hapd, dcs_intf_event->link_id);
 	if (!link_hapd)
 		return;
 
 	iface = link_hapd->iface;
+	iface_extn = &iface->iface_extn;
 	freq = iface->freq;
 	cf1 = iface->conf->conf_extn.cur_chan_params.cf1;
 	cf2 = iface->conf->conf_extn.cur_chan_params.cf2;
@@ -768,10 +955,27 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 
 	rand_chan_bitmap = iface->conf->conf_extn.dcs_conf.dcs_random_chan_bitmap;
 
+	if (type == DCS_WLAN_INTF &&
+	    iface_extn->dcs_disabled_excessive_triggers) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: ignoring WLAN intf event (auto-disabled)");
+		return;
+	}
+
+	if (type == DCS_WLAN_INTF &&
+	    !(iface->conf->conf_extn.dcs_conf.enable_bitmap & DCS_WLAN_INTF)) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: ignoring WLAN intf event, not enabled; enable_bitmap=0x%04x)",
+			   iface->conf->conf_extn.dcs_conf.enable_bitmap);
+		return;
+	}
+
 	if ((type == DCS_CW_INTF || type == DCS_WLAN_INTF ||
 	     type == DCS_OBSS_INTF) &&
 	    !(rand_chan_bitmap & type)) {
 		hostapd_trigger_dynamic_acs(link_hapd, CHANNEL_CHANGE_CSA);
+		if (type == DCS_WLAN_INTF)
+			hostapd_dcs_rate_limit_update(link_hapd->iface, type);
 		return;
 	}
 
@@ -805,9 +1009,13 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 		settings.freq_params.punct_bitmap = intf_bitmap;
 	}
 
-	wpa_printf(MSG_DEBUG, "type=%d, input freq=%d, ch_width=%d, cf1=%d cf2=%d intf_bitmap:0x%x", type, freq, ch_width, cf1, cf2, intf_bitmap);
+	wpa_printf(MSG_ERROR, "type=%d, input freq=%d, ch_width=%d, cf1=%d cf2=%d intf_bitmap:0x%x", type, freq, ch_width, cf1, cf2, intf_bitmap);
 
 	ret = hostapd_dcs_channel_change(&settings, link_hapd->iface, new_chan_width, new_centre_freq);
+
+	if (type == DCS_WLAN_INTF)
+		hostapd_dcs_rate_limit_update(link_hapd->iface, type);
+
 	return;
 }
 

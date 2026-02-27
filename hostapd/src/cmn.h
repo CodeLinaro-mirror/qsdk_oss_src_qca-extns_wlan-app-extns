@@ -306,6 +306,10 @@ enum dynamic_acs_action_extn {
 	NO_CHANNEL_CHANGE = 2,  // Report-only
 };
 
+#define HOSTAPD_DCS_MAX_TRIGGERS 3
+#define HOSTAPD_DCS_AGING_TIME_SEC 300
+#define HOSTAPD_DCS_REENABLE_TIME_SEC (30 * 60)
+
 struct hostapd_iface_extn {
 	struct esp_extn esp;
 	u16 csa_bitmap;
@@ -321,6 +325,13 @@ struct hostapd_iface_extn {
 	bool acs_dfs_cac_pending;  /* ACS picked DFS channel, waiting for CAC */
 	int vap_type;
 	u16 vlp_threshold_freq; /* Stores 6 GHz VLP priority threshold frequency */
+
+	struct os_reltime dcs_trigger_ts[HOSTAPD_DCS_MAX_TRIGGERS]; /* Recent DCS trigger timestamps */
+	u8 dcs_trigger_count; /* Valid entries in dcs_trigger_ts[] */
+	bool dcs_reenable_timer_set; /* DCS re-enable timer status: active or not */
+	bool dcs_disabled_excessive_triggers; /* DCS disabled state due to execessive triggers*/
+	u16 dcs_excess_trigger_enable_bitmap; /* Bitmap used while DCS is disabled due to excessive triggers*/
+	u16 dcs_excess_trigger_restore_bitmap; /* Bitmap restored after DCS is enabled back */
 };
 
 struct hostapd_hw_modes_extn {
