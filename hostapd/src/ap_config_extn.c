@@ -55,6 +55,12 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->dcs_conf.user_max_cu = DCS_USER_MAX_CU;
 
 	conf_extn->dcs_conf.enable_bitmap = 0;   /* DCS disabled */
+	/*
+	 * Enable random channel selection for AWGN by default; users can
+	 * explicitly disable random channel selection via hostapd.conf/CLI by
+	 * setting the bitmap to 0.
+	 */
+	conf_extn->dcs_conf.dcs_random_chan_bitmap = DCS_AWGN_INTF;
 }
 
 void
