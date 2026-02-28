@@ -310,6 +310,7 @@ struct hostapd_iface_extn {
 	bool acs_success;
 	bool acs_failed;
 	enum dynamic_acs_action_extn dynamic_acs_action;
+	bool dfs_available_from_sta;
 };
 
 struct hostapd_hw_modes_extn {
@@ -655,6 +656,12 @@ uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 				     struct csa_settings *csa)
 {
 	return -EOPNOTSUPP;
+}
+
+static inline void
+hostapd_iface_set_supplicant_channel_extn(struct hostapd_iface *hapd_iface)
+{
+	return;
 }
 
 static inline int
@@ -1038,6 +1045,7 @@ int handle_action_extn(struct hostapd_data *hapd,
 int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 					 bool is_dfs, char *wpa_state,
 					 struct csa_settings *csa);
+void hostapd_iface_set_supplicant_channel_extn(struct hostapd_iface *hapd_iface);
 int acs_get_bw_center_chan(int freq, enum bw_type bw);
 void hostapd_ml_acs_check_and_notify(struct hostapd_iface *iface, bool status);
 void wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx);

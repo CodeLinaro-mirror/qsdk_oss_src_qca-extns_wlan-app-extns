@@ -245,3 +245,226 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 	/* Return 0 on success path, negative on failure consistent with caller */
 	return ret;
 }
+
+bool hostapd_radio_has_ap_bss_extn(struct hostapd_iface *iface)
+{
+	struct hapd_interfaces *interfaces;
+	struct hostapd_iface *other;
+	struct hostapd_data *bss;
+	size_t i, j;
+
+	if (!iface) {
+		wpa_printf(MSG_DEBUG, "%s: iface is NULL", __func__);
+		return false;
+	}
+
+	interfaces = iface->interfaces;
+	if (!interfaces) {
+		wpa_printf(MSG_DEBUG, "%s: interfaces is NULL", __func__);
+		return false;
+	}
+
+	for (i = 0; i < interfaces->count; i++) {
+		other = interfaces->iface[i];
+		if (!other || other->phy[0] == '\0')
+			continue;
+
+		if (os_strcmp(other->phy, iface->phy) != 0)
+			continue;
+
+		for (j = 0; j < other->num_bss; j++) {
+			bss = other->bss[j];
+			if (!bss || !bss->conf)
+				continue;
+
+			if (!bss->conf->mld_ap &&
+			    bss->conf->ssid.ssid_len &&
+			    !bss->conf->start_disabled) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+void hostapd_iface_set_supplicant_channel_extn(struct hostapd_iface *hapd_iface)
+{
+	struct hostapd_freq_params sta_freq;
+	int ret = 0;
+	int band = -1;
+	int freq;
+	int cfg_chan;
+	u8 chan = 0, seg0_chan = 0, seg1_chan = 0;
+
+	if (!hapd_iface) {
+		wpa_printf(MSG_DEBUG, "%s: iface is NULL", __func__);
+		return;
+	}
+	freq = hapd_iface->freq;
+
+	/*
+	 * Only try STA channel when there is no existing AP BSS on
+	 * this radio. If any AP VAP already exists (on this or another
+	 * MLD) for the same phy, we keep using the configured channel
+	 * to avoid dual-channel configurations.
+	 */
+	if (hostapd_radio_has_ap_bss_extn(hapd_iface)) {
+		wpa_printf(MSG_DEBUG, "%s: Skip STA channel follow; AP BSS exists on phy %s",
+			   __func__, hapd_iface->phy);
+		return;
+	}
+
+	/* Derive freq from config if not set yet */
+	if (!freq && hapd_iface->conf && hapd_iface->conf->channel) {
+#ifdef CONFIG_HOSTAPD_SRC_DIR
+		if (configured_fixed_chan_to_freq_helper(hapd_iface) < 0)
+			freq = 0;
+		else
+			freq = hapd_iface->freq;
+#else
+	freq = hapd_iface->freq;
+#endif
+    }
+
+	wpa_printf(MSG_DEBUG,
+		   "%s: pre-band freq=%d (iface->freq=%d, chan=%d, op_class=%d)",
+		   __func__, freq, hapd_iface->freq,
+		   hapd_iface->conf ? hapd_iface->conf->channel : -1,
+		   hapd_iface->conf ? hapd_iface->conf->op_class : -1);
+
+	if (freq && is_24ghz_freq(freq)) {
+		band = 0; /* 2G */
+	} else if (freq && is_5ghz_freq(freq)) {
+		band = 1; /* 5G */
+	} else if (freq && is_6ghz_freq(freq)) {
+		band = 2; /* 6G */
+	} else if (hapd_iface->conf && hapd_iface->conf->channel) {
+		cfg_chan = hapd_iface->conf->channel;
+
+		/*
+		 * Fallback: infer the operating band from the channel number when the
+		 * frequency is invalid. This situation has been observed only on
+		 * 2.4/5 GHz and so the respective handling.
+		 */
+		if (cfg_chan >= 1 && cfg_chan <= 14) {
+			band = 0; /* 2G */
+		}
+		else if ((cfg_chan >= 36 && cfg_chan <= 64) ||
+			 (cfg_chan >= 100 && cfg_chan <= 144) ||
+			 (cfg_chan >= 149 && cfg_chan <= 177)) {
+			band = 1; /* 5G */
+                }
+		else {
+			wpa_printf(MSG_DEBUG,
+				   "%s: No freq; channel=%d not in 5G ranges; "
+				   "skipping fallback", __func__, cfg_chan);
+			return;
+		}
+	} else {
+		wpa_printf(MSG_DEBUG, "%s: Unable to infer band (no freq/channel)",
+			   __func__);
+		return;
+	}
+
+#ifdef CONFIG_HOSTAPD_SRC_DIR
+	ret = hostapd_ucode_get_sta_channel_per_band(hapd_iface,
+						     band,
+						     &sta_freq);
+#endif
+
+	wpa_printf(MSG_DEBUG,
+		   "%s: get_sta_channel ret=%d (freq=%d bw=%d cf1=%d cf2=%d sec=%d punct=0x%04x)",
+		   __func__, ret, sta_freq.freq,
+		   sta_freq.bandwidth, sta_freq.center_freq1,
+		   sta_freq.center_freq2, sta_freq.sec_channel_offset,
+		   sta_freq.punct_bitmap);
+
+	if (ret) {
+		wpa_printf(MSG_DEBUG, "%s: STA channel fetch/validate failed: %d",
+			   __func__, ret);
+		return;
+	}
+
+	/* Mark DFS availability via STA if this is a DFS channel/sub-channel */
+	hapd_iface->iface_extn.dfs_available_from_sta =
+		(ieee80211_is_dfs(sta_freq.freq, hapd_iface->hw_features,
+				  hapd_iface->num_hw_features) ||
+		 ieee80211_is_dfs(sta_freq.center_freq1, hapd_iface->hw_features,
+			 	  hapd_iface->num_hw_features) ||
+		 ieee80211_is_dfs(sta_freq.center_freq2, hapd_iface->hw_features,
+			 	  hapd_iface->num_hw_features));
+
+	wpa_printf(MSG_INFO,
+		   "Using STA connected channel: freq=%d bw=%d cf1=%d cf2=%d sec=%d punct=0x%04x",
+		   sta_freq.freq, sta_freq.bandwidth,
+		   sta_freq.center_freq1, sta_freq.center_freq2,
+		   sta_freq.sec_channel_offset,
+		   sta_freq.punct_bitmap);
+
+	if (sta_freq.freq) {
+		chan = 0;
+
+		hapd_iface->freq = sta_freq.freq;
+		ieee80211_freq_to_chan(sta_freq.freq, &chan);
+		if (chan > 0) {
+			hapd_iface->conf->channel = chan;
+			wpa_printf(MSG_INFO,
+				   "STA primary freq=%d -> channel=%u",
+				   sta_freq.freq, chan);
+		}
+	}
+
+	if (sta_freq.sec_channel_offset)
+		hapd_iface->conf->secondary_channel =
+			sta_freq.sec_channel_offset;
+
+	if (sta_freq.center_freq1) {
+		seg0_chan = 0;
+
+		ieee80211_freq_to_chan(sta_freq.center_freq1,
+				       &seg0_chan);
+		if (seg0_chan > 0) {
+			wpa_printf(MSG_INFO,
+				   "STA seg0 center_freq1=%d seg0_chan=%u",
+				   sta_freq.center_freq1, seg0_chan);
+			hostapd_set_oper_centr_freq_seg0_idx(hapd_iface->conf,
+							     seg0_chan);
+		}
+	}
+
+	if (sta_freq.center_freq2) {
+		seg1_chan = 0;
+
+		ieee80211_freq_to_chan(sta_freq.center_freq2,
+				       &seg1_chan);
+		if (seg1_chan > 0) {
+			wpa_printf(MSG_INFO,
+				   "STA seg1 center_freq2=%d seg1_chan=%u",
+				   sta_freq.center_freq2, seg1_chan);
+			hostapd_set_oper_centr_freq_seg1_idx(hapd_iface->conf,
+							     seg1_chan);
+		}
+	}
+
+	if (sta_freq.bandwidth) {
+		if (sta_freq.bandwidth == 320)
+			hostapd_set_oper_chwidth(hapd_iface->conf,
+						 CONF_OPER_CHWIDTH_320MHZ);
+		else if (sta_freq.bandwidth == 160)
+			hostapd_set_oper_chwidth(hapd_iface->conf,
+						 CONF_OPER_CHWIDTH_160MHZ);
+		else if (sta_freq.bandwidth == 80)
+			hostapd_set_oper_chwidth(hapd_iface->conf,
+						 CONF_OPER_CHWIDTH_80MHZ);
+		else
+			hostapd_set_oper_chwidth(hapd_iface->conf,
+						 CONF_OPER_CHWIDTH_USE_HT);
+	}
+
+	if (sta_freq.punct_bitmap)
+		hapd_iface->conf->punct_bitmap =
+			sta_freq.punct_bitmap;
+
+	return;
+}
