@@ -76,6 +76,8 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 		"bw_reduction_ctrl	: <mask> = set DCS bw reduction control\n" \
 		"csa_tbtt	: CSA TBTT value for DCS\n" \
 		"wlan_intr_params	: phyerr_penalty <val> phyerr_threshold <val> radarerr_threshold <val> coch_intr_threshold <val> txerr_threshold <val> user_max_cu <val> intr_detection_threshold <val> sample_size <val> = set DCS WLAN INTR params\n" \
+		"set_dcs_enable_timer	: <sec> = set DCS re-enable time\n" \
+		"get_dcs_enable_timer	: get DCS re-enable time\n" \
 		"sim            : simulate DCS interference\n" \
 	},
 #else

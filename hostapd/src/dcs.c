@@ -20,6 +20,23 @@
 
 static void hostapd_dcs_reenable_timeout(void *eloop_ctx, void *timeout_ctx);
 
+static unsigned int hostapd_dcs_get_reenable_time_sec(struct hostapd_iface *iface)
+{
+	struct hostapd_iface_extn *iface_extn;
+	u32 secs;
+
+	if (!iface)
+		return HOSTAPD_DCS_REENABLE_TIME_SEC;
+
+	iface_extn = &iface->iface_extn;
+	secs = iface_extn->dcs_re_enable_time;
+
+	if (secs < DCS_ENABLE_TIME_MIN || secs > DCS_ENABLE_TIME_MAX)
+		secs = DCS_ENABLE_TIME;
+
+	return secs;
+}
+
 static void hostapd_dcs_apply_enable_bitmap(struct hostapd_iface *iface,
 						    u16 enable_bitmap)
 {
@@ -43,6 +60,8 @@ static void hostapd_dcs_rate_limit_reset(struct hostapd_iface *iface)
 		return;
 
 	iface_extn = &iface->iface_extn;
+	if (!iface_extn->dcs_re_enable_time)
+		iface_extn->dcs_re_enable_time = DCS_ENABLE_TIME;
 	iface_extn->dcs_trigger_count = 0;
 	os_memset(iface_extn->dcs_trigger_ts, 0,
 		  sizeof(iface_extn->dcs_trigger_ts));
@@ -51,6 +70,9 @@ static void hostapd_dcs_rate_limit_reset(struct hostapd_iface *iface)
 	iface_extn->dcs_excess_trigger_restore_bitmap = 0;
 
 	if (iface_extn->dcs_reenable_timer_set) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: reenable timer cancelled (dcs_re_enable_time=%u sec)",
+			   hostapd_dcs_get_reenable_time_sec(iface));
 		eloop_cancel_timeout(hostapd_dcs_reenable_timeout, iface, NULL);
 		iface_extn->dcs_reenable_timer_set = false;
 	}
@@ -63,6 +85,7 @@ static void hostapd_dcs_rate_limit_update(struct hostapd_iface *iface, u16 type)
 	unsigned int ix;
 	bool disable_dcs = false;
 	u16 cur_enable, new_enable;
+	unsigned int reenable_time;
 
 	if (!iface || !iface->conf)
 		return;
@@ -75,6 +98,10 @@ static void hostapd_dcs_rate_limit_update(struct hostapd_iface *iface, u16 type)
 		wpa_printf(MSG_ERROR,
 			   "DCS: WLAN interference event ignored (already auto-disabled; trigger_count=%u)",
 			   iface_extn->dcs_trigger_count);
+		if (iface_extn->dcs_reenable_timer_set)
+			wpa_printf(MSG_DEBUG,
+				   "DCS: reenable timer in progress (dcs_re_enable_time=%u sec)",
+				   hostapd_dcs_get_reenable_time_sec(iface));
 		return;
 	}
 
@@ -112,6 +139,7 @@ static void hostapd_dcs_rate_limit_update(struct hostapd_iface *iface, u16 type)
 		iface_extn->dcs_excess_trigger_restore_bitmap = cur_enable;
 		iface_extn->dcs_excess_trigger_enable_bitmap = new_enable;
 		iface_extn->dcs_trigger_count = 0;
+		reenable_time = hostapd_dcs_get_reenable_time_sec(iface);
 
 		wpa_printf(MSG_ERROR,
 			   "DCS: disabling WLAN interference handling (0x%04x -> 0x%04x); too many triggers within %u sec",
@@ -121,14 +149,21 @@ static void hostapd_dcs_rate_limit_update(struct hostapd_iface *iface, u16 type)
 		hostapd_dcs_apply_enable_bitmap(iface, new_enable);
 
 		if (!iface_extn->dcs_reenable_timer_set) {
-			eloop_register_timeout(HOSTAPD_DCS_REENABLE_TIME_SEC, 0,
+			wpa_printf(MSG_ERROR,
+				   "DCS: reenable timer started time %u sec (dcs_re_enable_time=%u sec)",
+				   reenable_time, reenable_time);
+			eloop_register_timeout(reenable_time, 0,
 					       hostapd_dcs_reenable_timeout,
 					       iface, NULL);
 			iface_extn->dcs_reenable_timer_set = true;
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "DCS: reenable timer already running (dcs_re_enable_time=%u sec)",
+				   reenable_time);
 		}
 		wpa_printf(MSG_ERROR,
 			   "DCS: WLAN interference handling auto-disabled (for %u sec)",
-			   HOSTAPD_DCS_REENABLE_TIME_SEC);
+			   reenable_time);
 		return;
 	}
 
@@ -152,6 +187,10 @@ static void hostapd_dcs_reenable_timeout(void *eloop_ctx, void *timeout_ctx)
 	iface_extn = &iface->iface_extn;
 	iface_extn->dcs_reenable_timer_set = false;
 	iface_extn->dcs_trigger_count = 0;
+
+	wpa_printf(MSG_ERROR,
+		   "DCS: reenable timer expired (dcs_re_enable_time=%u sec)",
+		   hostapd_dcs_get_reenable_time_sec(iface));
 
 	if (!iface_extn->dcs_disabled_excessive_triggers)
 		return;
@@ -185,6 +224,8 @@ dcs_print_usage_extn(char *reply, int reply_size)
 		"  (Bit(0)=CW, Bit(1)=WLAN, Bit(2)=AWGN, Bit(4)=OBSS, 0=Disabled; AWGN enabled by default during init)"
 		"  It is advised for user to keep it enabled for AWGN through CLI\n"
 		"  dcs get_enable   : get DCS enable value\n"
+		"  dcs set_dcs_enable_timer : <sec> = set DCS re-enable time\n"
+		"  dcs get_dcs_enable_timer : get DCS re-enable time\n"
 		"  dcs sim              : DCS simulator\n"
 		"  dcs get_random_chan_en	: get DCS random channel enable state\n"
 		"  dcs get_csa_tbtt		: get DCS CSA TBTT value\n"
@@ -577,6 +618,76 @@ static int hostapd_ctrl_iface_get_dcs_enable(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_dcs_reenable_time(struct hostapd_data *hapd,
+						    const char *cmd, char *reply,
+						    int reply_size)
+{
+	struct hostapd_iface_extn *iface_extn;
+	unsigned long val_ul;
+	u32 secs;
+	char *end = NULL;
+
+	(void) reply;
+	(void) reply_size;
+
+	if (!hapd || !hapd->iface)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+	if (*cmd == '\0') {
+		wpa_printf(MSG_ERROR, "DCS: reenable_time: empty value");
+		return -1;
+	}
+
+	errno = 0;
+	val_ul = strtoul(cmd, &end, 0);
+	while (end && *end == ' ')
+		end++;
+	if (errno != 0 || end == cmd || (end && *end != '\0') ||
+	    val_ul > 0xFFFFFFFFUL) {
+		wpa_printf(MSG_ERROR, "DCS: reenable_time: invalid value '%s'",
+			   cmd);
+		return -1;
+	}
+
+	secs = (u32) val_ul;
+	if (secs < DCS_ENABLE_TIME_MIN || secs > DCS_ENABLE_TIME_MAX) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: reenable_time: value out of range (%u..%u): %u",
+			   DCS_ENABLE_TIME_MIN, DCS_ENABLE_TIME_MAX, secs);
+		return -1;
+	}
+
+	iface_extn = &hapd->iface->iface_extn;
+	iface_extn->dcs_re_enable_time = secs;
+
+	wpa_printf(MSG_DEBUG, "DCS: reenable_time set to %u sec", secs);
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_dcs_reenable_time(struct hostapd_data *hapd,
+							    const char *cmd, char *reply,
+							    int reply_size)
+{
+	int ret;
+	unsigned int secs;
+
+	(void) cmd;
+
+	if (!hapd || !hapd->iface)
+		return -1;
+
+	secs = hostapd_dcs_get_reenable_time_sec(hapd->iface);
+
+	ret = os_snprintf(reply, reply_size, "dcs_re_enable_time=%u\n", secs);
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
 static int hostapd_ctrl_iface_dcs_sim(struct hostapd_data *hapd,
 				      const char *cmd, char *reply,
 				      int reply_size)
@@ -739,6 +850,13 @@ int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 	} else if (os_strcmp(cmd, "get_enable") == 0) {
 		return hostapd_ctrl_iface_get_dcs_enable(hapd, cmd, reply,
 							 reply_size);
+	} else if (os_strncmp(cmd, "set_dcs_enable_timer ", 21) == 0) {
+		return hostapd_ctrl_iface_set_dcs_reenable_time(hapd, cmd + 21,
+								reply,
+								reply_size);
+	} else if (os_strcmp(cmd, "get_dcs_enable_timer") == 0) {
+		return hostapd_ctrl_iface_get_dcs_reenable_time(hapd, cmd, reply,
+								reply_size);
 	} else if (os_strncmp(cmd, "sim ", 4) == 0) {
 		return hostapd_ctrl_iface_dcs_sim(hapd, cmd + 4,
 						  reply, reply_size);

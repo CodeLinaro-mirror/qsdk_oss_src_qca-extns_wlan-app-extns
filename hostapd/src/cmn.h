@@ -308,7 +308,12 @@ enum dynamic_acs_action_extn {
 
 #define HOSTAPD_DCS_MAX_TRIGGERS 3
 #define HOSTAPD_DCS_AGING_TIME_SEC 300
-#define HOSTAPD_DCS_REENABLE_TIME_SEC (30 * 60)
+
+#define DCS_ENABLE_TIME         (30 * 60)
+#define DCS_ENABLE_TIME_MIN     (5 * 60)
+#define DCS_ENABLE_TIME_MAX     (60 * 60)
+
+#define HOSTAPD_DCS_REENABLE_TIME_SEC DCS_ENABLE_TIME
 
 struct hostapd_iface_extn {
 	struct esp_extn esp;
@@ -329,6 +334,7 @@ struct hostapd_iface_extn {
 	struct os_reltime dcs_trigger_ts[HOSTAPD_DCS_MAX_TRIGGERS]; /* Recent DCS trigger timestamps */
 	u8 dcs_trigger_count; /* Valid entries in dcs_trigger_ts[] */
 	bool dcs_reenable_timer_set; /* DCS re-enable timer status: active or not */
+	u32 dcs_re_enable_time;
 	bool dcs_disabled_excessive_triggers; /* DCS disabled state due to execessive triggers*/
 	u16 dcs_excess_trigger_enable_bitmap; /* Bitmap used while DCS is disabled due to excessive triggers*/
 	u16 dcs_excess_trigger_restore_bitmap; /* Bitmap restored after DCS is enabled back */
