@@ -468,3 +468,25 @@ void hostapd_iface_set_supplicant_channel_extn(struct hostapd_iface *hapd_iface)
 
 	return;
 }
+
+/**
+ * hostapd_is_bh_sta_connecting_or_connected_extn - Check and update whether STA
+ * is connecting or connected
+ *
+ * @iface: Hostapd interface
+ *
+ * True: if STA is in connecting or connected state
+ * False: if STA is not in connecting or connected state
+ */
+bool hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface)
+{
+	if (!iface)
+		return false;
+
+	wpa_printf(MSG_INFO, "sta_wpa_state = %s", iface->iface_extn.sta_wpa_state);
+	if (!os_strncmp(iface->iface_extn.sta_wpa_state, "COMPLETED", 9) ||
+	    !os_strncmp(iface->iface_extn.sta_wpa_state, "AUTHENTICATING", 14))
+		return true;
+
+	return false;
+}
