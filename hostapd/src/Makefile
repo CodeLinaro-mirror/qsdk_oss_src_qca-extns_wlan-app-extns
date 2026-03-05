@@ -21,7 +21,9 @@ OBJS+= \
 
 ifdef CONFIG_EXTERNAL_PLUGIN
 CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN
+CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN_TESTAPP
 OBJS += qcn_extns/hostapd_if_eloop.o
+OBJS += qcn_extns/hostapd_if_plugin.o
 endif
 
 ifneq ($(wildcard ../qcn_extns/qacs/qacs.c),)
