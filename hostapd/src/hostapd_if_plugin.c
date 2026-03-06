@@ -117,6 +117,7 @@ struct deque {
 };
 
 static struct deque *datablock_deque;
+static pthread_mutex_t datablock_deque_mutex;
 
 static volatile bool test_harness_thread_running = false;
 static volatile bool test_harness_thread_done = false;
@@ -311,7 +312,9 @@ static void notify_event(struct hostapd_if_event *event)
 				  sizeof(datablock->sta_mac));
 			datablock->data.request.req_type =
 				HOSTAPD_IF_EVENT_M2_NOTIFY;
+			pthread_mutex_lock(&datablock_deque_mutex);
 			enqueue_rear(datablock_deque, datablock);
+			pthread_mutex_unlock(&datablock_deque_mutex);
 			wpa_printf(MSG_DEBUG,
 				   "queued m3 trigger for STA " MACSTR "\n",
 				   MAC2STR(datablock->sta_mac));
@@ -371,6 +374,7 @@ static void invoke_assoc(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 	datablock->data.request.req_type = HOSTAPD_IF_EVENT_ASSOC_REQ;
 
 	/* push datablock to deque */
+	pthread_mutex_lock(&datablock_deque_mutex);
 	enqueue_rear(datablock_deque, datablock);
 	wpa_printf(MSG_DEBUG,
 		   "queued assoc request for STA " MACSTR "\n",
@@ -382,6 +386,7 @@ static void invoke_assoc(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 		global_conf.assoc.process_frames = true;
 	wpa_printf(MSG_DEBUG, "datablock queue has %d elements",
 		   deque_size(datablock_deque));
+	pthread_mutex_unlock(&datablock_deque_mutex);
 	return;
 }
 
@@ -404,6 +409,7 @@ static void invoke_auth(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 	datablock->data.request.req_type = HOSTAPD_IF_EVENT_AUTH_REQ;
 
 	/* push datablock to deque */
+	pthread_mutex_lock(&datablock_deque_mutex);
 	enqueue_rear(datablock_deque, datablock);
 	wpa_printf(MSG_DEBUG, "queued auth request for STA " MACSTR "\n",
 		   MAC2STR(datablock->sta_mac));
@@ -413,6 +419,7 @@ static void invoke_auth(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 		global_conf.auth.process_frames = true;
 	wpa_printf(MSG_DEBUG, "datablock queue has %d elements",
 		   deque_size(datablock_deque));
+	pthread_mutex_unlock(&datablock_deque_mutex);
 	return;
 }
 
@@ -1191,8 +1198,11 @@ void *invoke_loop()
 	while(test_harness_thread_running) {
 
 		usleep(4000);
-		if ((is_empty(datablock_deque)))
+		pthread_mutex_lock(&datablock_deque_mutex);
+		if ((is_empty(datablock_deque))) {
+			pthread_mutex_unlock(&datablock_deque_mutex);
 			continue;
+		}
 		/*
 		 * Determine if we're in an out-of-order case for the
 		 * current frame at the front
@@ -1266,6 +1276,7 @@ void *invoke_loop()
 		 * just skip to the next iteration without modifying the queue
 		 */
 		if (!should_process) {
+			pthread_mutex_unlock(&datablock_deque_mutex);
 			continue;
 		}
 
@@ -1279,6 +1290,7 @@ void *invoke_loop()
 			wpa_printf(MSG_DEBUG,
 				   "processing frame from FRONT (normal case)");
 		}
+		pthread_mutex_unlock(&datablock_deque_mutex);
 
 		resp_ctx = calloc(sizeof(*resp_ctx), 1);
 		ctx = datablock->data.request.ctx;
@@ -1296,6 +1308,8 @@ void hostapd_if_plugin_deinit()
 	while (!test_harness_thread_done)
 		usleep(1000);
 
+	/* Destroy the mutex for datablock_deque */
+	pthread_mutex_destroy(&datablock_deque_mutex);
 }
 
 /* Constructor: called when the shared library is loaded */
@@ -1306,6 +1320,9 @@ enum hostapd_if_eloop_type hostapd_if_plugin_init(void *arg)
 	global_conf.auth.status_code = -1;
 	global_conf.auth.send_response = 1;
 	global_conf.assoc.send_response = 1;
+
+	/* Initialize the mutex for datablock_deque */
+	pthread_mutex_init(&datablock_deque_mutex, NULL);
 
 	datablock_deque = calloc(sizeof(*datablock_deque), 1);
 	test_harness_thread_running = true;
