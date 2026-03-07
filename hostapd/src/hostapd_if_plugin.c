@@ -36,7 +36,7 @@
 #include "crypto/sha512.h"
 #include "hostapd_if_plugin.h"
 
-#define MAX_SIZE 100
+#define QUEUE_MAX_SIZE 100
 
 /* frame invoke policy related configuration options */
 struct hostapd_if_invoke_frame_config {
@@ -111,9 +111,9 @@ static struct dl_list plugin_hapd_iface_list = {
 
 /* Defining the deque structure */
 struct deque {
-    struct invoke_plugin_datablock *datablocks[MAX_SIZE];
-    int front;
-    int rear;
+    struct invoke_plugin_datablock *datablocks[QUEUE_MAX_SIZE];
+    uint32_t front;
+    uint32_t rear;
 };
 
 static struct deque *datablock_deque;
@@ -157,11 +157,6 @@ void initialize_deque(struct deque* q)
 	q->rear = 1;
 }
 
-/* Function to check if the deque is empty */
-bool is_empty(struct deque* q)
-{
-	return (q->front == q->rear - 1);
-}
 
 /* Function to check if the deque is full */
 bool is_full(struct deque* q)
@@ -171,7 +166,19 @@ bool is_full(struct deque* q)
 
 int deque_size(struct deque* q)
 {
-	return (q->rear - q->front - 1) % MAX_SIZE;
+	uint32_t rear;
+	if (q->rear > q->front)
+		rear = q->rear;
+	else
+		rear = QUEUE_MAX_SIZE + q->rear;
+
+	return ((rear - q->front) - 1);
+}
+
+/* Function to check if the deque is empty */
+bool is_empty(struct deque* q)
+{
+	return (deque_size(q) == 0);
 }
 
 /*
@@ -185,7 +192,7 @@ void enqueue_rear(struct deque* q, struct invoke_plugin_datablock *datablock)
 		return;
 	}
 	q->datablocks[q->rear] = datablock;
-	q->rear = (q->rear + 1) % MAX_SIZE;
+	q->rear = (q->rear + 1) % QUEUE_MAX_SIZE;
 }
 
 /* Function to add an element to the deque at front (enqueue_front operation) */
@@ -196,7 +203,10 @@ void enqueue_front(struct deque* q, struct invoke_plugin_datablock *datablock)
 		return;
 	}
 	q->datablocks[q->front] = datablock;
-	q->front = (q->front - 1) % MAX_SIZE;
+	if (q->front == 0)
+		q->front = QUEUE_MAX_SIZE - 1;
+	else
+		q->front = q->front - 1;
 }
 
 /*
@@ -209,7 +219,10 @@ void dequeue_rear(struct deque* q)
 		printf("Deque is empty\n");
 		return;
 	}
-	q->rear = (q->rear - 1) % MAX_SIZE;
+	if (q->rear == 0)
+		q->rear = QUEUE_MAX_SIZE - 1;
+	else
+		q->rear = q->rear - 1;
 }
 
 /*
@@ -222,7 +235,7 @@ void dequeue_front(struct deque* q)
 		printf("Deque is empty\n");
 		return;
 	}
-	q->front = (q->front + 1) % MAX_SIZE;
+	q->front = (q->front + 1) % QUEUE_MAX_SIZE;
 }
 
 /*
@@ -236,7 +249,7 @@ struct invoke_plugin_datablock* peek_front(struct deque* q)
 		/* return some default value or handle error differently */
 		return NULL;
 	}
-	return q->datablocks[(q->front + 1) % MAX_SIZE];
+	return q->datablocks[(q->front + 1) % QUEUE_MAX_SIZE];
 }
 
 /*
@@ -244,12 +257,19 @@ struct invoke_plugin_datablock* peek_front(struct deque* q)
  */
 struct invoke_plugin_datablock* peek_rear(struct deque* q)
 {
+	uint32_t rear;
 	if (is_empty(q)) {
 		printf("Deque is empty\n");
 		/* return some default value or handle error differently */
 		return NULL;
 	}
-	return q->datablocks[(q->rear - 1) % MAX_SIZE];
+
+	if (q->rear == 0)
+		rear = QUEUE_MAX_SIZE;
+	else
+		rear = q->rear;
+
+	return q->datablocks[rear - 1];
 }
 
 
