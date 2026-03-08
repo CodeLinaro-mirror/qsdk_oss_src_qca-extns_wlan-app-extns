@@ -875,6 +875,16 @@ hostapd_trigger_channel_switch_for_acs(struct hostapd_iface *iface,
 			break;
 	}
 
+	if (iface->iface_extn.dcs_in_progress &&
+	    settings.freq_params.freq == iface->freq &&
+	    bandwidth == iface->conf->conf_extn.cur_chan_params.chan_width &&
+	    settings.freq_params.center_freq1 ==
+		    iface->conf->conf_extn.cur_chan_params.cf1 &&
+	    settings.freq_params.punct_bitmap == iface->conf->punct_bitmap) {
+		hostapd_dcs_restore_extn(iface, "ACS selected current channel");
+		return 0;
+	}
+
 #ifdef CONFIG_QCN_EXTN
 	dfs_range += hostapd_find_dfs_range_extn(iface, bandwidth,
 						 &settings.freq_params);
@@ -972,14 +982,17 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 	if (err) {
 		wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
 			   err);
+		hostapd_dcs_restore_extn(iface, "ACS failed");
 		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
 		return 0;
 	}
 
 	cs_err = hostapd_trigger_channel_switch_for_acs(iface, chan);
-	if (cs_err)
+	if (cs_err) {
 		wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
 			   cs_err);
+		hostapd_dcs_restore_extn(iface, "ACS channel switch failed");
+	}
 
 	iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
 	return 0;
@@ -993,6 +1006,7 @@ acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
 
 	wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
 		   err);
+	hostapd_dcs_restore_extn(iface, "ACS failed");
 	iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
 
 	return 0;

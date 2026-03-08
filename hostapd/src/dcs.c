@@ -19,6 +19,74 @@
 #include "common/hw_features_common.h"
 
 static void hostapd_dcs_reenable_timeout(void *eloop_ctx, void *timeout_ctx);
+static void hostapd_dcs_apply_enable_bitmap(struct hostapd_iface *iface,
+					    u16 enable_bitmap);
+
+static void hostapd_dcs_disable_fw(struct hostapd_iface *iface)
+{
+	struct hostapd_data *hapd;
+	struct driver_dcs_config drv_dcs_conf;
+
+	if (!iface || !iface->conf)
+		return;
+
+	hapd = iface->bss[0];
+	if (!hapd)
+		return;
+
+	os_memset(&drv_dcs_conf, 0, sizeof(drv_dcs_conf));
+	drv_dcs_conf.dcs_enable = 0;
+	drv_dcs_conf.cmd_type = SET_DCS_CONFIG;
+
+	if (hostapd_drv_dcs_config(hapd, hapd->mld_link_id,
+				   &drv_dcs_conf) < 0)
+		wpa_printf(MSG_ERROR,
+			   "DCS: failed to disable");
+}
+
+static bool hostapd_dcs_set_in_progress(struct hostapd_iface *iface, u16 type)
+{
+	struct hostapd_iface_extn *iface_extn;
+
+	if (!iface)
+		return false;
+
+	iface_extn = &iface->iface_extn;
+	if (iface_extn->dcs_in_progress) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: interference event ignored (dcs in progress)");
+		return false;
+	}
+
+	iface_extn->dcs_in_progress = true;
+	hostapd_dcs_disable_fw(iface);
+	wpa_printf(MSG_DEBUG,
+		   "DCS: dcs in progress set, firmware DCS disabled (type=0x%04x)",
+		   type);
+	return true;
+}
+
+void hostapd_dcs_restore_extn(struct hostapd_iface *iface, const char *reason)
+{
+	struct hostapd_iface_extn *iface_extn;
+	u16 enable_bitmap;
+
+	if (!iface || !iface->conf)
+		return;
+
+	iface_extn = &iface->iface_extn;
+	if (!iface_extn->dcs_in_progress)
+		return;
+
+	enable_bitmap = iface->conf->conf_extn.dcs_conf.enable_bitmap;
+	wpa_printf(MSG_DEBUG,
+		   "DCS: restoring after %s (enable_bitmap=0x%04x)",
+		   reason ? reason : "CSA",
+		   enable_bitmap);
+	iface_extn->dcs_in_progress = false;
+	wpa_printf(MSG_ERROR, "DCS: dcs in progress cleared");
+	hostapd_dcs_apply_enable_bitmap(iface, enable_bitmap);
+}
 
 static unsigned int hostapd_dcs_get_reenable_time_sec(struct hostapd_iface *iface)
 {
@@ -41,6 +109,7 @@ static void hostapd_dcs_apply_enable_bitmap(struct hostapd_iface *iface,
 						    u16 enable_bitmap)
 {
 	struct hostapd_data *hapd;
+	struct hostapd_iface_extn *iface_extn;
 
 	if (!iface || !iface->conf || !iface->bss || !iface->num_bss)
 		return;
@@ -48,6 +117,14 @@ static void hostapd_dcs_apply_enable_bitmap(struct hostapd_iface *iface,
 	hapd = iface->bss[0];
 	if (!hapd)
 		return;
+
+	iface_extn = &iface->iface_extn;
+
+	if (iface_extn->dcs_in_progress) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: deferring enable bitmap apply (dcs in progress)");
+		return;
+	}
 
 	dcs_enable_init(hapd, enable_bitmap);
 }
@@ -976,6 +1053,12 @@ int hostapd_dcs_channel_change(struct csa_settings *settings,
 {
 	int i, ret = 0;
 
+	wpa_printf(MSG_DEBUG,
+		   "DCS: channel_change req freq=%d cf1=%d width=%d cur_freq=%d cur_cf1=%d cur_width=%d",
+		   settings->freq_params.freq, new_centre_freq, new_chan_width,
+		   iface->freq, iface->conf->conf_extn.cur_chan_params.cf1,
+		   iface->conf->conf_extn.cur_chan_params.chan_width);
+
 	settings->cs_count = iface->conf->conf_extn.dcs_conf.dcs_csa_tbtt;
 
 	switch (new_chan_width) {
@@ -1003,6 +1086,16 @@ int hostapd_dcs_channel_change(struct csa_settings *settings,
 	settings->freq_params.he_enabled = iface->conf->ieee80211ax;
 	settings->freq_params.eht_enabled= iface->conf->ieee80211be;
 	settings->power_mode = -1;
+
+	if (settings->freq_params.freq == iface->freq &&
+	    new_chan_width == iface->conf->conf_extn.cur_chan_params.chan_width &&
+	    settings->freq_params.center_freq1 ==
+		    iface->conf->conf_extn.cur_chan_params.cf1 &&
+	    settings->freq_params.punct_bitmap == iface->conf->punct_bitmap) {
+		wpa_printf(MSG_ERROR, "DCS: CSA skipped (same channel)");
+		hostapd_dcs_restore_extn(iface, "CSA skipped (same channel)");
+		return 0;
+	}
 
 	if (is_6ghz_freq(settings->freq_params.freq) &&
 			 iface->conf->enable_best_power_mode) {
@@ -1040,6 +1133,12 @@ int hostapd_dcs_channel_change(struct csa_settings *settings,
 			   settings->freq_params.punct_bitmap);
 
 		ret = hostapd_switch_channel(iface->bss[i], settings);
+		if (ret) {
+			wpa_printf(MSG_ERROR,
+				   "DCS: hostapd_switch_channel failed for bss[%d] (ret=%d)",
+				   i, ret);
+			break;
+		}
 	}
 
 	return ret;
@@ -1058,12 +1157,16 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 	int new_chan_width, new_centre_freq, new_freq, ret;
 	u8 rand_chan_bitmap;
 	struct hostapd_iface_extn *iface_extn;
+	u16 enable_bitmap;
 
 	link_hapd = switch_link_hapd(hapd, dcs_intf_event->link_id);
 	if (!link_hapd)
 		return;
 
 	iface = link_hapd->iface;
+	wpa_printf(MSG_ERROR,
+		   "DCS: event rx type=0x%04x link_id=%u",
+		   dcs_intf_event->type, dcs_intf_event->link_id);
 	iface_extn = &iface->iface_extn;
 	freq = iface->freq;
 	cf1 = iface->conf->conf_extn.cur_chan_params.cf1;
@@ -1072,6 +1175,10 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 	type = dcs_intf_event->type;
 
 	rand_chan_bitmap = iface->conf->conf_extn.dcs_conf.dcs_random_chan_bitmap;
+	enable_bitmap = iface->conf->conf_extn.dcs_conf.enable_bitmap;
+	wpa_printf(MSG_ERROR,
+		   "DCS: enable_bitmap=0x%04x rand_chan_bitmap=0x%02x dcs_in_progress=%d",
+		   enable_bitmap, rand_chan_bitmap, iface_extn->dcs_in_progress);
 
 	if (type == DCS_WLAN_INTF &&
 	    iface_extn->dcs_disabled_excessive_triggers) {
@@ -1080,18 +1187,39 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 		return;
 	}
 
-	if (type == DCS_WLAN_INTF &&
-	    !(iface->conf->conf_extn.dcs_conf.enable_bitmap & DCS_WLAN_INTF)) {
+	if (!enable_bitmap) {
 		wpa_printf(MSG_ERROR,
-			   "DCS: ignoring WLAN intf event, not enabled; enable_bitmap=0x%04x)",
-			   iface->conf->conf_extn.dcs_conf.enable_bitmap);
+			   "DCS: ignoring interference event (DCS disabled)");
+		return;
+	}
+
+	if (!(enable_bitmap & type)) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: ignoring interference event, not enabled; enable_bitmap=0x%04x)",
+			   enable_bitmap);
+		return;
+	}
+
+	if (iface_extn->dcs_in_progress) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: interference event ignored (dcs in progress)");
 		return;
 	}
 
 	if ((type == DCS_CW_INTF || type == DCS_WLAN_INTF ||
 	     type == DCS_OBSS_INTF) &&
 	    !(rand_chan_bitmap & type)) {
-		hostapd_trigger_dynamic_acs(link_hapd, CHANNEL_CHANGE_CSA);
+		int acs_ret;
+
+		if (!hostapd_dcs_set_in_progress(iface, type))
+			return;
+		acs_ret = hostapd_trigger_dynamic_acs(link_hapd,
+						      CHANNEL_CHANGE_CSA);
+		if (acs_ret < 0) {
+			hostapd_dcs_restore_extn(iface,
+						 "dynamic ACS start failed");
+			return;
+		}
 		if (type == DCS_WLAN_INTF)
 			hostapd_dcs_rate_limit_update(link_hapd->iface, type);
 		return;
@@ -1129,7 +1257,13 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_ERROR, "type=%d, input freq=%d, ch_width=%d, cf1=%d cf2=%d intf_bitmap:0x%x", type, freq, ch_width, cf1, cf2, intf_bitmap);
 
+	if (!hostapd_dcs_set_in_progress(iface, type))
+		return;
 	ret = hostapd_dcs_channel_change(&settings, link_hapd->iface, new_chan_width, new_centre_freq);
+	if (ret) {
+		hostapd_dcs_restore_extn(iface, "CSA trigger failed");
+		return;
+	}
 
 	if (type == DCS_WLAN_INTF)
 		hostapd_dcs_rate_limit_update(link_hapd->iface, type);
@@ -1437,5 +1571,5 @@ void dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap)
 		   drv_dcs_conf.dcs_enable);
 
 	if (hostapd_drv_dcs_config(hapd, hapd->mld_link_id, &drv_dcs_conf) < 0)
-		wpa_printf(MSG_INFO, "DCS enable configuration failed");
+		wpa_printf(MSG_ERROR, "DCS enable configuration failed");
 }

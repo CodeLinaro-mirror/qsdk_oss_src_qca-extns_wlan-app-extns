@@ -338,6 +338,7 @@ struct hostapd_iface_extn {
 	bool dcs_disabled_excessive_triggers; /* DCS disabled state due to execessive triggers*/
 	u16 dcs_excess_trigger_enable_bitmap; /* Bitmap used while DCS is disabled due to excessive triggers*/
 	u16 dcs_excess_trigger_restore_bitmap; /* Bitmap restored after DCS is enabled back */
+	bool dcs_in_progress; /* DCS-triggered channel switch is in progress */
 };
 
 struct hostapd_hw_modes_extn {
@@ -388,6 +389,12 @@ hostapd_modify_supported_op_class_for_240mhz_extn(int freq,
 						  u8 *op_class)
 {
 	return -1;
+}
+
+static inline void hostapd_dcs_restore_extn(struct hostapd_iface *iface,
+					    const char *reason)
+{
+	return;
 }
 
 static inline void
@@ -1167,6 +1174,7 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 void update_chan_params(struct hostapd_data *hapd, int cf1, int cf2,
 			enum chan_width chwidth);
 bool dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf, u16 dcs_intf_type);
+void hostapd_dcs_restore_extn(struct hostapd_iface *iface, const char *reason);
 struct hostapd_channel_data *
 get_chan_data_by_freq(struct hostapd_hw_modes *mode, int freq);
 int is_chan_range_available(struct hostapd_hw_modes *mode,
