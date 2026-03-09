@@ -481,6 +481,56 @@ static int hostapd_ctrl_iface_get_country_ie_extn(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_ecsa_opclass_extn(struct hostapd_data *hapd,
+						    const char *cmd)
+{
+	char *end;
+	unsigned long v;
+
+	if (!hapd || !hapd->conf || !cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+	if (*cmd == '\0') {
+		wpa_printf(MSG_ERROR, "CTRL: ECSA_OPCLASS: empty value");
+		return -1;
+	}
+
+	errno = 0;
+	v = strtoul(cmd, &end, 0);
+	while (end && *end == ' ')
+		end++;
+	if (errno != 0 || end == cmd || (end && *end != '\0') || v > 255) {
+		wpa_printf(MSG_ERROR, "CTRL: ECSA_OPCLASS: invalid value '%s'",
+			   cmd);
+		return -1;
+	}
+
+	hapd->conf->bss_extn.ecsa_opclass = (u8)v;
+	wpa_printf(MSG_DEBUG, "CTRL: ECSA_OPCLASS override set to %lu", v);
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_ecsa_opclass_extn(struct hostapd_data *hapd,
+						    char *reply,
+						    int reply_size)
+{
+	u8 opclass;
+	int res;
+
+	if (!hapd || !hapd->conf)
+		return -1;
+
+	opclass = hapd->conf->bss_extn.ecsa_opclass;
+	res = os_snprintf(reply, reply_size, "%u\n", opclass);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
 static int hostapd_ctrl_set_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, char *cmd)
 {
 #ifdef NEED_AP_MLME
@@ -1004,10 +1054,16 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "GET_ESP", 7) == 0) {
 		reply_len_extn = hostapd_ctrl_iface_get_esp_extn(hapd, buf + 7, reply,
 								 reply_size);
+	} else if (os_strncmp(buf, "ECSA_OPCLASS ", 13) == 0) {
+		if (hostapd_ctrl_iface_set_ecsa_opclass_extn(hapd, buf + 13))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_ECSA_OPCLASS") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_ecsa_opclass_extn(hapd, reply,
+									  reply_size);
 	} else if (os_strncmp(buf, "RNR_6GHZ_COLOCATED ", 19) == 0) {
 		if (hostapd_ctrl_set_rnr_6ghz_colocated_extn(hapd, buf + 19))
 			reply_len_extn = -1;
-        } else if (os_strncmp(buf, "GET_RNR_6GHZ_COLOCATED", 22) == 0) {
+	} else if (os_strncmp(buf, "GET_RNR_6GHZ_COLOCATED", 22) == 0) {
 		reply_len_extn = hostapd_ctrl_get_rnr_6ghz_colocated_extn(hapd, buf + 22, reply,
 									  reply_size);
 	} else if (os_strcmp(buf, "GET_HW_INFO") == 0) {
