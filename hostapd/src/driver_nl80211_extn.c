@@ -387,7 +387,7 @@ int qca_nl80211_handle_dcs_config_evt_extn(struct i802_bss *bss,
 }
 
 int wpa_driver_nl80211_vendor_bss_addr(void *priv, u8 radio_idx, u8 bss_id,
-				       u8 mbssid_grp_id, u8 mbssid_grp_size,
+				       u32 mbssid_enabled,
 				       enum nl80211_iftype iftype, u32 flags,
 				       u8 *addr, const char *ifname)
 {
@@ -430,13 +430,9 @@ int wpa_driver_nl80211_vendor_bss_addr(void *priv, u8 radio_idx, u8 bss_id,
 		goto fail;
 
 	/* Optional MBSSID group details for 6 GHz AP */
-	if (mbssid_grp_size) {
-		if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_GRP_ID,
-			       mbssid_grp_id) ||
-		    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_GRP_SIZE,
-			       mbssid_grp_size))
-			goto fail;
-	}
+	if (mbssid_enabled &&
+	    nla_put_flag(msg, QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_ENABLED))
+		goto fail;
 
 	nla_nest_end(msg, attr);
 

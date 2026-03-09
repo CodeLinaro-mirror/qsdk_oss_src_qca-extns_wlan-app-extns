@@ -19,7 +19,7 @@
 #include "cmn.h"
 
 int wpa_driver_nl80211_vendor_bss_addr(void *priv, u8 radio_idx, u8 bss_id,
-				       u8 mbssid_grp_id, u8 mbssid_grp_size,
+				       u32 mbssid_enabled,
 				       enum nl80211_iftype iftype, u32 flags,
 				       u8 *addr, const char *ifname);
 
@@ -32,10 +32,6 @@ static int hostapd_get_bss_index(struct hostapd_data *hapd)
 
 	if (hapd->iface->num_bss == 0)
 		return 0;
-
-	/* MBSSID: reuse hostapd's MBSSID index */
-	if (hapd->iconf && hapd->iconf->mbssid)
-		return hapd->mbssid_idx;
 
 	if (hapd->conf->bss_index >= 0) {
 		if (hapd->conf->bss_index >= MAX_NUM_MAC_ADDRESS) {
@@ -189,9 +185,8 @@ static int hostapd_drv_vendor_bssid(struct hostapd_data *hapd,
 				    u8 *addr,
 				    bool alloc)
 {
+	u32 mbssid_enabled;
 	u8 radio_idx;
-	u8 mbssid_grp_id = 0;
-	u8 mbssid_grp_size = 0;
 	const char *ifname = NULL;
 
 	if (!hapd || !hapd->iface)
@@ -205,18 +200,12 @@ static int hostapd_drv_vendor_bssid(struct hostapd_data *hapd,
 
 	radio_idx = hapd->iface->current_hw_info->hw_idx;
 	ifname = hapd->conf ? hapd->conf->iface : NULL;
-
-	if (hapd->mbssid_group) {
-		mbssid_grp_id = hapd->mbssid_group->group_id;
-		if (hapd->iface && hapd->iface->conf)
-			mbssid_grp_size = hapd->iface->conf->group_size;
-	}
+	mbssid_enabled = hapd->iconf ? hapd->iconf->mbssid : 0;
 
 	return wpa_driver_nl80211_vendor_bss_addr(hapd->drv_priv,
 						  radio_idx,
 						  bss_index,
-						  mbssid_grp_id,
-						  mbssid_grp_size,
+						  mbssid_enabled,
 						  NL80211_IFTYPE_AP,
 						  alloc ? 0x1 : 0x2,
 						  addr,
@@ -252,13 +241,16 @@ int hostapd_drv_fetch_and_set_vendor_bssid_extn(struct hostapd_data *hapd)
 		if (!hapd->conf->mld_ap) {
 			if (!hostapd_drv_set_mac_addr(hapd, hapd->own_addr)) {
 				wpa_printf(MSG_DEBUG,
-					   "updated vendor BSSID");
+					   "updated vendor BSSID for %s to " MACSTR,
+					   hapd->conf->iface,
+					   MAC2STR(hapd->own_addr));
 				return 0;
 			} else {
 				hostapd_drv_vendor_bssid(hapd, drv_idx,
 							 ven_bssid, false);
 				wpa_printf(MSG_DEBUG,
-					   "update vendor BSSID failed");
+					   "update vendor BSSID failed for %s",
+					   hapd->conf->iface);
 				return -1;
 			}
 		}
@@ -288,8 +280,6 @@ void hostapd_free_bss_index_extn(struct hostapd_data *hapd)
 		hapd->vendor_bss_index_valid = false;
 	} else if (hapd->conf->bss_index >= 0)
 		drv_idx = hapd->conf->bss_index;
-	else if (hapd->iconf && hapd->iconf->mbssid)
-		drv_idx = hapd->mbssid_idx;
 	else
 		return;
 
