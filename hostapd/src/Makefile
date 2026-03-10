@@ -10,13 +10,20 @@ OBJS+= \
 	qcn_extns/esp.o \
 	qcn_extns/rnr.o \
 	qcn_extns/macaddr.o \
+	qcn_extns/repurpose.o \
+	qcn_extns/dfs_extn.o \
+	qcn_extns/ucode_extn.o \
+	qcn_extns/wpa_supplicant_extn.o \
 	qcn_extns/acs_extn.o \
 	qcn_extns/mucapwar.o \
-	qcn_extns/dcs.o
+	qcn_extns/dcs.o \
+	qcn_extns/afc.o
 
 ifdef CONFIG_EXTERNAL_PLUGIN
 CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN
+CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN_TESTAPP
 OBJS += qcn_extns/hostapd_if_eloop.o
+OBJS += qcn_extns/hostapd_if_plugin.o
 endif
 
 ifneq ($(wildcard ../qcn_extns/qacs/qacs.c),)

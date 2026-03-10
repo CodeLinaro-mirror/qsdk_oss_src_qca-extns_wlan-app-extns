@@ -7,6 +7,7 @@
 #include "utils/common.h"
 #include "ap/hostapd.h"
 #include "esp.h"
+#include "dcs.h"
 
 
 int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
@@ -21,6 +22,8 @@ int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 	case EVENT_ESP_UPDATE:
 		hostapd_update_esp_params_extn(hapd, data);
 		break;
+	case EVENT_DCS_INTF:
+		hostapd_dcs_intf_event_extn(hapd, data);
 	default:
 		return -EINVAL;
 	}

@@ -74,17 +74,17 @@ int hostapd_drv_set_esp_param_extn(struct hostapd_data *hapd, const char *param,
 		goto fail;
 
 	if (os_strcmp(param, "esp_airtime") == 0) {
-		if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME,
+		if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_BE,
 				val))
 			goto fail;
 		wpa_printf(MSG_DEBUG, "ESP: Setting airtime=%d", val);
 	} else if (os_strcmp(param, "esp_ppdu_dur") == 0) {
-		if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR,
+		if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_BE,
 			       val))
 			goto fail;
 		wpa_printf(MSG_DEBUG, "ESP: Setting PPDU duration=%d", val);
 	} else if (os_strcmp(param, "esp_ba_window") == 0) {
-		if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW,
+		if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_BE,
 			       val))
 			goto fail;
 		wpa_printf(MSG_DEBUG, "ESP: Setting BA window=%d", val);
@@ -148,7 +148,7 @@ int nl80211_parse_esp_params_extn(struct i802_bss *bss,
 	struct nlattr *esp_params[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_MAX + 1] = {0};
 	struct esp_update_event *esp_event;
 	union wpa_event_data event;
-	uint32_t esp_airtime, temp;
+	uint32_t esp_airtime;
 	struct nlattr *attr;
 	int rem;
 
@@ -168,23 +168,15 @@ int nl80211_parse_esp_params_extn(struct i802_bss *bss,
 			esp_params[type] = attr;
 	}
 
-	if (!esp_params[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME]) {
+	if (!esp_params[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_BE]) {
 		wpa_printf(MSG_ERROR,
-			   "ESP: QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME not present");
+			   "ESP: QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_BE not present");
 		return -EINVAL;
 	}
 
-	esp_airtime = nla_get_u32(esp_params[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME]);
+	esp_airtime = nla_get_u32(esp_params[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_BE]);
 	wpa_printf(MSG_INFO, "ESP: Successfully parsed! Airtime=%u", esp_airtime);
-
-	/* Update ESP airtime in hostapd interface.
-	 * Air time value is received for all ACs. But only the air time for
-	 * BE AC is required to be filled in the IE. Bits 0 to 7 represents
-	 * air time of BE AC. Strip that and scale it to 255.
-	 */
-	temp = esp_airtime & 0xFF;
-	temp = (temp * 255) / 100;
-	esp_event->airtime = temp;
+	esp_event->airtime = esp_airtime;
 
 	wpa_supplicant_event(bss->ctx, EVENT_ESP_UPDATE, &event);
 

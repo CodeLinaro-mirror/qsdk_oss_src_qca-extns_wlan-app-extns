@@ -19,6 +19,8 @@ int hostapd_cli_cmd_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc, char *argv[
 #endif /* CONFIG_IEEE80211AC */
 
 int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_set_dcs_wlan_intr_params(struct wpa_ctrl *ctrl, int argc,
+					    char *argv[]);
 #ifdef CONFIG_QCN_EXTN
 int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
 		    int min_args, int argc, char *argv[]);
@@ -52,16 +54,21 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 		"get_dbgtrace         : get debug/trace mask\n" \
 		"wradar <0|1>         : enable/disable excluding weather radar channels\n" \
 		"get_wradar           : get weather radar handling state\n" \
-		"txpwr_opt <1|2>      : set the tx pwr optimization state(1 = optimize throughput, 2 = optimize range)\n" \
+		"txpwr_opt <0|1|2>    : set the tx pwr optimization state(0 = disable, 1 = optimize throughput, 2 = optimize range)\n" \
 		"get_txpwr_opt        : get tx power optimization state\n" \
 		"6g_only_psc <1|0>    : restrict 6 GHz to PSC channels only\n" \
-		"get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n"}, \
+		"get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n" \
+		"acs invoke <0|1>     : invoke ACS (0=dynamicACS+CSA)|(1=DynamicACS)\n"}, \
 	{ "mu_cap_war", hostapd_cli_cmd_mu_cap_war_extn, NULL, \
 		"enable/disable VHT MU-MIMO capability for MU_CAP_WAR clients" }, \
 	{ "get_mu_cap_war", hostapd_cli_cmd_get_mu_cap_war_extn, NULL, \
 		"get MU_CAP_WAR status" }, \
 	{ "dcs", hostapd_cli_cmd_dcs_extn, NULL, \
 		"enable		: enable DCS configuration\n" \
+		"bw_reduction_ctrl	: <mask> = set DCS bw reduction control\n" \
+		"csa_tbtt	: CSA TBTT value for DCS\n" \
+		"wlan_intr_params	: phyerr_penalty <val> phyerr_threshold <val> radarerr_threshold <val> coch_intr_threshold <val> txerr_threshold <val> user_max_cu <val> intr_detection_threshold <val> sample_size <val> = set DCS WLAN INTR params\n" \
+		"sim            : simulate DCS interference\n" \
 	},
 #else
 #define HOSTAPD_CLI_CMDS_EXTN

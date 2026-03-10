@@ -26,6 +26,7 @@
 #include "drivers/driver_nl80211.h"
 #include "esp.h"
 #include "dcs.h"
+#include "rropinfo.h"
 
 
 struct hostapd_sta_add_params;
@@ -162,6 +163,8 @@ int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 	case QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION:
 		qca_nl80211_handle_wifi_config_evt_extn(bss, data, len);
 		break;
+	case QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG:
+		qca_nl80211_handle_dcs_config_evt_extn(bss, data, len);
 	default:
 		return -EINVAL;
 	}
@@ -201,6 +204,47 @@ int qca_nl80211_handle_wifi_config_evt_extn(struct i802_bss *bss,
 		return nl80211_parse_esp_params_extn(bss,
 						     tb[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS],
 						     link_id);
+
+	return 0;
+}
+
+int qca_nl80211_handle_dcs_config_evt_extn(struct i802_bss *bss,
+					   u8 *data, size_t len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_DCS_MAX  + 1] = {0};
+	union wpa_event_data event = {};
+	struct dcs_intf_event *dcs_intf_event;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR, "nl80211: bss is NULL!");
+		return -EINVAL;
+	}
+
+	if (!(data && len)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid data for DCS configuration event");
+		return -EINVAL;
+	}
+
+	dcs_intf_event = &event.event_data_extn.dcs_intf_event;
+
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_DCS_MAX,
+				(struct nlattr *)data, len, NULL)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to parse DCS configuration attributes");
+		return -EINVAL;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_DCS_LINK_ID])
+		dcs_intf_event->link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_DCS_LINK_ID]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_DCS_ENABLE])
+		dcs_intf_event->type = nla_get_u16(tb[QCA_WLAN_VENDOR_ATTR_DCS_ENABLE]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_BITMAP])
+		dcs_intf_event->chan_bw_interference_bitmap = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_BITMAP]);
+
+	wpa_supplicant_event(bss->ctx, EVENT_DCS_INTF, &event);
 
 	return 0;
 }
@@ -284,6 +328,53 @@ fail:
 	return -ENOBUFS;
 }
 
+#ifdef CONFIG_IEEE80211BE
+int wpa_driver_nl80211_vendor_cmd_notify_link_repurpose(void *priv, u8 link_id)
+{
+	struct nl_msg *msg;
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nlattr *params;
+	int ret = -ENOBUFS;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Indication of link repurpose");
+
+	if (drv->nlmode != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		goto error;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION))
+		goto error;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto error;
+	if (link_id != NL80211_DRV_LINK_ID_NA &&
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID, link_id))
+		goto error;
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv(drv, bss->nl_connect, msg, NULL, NULL, NULL, NULL, NULL);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: link repurpose indication failed err=%d (%s)",
+			   ret, strerror(-ret));
+	}
+	return ret;
+error:
+	nlmsg_free(msg);
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Could not indicate repurpose on link %d",
+		   link_id);
+	return ret;
+}
+#endif /* CONFIG_IEEE80211BE */
+
 int wpa_driver_nl80211_dcs_config_extn(void *priv, u8 link_id,
 				       struct driver_dcs_config *params)
 {
@@ -293,7 +384,9 @@ int wpa_driver_nl80211_dcs_config_extn(void *priv, u8 link_id,
 	struct nlattr *attr;
 	int ret = 0;
 
-	wpa_printf(MSG_DEBUG, "nl80211: Configure DCS");
+	wpa_printf(MSG_DEBUG, "nl80211: Configure DCS (cmd_type=%u valid_mask=0x%x)",
+		   params->cmd_type, params->valid_mask);
+
 	if (drv->nlmode != NL80211_IFTYPE_AP)
 		return -EOPNOTSUPP;
 
@@ -316,6 +409,49 @@ int wpa_driver_nl80211_dcs_config_extn(void *priv, u8 link_id,
 		wpa_printf(MSG_DEBUG,"nl80211: Failed to configure DCS params");
 		goto error;
 	}
+
+	/* Optional params when SET */
+	if (params->cmd_type == SET_DCS_CONFIG) {
+		if (params->valid_mask & DCS_VALID_INTR_DET_THR)
+			if (nla_put_u32(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_DETECTION_THRESHOLD,
+			    params->intr_detection_threshold))
+				goto error;
+		if (params->valid_mask & DCS_VALID_PHYERR_PENALTY)
+			if (nla_put_u32(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_PHY_ERR_PENALTY,
+			    params->phyerr_penalty))
+				goto error;
+		if (params->valid_mask & DCS_VALID_PHYERR_THR)
+			if (nla_put_u32(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_PHY_ERR_THRESHOLD,
+			    params->phyerr_threshold))
+				goto error;
+		if (params->valid_mask & DCS_VALID_RADARERR_THR)
+			if (nla_put_u32(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_RADAR_ERR_THRESHOLD,
+			    params->radarerr_threshold))
+				goto error;
+		if (params->valid_mask & DCS_VALID_TXERR_THR)
+			if (nla_put_u32(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_TX_ERR_THRESHOLD,
+			    params->txerr_threshold))
+				goto error;
+		if (params->valid_mask & DCS_VALID_SAMPLE_SIZE)
+			if (nla_put_u32(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_DETECTION_WINDOW,
+			    params->sample_size))
+				goto error;
+		if (params->valid_mask & DCS_VALID_COCH_THR)
+			if (nla_put_u8(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_COCHANNEL_INTERFERENCE_THRESHOLD,
+			    params->coch_intr_threshold))
+				goto error;
+		if (params->valid_mask & DCS_VALID_USER_MAX_CU)
+			if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_DCS_MAX_CU,
+			    params->user_max_cu))
+				goto error;
+	}
 	nla_nest_end(msg, attr);
 
 	ret = send_and_recv_cmd(drv, msg);
@@ -328,5 +464,184 @@ int wpa_driver_nl80211_dcs_config_extn(void *priv, u8 link_id,
 error:
 	nlmsg_free(msg);
 	wpa_printf(MSG_DEBUG, "nl80211: Could not configure DCS on link %d", link_id);
+	return -1;
+}
+
+static int rropinfo_handler(struct nl_msg *msg, void *arg)
+{
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct nlattr *nl = NULL;
+	struct nlattr *nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_MAX + 1];
+	int rem = 0, i = 0;
+	u32 num_rtplinst = 0;
+	struct nl80211_rropinfo *rropinfo = (struct nl80211_rropinfo *)arg;
+
+	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		  genlmsg_attrlen(gnlh, 0), NULL);
+
+	if (!tb[NL80211_ATTR_VENDOR_DATA])
+		goto fail;
+
+	struct nlattr *nl_vendor = tb[NL80211_ATTR_VENDOR_DATA];
+	struct nlattr *tb_vendor[QCA_WLAN_VENDOR_ATTR_RROP_INFO_MAX + 1];
+
+	nla_parse(tb_vendor, QCA_WLAN_VENDOR_ATTR_RROP_INFO_MAX,
+		  nla_data(nl_vendor), nla_len(nl_vendor), NULL);
+
+	nl = tb_vendor[QCA_WLAN_VENDOR_ATTR_RROP_INFO_RTPL];
+	if (!nl)
+		goto fail;
+
+	num_rtplinst = 0;
+	nla_for_each_nested(nl,
+			    tb_vendor[QCA_WLAN_VENDOR_ATTR_RROP_INFO_RTPL],
+			    rem) {
+		num_rtplinst++;
+	}
+
+	wpa_printf(MSG_DEBUG, "nl80211: rropinfo_handler found %u RTPL instances",
+		   num_rtplinst);
+	if (!num_rtplinst)
+		goto fail;
+
+	rropinfo->num_rtplinst = (num_rtplinst > MAX_NUM_CHANNELS) ?
+				 MAX_NUM_CHANNELS : num_rtplinst;
+
+	i = 0;
+	nla_for_each_nested(nl,
+			    tb_vendor[QCA_WLAN_VENDOR_ATTR_RROP_INFO_RTPL],
+			    rem) {
+		if (i >= MAX_NUM_CHANNELS)
+			break;
+		if (nla_parse(nl_rtplinst,
+			      QCA_WLAN_VENDOR_ATTR_RTPLINST_MAX,
+			      nla_data(nl), nla_len(nl), NULL)) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: failed to parse RTPL");
+			goto fail;
+		}
+
+		if (nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_PRIMARY_FREQUENCY])
+			rropinfo->rtpl[i].primary_freq =
+				nla_get_u32(
+				nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_PRIMARY_FREQUENCY]);
+
+		if (nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_TXPOWER_THROUGHPUT])
+			rropinfo->rtpl[i].txpower_throughput =
+				(int)nla_get_u32(
+				nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_TXPOWER_THROUGHPUT]);
+
+		if (nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_TXPOWER_RANGE])
+			rropinfo->rtpl[i].txpower_range =
+				(int)nla_get_u32(
+				nl_rtplinst[QCA_WLAN_VENDOR_ATTR_RTPLINST_TXPOWER_RANGE]);
+
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: RTPL[%d] primary=%u throughput=%d range=%d",
+			   i,
+			   rropinfo->rtpl[i].primary_freq,
+			   rropinfo->rtpl[i].txpower_throughput,
+			   rropinfo->rtpl[i].txpower_range);
+		i++;
+	}
+
+	return NL_SKIP;
+
+fail:
+	rropinfo->num_rtplinst = 0;
+	return NL_SKIP;
+}
+
+int driver_nl80211_vendor_get_chan_rropinfo(void *ctx,
+					    struct nl80211_rropinfo *rropinfo,
+					    int radio_idx)
+{
+	int ret = -1;
+	struct nl_msg *msg = NULL;
+	struct i802_bss *bss = ctx;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nlattr *params;
+
+	wpa_printf(MSG_DEBUG, "nl80211: driver_nl80211_vendor_get_chan_rropinfo start: radio_idx: %d", radio_idx);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_GET_RROP_INFO))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+	if (radio_idx != NL80211_WIPHY_RADIO_ID_MAX &&
+	    nla_put_u8(msg,QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX, radio_idx))
+		goto fail;
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_resp(drv, msg, rropinfo_handler, rropinfo);
+	msg = NULL;
+	if (ret) {
+		wpa_printf(MSG_ERROR, "nl80211: Vendor get RROP info request failed: ret=%d (%s)",
+			   ret, strerror(-ret));
+		goto fail;
+	}
+
+	wpa_printf(MSG_DEBUG, "nl80211: RROP info received, num_rtplinst=%u",
+		   rropinfo ? rropinfo->num_rtplinst : 0);
+	return 0;
+
+fail:
+	if (msg)
+		nlmsg_free(msg);
+	return ret;
+}
+
+int wpa_driver_nl80211_dcs_sim_extn(void *priv, u8 link_id,
+				    struct driver_dcs_sim *params)
+{
+	struct nl_msg *msg;
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nlattr *attr;
+	int ret = 0;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Configure DCS SIM");
+	if (drv->nlmode != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR)) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_DCS_SIM)) {
+		goto error;
+	}
+
+	attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!attr)
+		goto error;
+
+	if ((link_id != NL80211_DRV_LINK_ID_NA &&
+	     nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_DCS_SIM_LINK_ID, link_id)) ||
+	     nla_put_u16(msg, QCA_WLAN_VENDOR_ATTR_DCS_SIM_TYPE,
+			 params->type))
+		goto error;
+
+	if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_DCS_SIM_INTERFERENCE_BITMAP, params->intf_bitmap))
+		goto error;
+
+	nla_nest_end(msg, attr);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+				"nl80211: DCS SIM failed=%d (%s)",
+				ret, strerror(-ret));
+	}
+	return 0;
+error:
+	nlmsg_free(msg);
+	wpa_printf(MSG_DEBUG, "nl80211: Could not configure DCS SIM on link %d", link_id);
 	return -1;
 }

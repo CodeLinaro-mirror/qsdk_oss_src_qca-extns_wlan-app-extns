@@ -17,7 +17,8 @@
 #include "utils/eloop.h"
 #include "hostapd_external_interface.h"
 
-#define HOSTAPD_IF_ASYNC_SOCKET_PATH "/var/run/hostapd/hostapd_if_eloop.sock"
+#define HOSTAPD_IF_ASYNC_SOCKET_PATH "/var/run/hostapd/hostapd_if_eloop"
+static char hostapd_if_layer_socket_path[100];
 
 /*
  * Server socket (bound, registered with eloop)
@@ -199,6 +200,33 @@ void hostapd_if_set_gtk_dump_params(char *ifname, int link_id,
 void hostapd_if_start_sa_query_dump_params(char *ifname, uint8_t *sta_mac, int link_id);
 void hostapd_if_trigger_eapol_m3_dump_params(char *ifname, uint8_t *sta_mac);
 
+void __hostapd_if_trigger_eapol_m3(char *ifname, uint8_t *sta_mac);
+void __hostapd_if_assoc_response(char *ifname, uint8_t *sta_mac,
+				 struct hostapd_if_frame_ctx *ctx);
+void __hostapd_if_auth_response(char *ifname, uint8_t *sta_mac,
+				struct hostapd_if_frame_ctx *ctx);
+void __hostapd_if_send_deauth(char *ifname, uint8_t *sta_mac,
+			      uint16_t reason_code, int link_id,
+			      uint8_t *added_data,
+			      uint8_t added_data_len);
+void __hostapd_if_send_disassoc(char *ifname, uint8_t *sta_mac,
+				uint16_t reason_code, int link_id,
+				uint8_t *added_data,
+				uint8_t added_data_len);
+void __hostapd_if_set_beacon_probe_vendor_ies(char *ifname, uint8_t *buf,
+					      size_t buf_len, int link_id);
+void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
+			  uint8_t *pmk, size_t pmk_len,
+			  uint8_t *pmkid);
+void __hostapd_if_set_ptk(char *ifname, uint8_t *sta_mac,
+			  uint8_t *kck, size_t kck_len,
+			  uint8_t *kek, size_t kek_len,
+			  uint8_t *tk, size_t tk_len);
+void __hostapd_if_set_gtk(char *ifname, int link_id,
+			  int gtk_idx, uint8_t *gtk, size_t gtk_len);
+void __hostapd_if_start_sa_query(char *ifname, uint8_t *sta_mac, int link_id);
+
+
 static int hostapd_if_assoc_response(char *ifname, uint8_t *sta_mac,
 				     struct hostapd_if_frame_ctx *ctx)
 {
@@ -216,7 +244,10 @@ static int hostapd_if_assoc_response(char *ifname, uint8_t *sta_mac,
 
 	hostapd_if_assoc_response_dump_params(ifname, sta_mac, ctx);
 
-	send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_assoc_response(ifname, sta_mac, ctx);
 	return 0;
 }
 
@@ -236,8 +267,10 @@ static int hostapd_if_auth_response(char *ifname, uint8_t *sta_mac,
 	payload.msg.auth_response.ctx = ctx;
 
 	hostapd_if_auth_response_dump_params(ifname, sta_mac, ctx);
-
-	send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_auth_response(ifname, sta_mac, ctx);
 	return 0;
 }
 
@@ -268,7 +301,10 @@ static int hostapd_if_send_deauth(char *ifname, uint8_t *sta_mac,
 					   link_id,
 					   added_data, added_data_len);
 
-	send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_send_deauth(ifname, sta_mac, reason_code, link_id, added_data, added_data_len);
 	return 0;
 }
 
@@ -298,7 +334,10 @@ static int hostapd_if_send_disassoc(char *ifname, uint8_t *sta_mac,
 	hostapd_if_send_disassoc_dump_params(ifname, sta_mac, reason_code,
 					     added_data, added_data_len);
 
-	send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_send_disassoc(ifname, sta_mac, reason_code, link_id, added_data, added_data_len);
 	return 0;
 }
 
@@ -322,7 +361,10 @@ int hostapd_if_set_beacon_probe_vendor_ies(char *ifname, uint8_t *buf,
 	hostapd_if_set_beacon_probe_vendor_ies_dump_params(ifname, buf,
 							   buf_len, link_id);
 
-	send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_set_beacon_probe_vendor_ies(ifname, buf, buf_len, link_id);
 	return 0;
 }
 
@@ -347,7 +389,10 @@ static int hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 
 	hostapd_if_set_pmk_dump_params(ifname, sta_mac, pmk, pmk_len, pmkid);
 
-	send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_set_pmk(ifname, sta_mac, pmk, pmk_len, pmkid);
 	return 0;
 }
 
@@ -378,7 +423,10 @@ static int hostapd_if_set_ptk(char *ifname, uint8_t *sta_mac,
 	hostapd_if_set_ptk_dump_params(ifname, sta_mac, kck, kck_len,
 				       kek, kek_len, tk, tk_len);
 
-	send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_set_ptk(ifname, sta_mac, kck, kck_len, kek, kek_len, tk, tk_len);
 	return 0;
 }
 
@@ -403,7 +451,10 @@ static int hostapd_if_set_gtk(char *ifname, int link_id,
 	hostapd_if_set_gtk_dump_params(ifname, link_id, gtk_idx, gtk,
 				       gtk_len);
 
-	send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_set_gtk(ifname, link_id, gtk_idx, gtk, gtk_len);
 	return 0;
 }
 
@@ -422,7 +473,10 @@ static int hostapd_if_trigger_eapol_m3(char *ifname, uint8_t *sta_mac)
 
 	hostapd_if_trigger_eapol_m3_dump_params(ifname, sta_mac);
 
-	send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_trigger_eapol_m3(ifname, sta_mac);
 	return 0;
 }
 
@@ -442,35 +496,12 @@ static int hostapd_if_start_sa_query(char *ifname, uint8_t *sta_mac, int link_id
 
 	hostapd_if_start_sa_query_dump_params(ifname, sta_mac, link_id);
 
-	send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_start_sa_query(ifname, sta_mac, link_id);
 	return 0;
 }
-
-void __hostapd_if_trigger_eapol_m3(char *ifname, uint8_t *sta_mac);
-void __hostapd_if_assoc_response(char *ifname, uint8_t *sta_mac,
-				 struct hostapd_if_frame_ctx *ctx);
-void __hostapd_if_auth_response(char *ifname, uint8_t *sta_mac,
-				struct hostapd_if_frame_ctx *ctx);
-void __hostapd_if_send_deauth(char *ifname, uint8_t *sta_mac,
-			      uint16_t reason_code, int link_id,
-			      uint8_t *added_data,
-			      uint8_t added_data_len);
-void __hostapd_if_send_disassoc(char *ifname, uint8_t *sta_mac,
-				uint16_t reason_code, int link_id,
-				uint8_t *added_data,
-				uint8_t added_data_len);
-void __hostapd_if_set_beacon_probe_vendor_ies(char *ifname, uint8_t *buf,
-					      size_t buf_len, int link_id);
-void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
-			  uint8_t *pmk, size_t pmk_len,
-			  uint8_t *pmkid);
-void __hostapd_if_set_ptk(char *ifname, uint8_t *sta_mac,
-			  uint8_t *kck, size_t kck_len,
-			  uint8_t *kek, size_t kek_len,
-			  uint8_t *tk, size_t tk_len);
-void __hostapd_if_set_gtk(char *ifname, int link_id,
-			  int gtk_idx, uint8_t *gtk, size_t gtk_len);
-void __hostapd_if_start_sa_query(char *ifname, uint8_t *sta_mac, int link_id);
 
 static void hostapd_if_eloop_socket_read(int sock, void *eloop_ctx,
 					 void *sock_ctx)
@@ -573,9 +604,15 @@ static void hostapd_if_eloop_socket_read(int sock, void *eloop_ctx,
  * Helper: initialize eloop socket infrastructure (server + client),
  * register callback in eloop
  */
-int hostapd_if_eloop_init(void)
+int hostapd_if_eloop_init(enum hostapd_if_eloop_type type)
 {
 	struct sockaddr_un addr;
+
+	if (type == HOSTAPD_IF_ELOOP_DIRECT_CALL) {
+		hostapd_if_eloop_server_sock = -1;
+		hostapd_if_eloop_sock = -1;
+		return 0;
+	}
 
 	wpa_printf(MSG_DEBUG,
 		   "hostapd_if: Initializing eloop socket infrastructure");
@@ -593,7 +630,9 @@ int hostapd_if_eloop_init(void)
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
-	os_strlcpy(addr.sun_path, HOSTAPD_IF_ASYNC_SOCKET_PATH,
+	os_snprintf(hostapd_if_layer_socket_path, sizeof(hostapd_if_layer_socket_path),
+		    "%s_%d.sock", HOSTAPD_IF_ASYNC_SOCKET_PATH, getpid());
+	os_strlcpy(addr.sun_path, hostapd_if_layer_socket_path,
 		sizeof(addr.sun_path));
 
 	/*
@@ -606,9 +645,9 @@ int hostapd_if_eloop_init(void)
 			wpa_printf(MSG_WARNING,
 				   "hostapd_if: Socket path in use, "
 				   "removing stale socket: %s",
-				   HOSTAPD_IF_ASYNC_SOCKET_PATH);
+				   hostapd_if_layer_socket_path);
 
-			unlink(HOSTAPD_IF_ASYNC_SOCKET_PATH);
+			unlink(hostapd_if_layer_socket_path);
 
 			/*
 			 * Retry bind after unlink
@@ -637,7 +676,7 @@ int hostapd_if_eloop_init(void)
 
 	wpa_printf(MSG_DEBUG,
 		   "hostapd_if: Server socket bound to %s (fd=%d)",
-		   HOSTAPD_IF_ASYNC_SOCKET_PATH,
+		   hostapd_if_layer_socket_path,
 		   hostapd_if_eloop_server_sock);
 
 	/*
@@ -656,7 +695,7 @@ int hostapd_if_eloop_init(void)
 			   strerror(errno));
 		eloop_unregister_read_sock(hostapd_if_eloop_server_sock);
 		close(hostapd_if_eloop_server_sock);
-		unlink(HOSTAPD_IF_ASYNC_SOCKET_PATH);
+		unlink(hostapd_if_layer_socket_path);
 		hostapd_if_eloop_server_sock = -1;
 		return -1;
 	}
@@ -672,7 +711,7 @@ int hostapd_if_eloop_init(void)
 		close(hostapd_if_eloop_sock);
 		eloop_unregister_read_sock(hostapd_if_eloop_server_sock);
 		close(hostapd_if_eloop_server_sock);
-		unlink(HOSTAPD_IF_ASYNC_SOCKET_PATH);
+		unlink(hostapd_if_layer_socket_path);
 		hostapd_if_eloop_sock = -1;
 		hostapd_if_eloop_server_sock = -1;
 		return -1;
@@ -708,7 +747,7 @@ void hostapd_if_eloop_deinit(void)
 	if (hostapd_if_eloop_server_sock >= 0) {
 		eloop_unregister_read_sock(hostapd_if_eloop_server_sock);
 		close(hostapd_if_eloop_server_sock);
-		unlink(HOSTAPD_IF_ASYNC_SOCKET_PATH);
+		unlink(hostapd_if_layer_socket_path);
 		hostapd_if_eloop_server_sock = -1;
 	}
 

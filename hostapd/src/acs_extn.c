@@ -11,6 +11,113 @@
 #include "common/ieee802_11_defs.h"
 #include "ap/ap_config.h"
 #include "cmn.h"
+#include "common/hw_features_common.h"
+#include "common/wpa_ctrl.h"
+#include "drivers/driver.h"
+#include "ap/ap_drv_ops.h"
+#include "ap/hw_features.h"
+#include "ap/acs.h"
+#include "ap/dfs.h"
+#include "utils/eloop.h"
+#include "cmn.h"
+
+static int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
+					struct hostapd_channel_data *chan,
+					enum oper_chan_width oper_bw)
+{
+	int center = 0;
+	int bw;
+
+	bw = channel_width_to_int(
+			hostapd_get_chan_width_from_oper_chan_width(iface->conf));
+	switch (oper_bw) {
+	case CONF_OPER_CHWIDTH_USE_HT:
+		if (iface->conf->secondary_channel &&
+		    chan->freq >= 2400 && chan->freq < 2500)
+			center = chan->chan +
+				2 * iface->conf->secondary_channel;
+		else if (bw == 40)
+			center = acs_get_bw_center_chan(chan->freq, ACS_BW40);
+		else
+			center = chan->chan;
+		break;
+	case CONF_OPER_CHWIDTH_80MHZ:
+		center = acs_get_bw_center_chan(chan->freq, ACS_BW80);
+		break;
+	case CONF_OPER_CHWIDTH_160MHZ:
+		center = acs_get_bw_center_chan(chan->freq, ACS_BW160);
+		break;
+	case CONF_OPER_CHWIDTH_320MHZ:
+		switch (hostapd_get_bw320_offset(iface->conf)) {
+		case 0:
+			if (acs_usable_bw_chan(chan, ACS_BW320_1))
+				center = acs_get_bw_center_chan(chan->freq, ACS_BW320_1);
+			else if (acs_usable_bw_chan(chan, ACS_BW320_2))
+				center = acs_get_bw_center_chan(chan->freq, ACS_BW320_2);
+			break;
+		case 1:
+			center = acs_get_bw_center_chan(chan->freq,
+							ACS_BW320_1);
+			break;
+		case 2:
+			center = acs_get_bw_center_chan(chan->freq,
+							ACS_BW320_2);
+			break;
+		default:
+			wpa_printf(MSG_INFO,
+				   "ACS: BW320 offset is not selected");
+			return -1;
+		}
+
+		break;
+	default:
+		wpa_printf(MSG_INFO,
+			   "ACS: Only VHT20/40/80/160/320 is supported now");
+		return -1;
+	}
+
+	return center;
+}
+
+static void
+hostapd_get_center_chanfreq1_from_channel(struct hostapd_iface *iface,
+					   struct hostapd_channel_data *chan,
+					   enum oper_chan_width oper_bw,
+					   int *center_chan1,
+					   int *center_freq1)
+{
+	int center_chan = 0, center_freq = 0;
+	u8 op_class = 0, channel = 0;
+	enum hostapd_hw_mode hw_mode;
+
+	center_chan = hostapd_get_center_chan_extn(iface, chan, oper_bw);
+	if (center_chan == -1)
+		goto fail;
+
+	hw_mode = ieee80211_freq_to_channel_ext(chan->freq,
+						iface->conf->secondary_channel,
+						oper_bw,
+						&op_class, &channel);
+	if (hw_mode == NUM_HOSTAPD_MODES) {
+		wpa_printf(MSG_ERROR, "Failed to get channel for freq: %d, sec_channel_offset: %d, bw: %d",
+			   chan->freq, iface->conf->secondary_channel, oper_bw);
+		goto fail;
+	}
+
+	center_freq = ieee80211_chan_to_freq(NULL, op_class, center_chan);
+
+fail:
+	wpa_printf(MSG_DEBUG, "%s: ACS: center_chan1: %d, center_freq1: %d, oper_bw %d",
+		   __func__,
+		   center_chan,
+		   center_freq, oper_bw);
+
+	if (center_chan1)
+		*center_chan1 = center_chan;
+
+	if (center_freq1)
+		*center_freq1 = center_freq;
+}
 
 
 static int
@@ -36,10 +143,12 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs get_dbgtrace         : get debug mask\n"
 		"  acs wradar <0|1>         : enable/disable excluding weather radar channels\n"
 		"  acs get_wradar           : get weather radar handling state\n"
-		"  acs txpwr_opt <1|2>      : set the tx pwr optimization state(1 = optimize throughput, 2 = optimize range)\n"
+		"  acs txpwr_opt <0|1|2>    : set the tx pwr optimization state(0 = disable, 1 = optimize throughput, 2 = optimize range)\n"
 		"  acs get_txpwr_opt        : get tx power optimization state\n"
 		"  acs 6g_only_psc <1|0>    : restrict 6 GHz to PSC channels only\n"
 		"  acs get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n"
+		"  acs invoke <0|1>         : invoke ACS (0=dynamicACS+CSA)|(1=DynamicACS)\n"
+		"  acs show_report          : print last ACS report\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -48,13 +157,208 @@ acs_print_usage_extn(char *reply, int reply_size)
 	return ret;
 }
 
+#ifdef CONFIG_QCN_APP_EXTN
+static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
+				   int nchans, struct qacs_data_extn *data_extn,
+				   char *reply, size_t reply_size)
+{
+	int ret;
+	char *pos = reply;
+	char *end = reply + reply_size;
+
+	/* ---- Single header ---- */
+	ret = os_snprintf(pos, end - pos,
+			" Freq(chan)      BSS    NF   Load  Sec   SRP  Grade  Radar    Eff   Power   Rank\n");
+	if (os_snprintf_error(end - pos, ret)) {
+		return (int)(pos - reply);
+	}
+	pos += ret;
+
+	ret = os_snprintf(pos, end - pos,
+			"-------------------------------------------------------------------------------------\n");
+	if (os_snprintf_error(end - pos, ret)) {
+		return (int)(pos - reply);
+	}
+	pos += ret;
+
+	/* ---- Rows ---- */
+	for (int i = 0; i < nchans; i++) {
+		const struct qacs_dbg_info_per_band *r = &report[i];
+
+		/* Skip uninitialized entries */
+		              if (!r->chan_freq)
+		                      continue;
+
+		const int has_plus  = (r->center_freq1 != 0);
+		const int has_minus = (r->center_freq2 != 0);
+
+		if (has_plus || has_minus) {
+
+			if (has_plus) {
+				ret = os_snprintf(pos, end - pos,
+						" %4u(%3u %4u)  %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d\n",
+						r->chan_freq, r->ieee_chan, r->center_freq1,
+						r->chan_nbss, r->noisefloor, r->chan_load,
+						r->sec_chan, r->chan_nbss_srp, r->chan_grade,
+						(unsigned) r->chan_radar_noise,
+						r->chan_efficiency_1, r->txpower, r->rank_1);
+
+				if (os_snprintf_error(end - pos, ret))
+					return (int)(pos - reply);
+				pos += ret;
+			}
+
+			/* Row 2 : center_freq2 → seg1 / HT40− */
+			if (has_minus) {
+				ret = os_snprintf(pos, end - pos,
+						" %4u(%3u %4u)  %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d\n",
+						r->chan_freq, r->ieee_chan, r->center_freq2,
+						r->chan_nbss, r->noisefloor, r->chan_load,
+						r->sec_chan, r->chan_nbss_srp, r->chan_grade,
+						(unsigned) r->chan_radar_noise,
+						r->chan_efficiency, r->txpower, r->rank);
+
+				if (os_snprintf_error(end - pos, ret))
+					return (int)(pos - reply);
+				pos += ret;
+			}
+
+			continue;
+		}
+
+		else {
+			ret = os_snprintf(pos, end - pos,
+					" %4u(%3u)      %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d\n",
+					r->chan_freq, r->ieee_chan,
+					r->chan_nbss, r->noisefloor, r->chan_load,
+					r->sec_chan, r->chan_nbss_srp, r->chan_grade,
+					(unsigned)r->chan_radar_noise, r->chan_efficiency, r->txpower, r->rank);
+			if (os_snprintf_error(end - pos, ret))
+				return (int)(pos - reply);
+			pos += ret;
+
+			continue;
+		}
+
+	}
+
+	if(data_extn->is_fallback_chan) {
+		ret = os_snprintf(pos, end - pos,
+				"ACS_SUCCESS: Current channel is selected Random channel algorithm\n");
+		if (os_snprintf_error(end - pos, ret)) {
+			return (int)(pos - reply);
+		}
+		pos += ret;
+	}
+	else {
+		ret = os_snprintf(pos, end - pos,
+				"ACS_SUCCESS: Current channel is selected by ACS algorithm\n");
+		if (os_snprintf_error(end - pos, ret)) {
+			return (int)(pos - reply);
+		}
+		pos += ret;
+	}
+
+	ret = os_snprintf(pos, end - pos,
+			"Best channel %d selected for Bandwidth %d\n",data_extn->best_chan,data_extn->bw);
+	if (os_snprintf_error(end - pos, ret)) {
+		return (int)(pos - reply);
+	}
+
+	pos += ret;
+
+	return (int)(pos - reply);
+}
+
+static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
+		const char *pos,
+		char *reply, size_t reply_size)
+{
+	int len = 0;
+
+	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+	struct qacs_data_extn *data_extn = ICM_GET_EXTN_DATA_PTR(mode);
+	if (!mode) {
+		wpa_printf(MSG_ERROR,
+				"No current mode selected (interface not initialized?)");
+		return -1;
+	}
+
+	int nchans = mode->num_channels;
+	struct qacs_dbg_info_per_band *acs_report =
+		calloc(nchans, sizeof(*acs_report));
+	if (!acs_report) {
+		wpa_printf(MSG_ERROR, "Memory allocation failed");
+		return -1;
+	}
+
+	/* Call the ICM/ACS API for the currently selected band/mode */
+	int ret = qacs_scan_report(mode, acs_report);
+	if (ret <= 0) {
+		wpa_printf(MSG_ERROR, "No ACS report available");
+		free(acs_report);
+		return -1;
+	}
+
+	/* Print the report to the reply buffer */
+	len = print_acs_report_to_buf(acs_report, nchans, data_extn ,reply, reply_size);
+
+	free(acs_report);
+	return len;
+}
+#else
+static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
+		const char *pos,
+		char *reply, size_t reply_size)
+{
+	return -1;
+}
+#endif
+
+int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd, enum dynamic_acs_action_extn acs_action)
+{
+        struct hostapd_iface *iface = hapd->iface;
+        int status;
+
+
+        if (iface->iface_extn.dynamic_acs_action) {
+                wpa_printf(MSG_ERROR, "Dynamic ACS is already in progress");
+                return -1;
+        }
+
+        iface->iface_extn.dynamic_acs_action = acs_action;
+
+        status = acs_init(iface);
+        if (status != HOSTAPD_CHAN_ACS) {
+                wpa_printf(MSG_ERROR, "Could not start ACS, error: %d", status);
+                iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+                return -1;
+        }
+
+        return 0;
+}
+
+static int hostapd_acs_run_extn(struct hostapd_data *hapd, const char *pos,
+                                char *reply, size_t reply_size)
+{
+        int acs_run_op;
+
+        acs_run_op = atoi(pos);
+
+        if (acs_run_op != 0 && acs_run_op != 1)
+                return -1;
+
+        return hostapd_trigger_dynamic_acs(hapd, (acs_run_op == 1 ? NO_CHANNEL_CHANGE : CHANNEL_CHANGE_CSA));
+}
+
 static int hostapd_acs_get_status_extn(struct hostapd_iface *iface,
 		const char *pos,
 		char *reply, size_t reply_size)
 {
 	int ret = os_snprintf(reply, reply_size,
 			      "ACS status: %s\n",
-			      (iface->state == HAPD_IFACE_ACS) ?
+			      (iface->iface_extn.dynamic_acs_action != DYNAMIC_ACS_DISABLE
+			       || iface->state == HAPD_IFACE_ACS) ?
 			      "Inprogress" : "Idle");
 
 	if (os_snprintf_error(reply_size, ret))
@@ -296,12 +600,12 @@ static int hostapd_acs_set_txpwr_opt_extn(struct hostapd_config_extn *conf_extn,
 {
 	int val = atoi(pos);
 
-	if (val == 1 || val == 2) {
+	if (val == 0 || val == 1 || val == 2) {
 		conf_extn->qacs_conf.rep_txpower_policy = val;
 		return 0;
 	}
 
-	wpa_printf(MSG_ERROR, "%s: Invalid value", __func__);
+	wpa_printf(MSG_ERROR, "%s: Invalid value: %d", __func__, val);
 	return -1;
 }
 
@@ -433,6 +737,12 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 		return hostapd_acs_get_6g_only_psc_extn(conf, pos,
 							buf, buflen);
 
+	} else if (os_strncmp(pos, "invoke ", 7) == 0) {
+		return hostapd_acs_run_extn(hapd, pos + 7, buf, buflen);
+
+	} else if (os_strncmp(pos, "show_report", 11) == 0) {
+		return hostapd_acs_show_report_extn(hapd, pos, buf, buflen);
+
 	} else {
 		return acs_print_usage_extn(buf, buflen);
 	}
@@ -458,4 +768,203 @@ void acs_modify_scan_params_extn(struct hostapd_iface *iface,
 			iface->conf->conf_extn.qacs_conf.dwelltime;
 		params->duration_mandatory = 1;
 	}
+}
+
+static int
+hostapd_trigger_channel_switch_for_acs(struct hostapd_iface *iface,
+                                       struct hostapd_channel_data *chan)
+{
+	struct csa_settings settings;
+	int i;
+	int dfs_range = 0;
+	int bandwidth;
+	u8 chan_no;
+
+	os_memset(&settings, 0, sizeof(settings));
+	settings.cs_count = 5;
+
+	settings.freq_params.sec_channel_offset = iface->conf->secondary_channel;
+	settings.freq_params.freq = chan->freq;
+	settings.freq_params.channel = chan->chan;
+	settings.freq_params.bandwidth = channel_width_to_int(
+		hostapd_get_chan_width_from_oper_chan_width(iface->conf));
+
+	/* Get the center_freq1 for the chan->freq and operating bw*/
+	hostapd_get_center_chanfreq1_from_channel(iface, chan,
+		hostapd_get_oper_chwidth(iface->conf),
+		NULL,
+		&settings.freq_params.center_freq1);
+
+	settings.freq_params.ht_enabled = iface->conf->ieee80211n;
+	settings.freq_params.vht_enabled = iface->conf->ieee80211ac;
+	settings.freq_params.he_enabled = iface->conf->ieee80211ax;
+	settings.freq_params.eht_enabled= iface->conf->ieee80211be;
+	settings.freq_params.punct_bitmap = chan->punct_bitmap;
+	settings.power_mode = -1;
+
+	if (is_6ghz_freq(settings.freq_params.freq) &&
+	    iface->conf->enable_best_power_mode) {
+		int best_power_mode;
+
+		best_power_mode =
+			hostapd_get_best_ap_6ghz_power_mode(iface,
+				settings.freq_params.freq,
+				settings.freq_params.center_freq1,
+				settings.freq_params.bandwidth,
+				settings.freq_params.punct_bitmap);
+		if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
+			settings.power_mode = best_power_mode;
+			wpa_printf(MSG_DEBUG, "%s: Best power mode for Freq %d is %d",
+				   __func__,
+				   settings.freq_params.freq,
+				   settings.power_mode);
+		} else {
+			wpa_printf(MSG_DEBUG, "%s: Failed to get BPM for Freq %d, Setting to LPI mode",
+				   __func__, settings.freq_params.freq);
+			settings.power_mode = NL80211_REG_AP_LPI;
+		}
+	}
+
+	/* Determine chan_width enumeration from bandwidth int */
+	switch (settings.freq_params.bandwidth) {
+		case 40:
+			bandwidth = CHAN_WIDTH_40;
+			break;
+		case 80:
+			bandwidth = settings.freq_params.center_freq2 ?
+					CHAN_WIDTH_80P80 : CHAN_WIDTH_80;
+			break;
+
+		case 160:
+			bandwidth = CHAN_WIDTH_160;
+			break;
+		case 320:
+			bandwidth = CHAN_WIDTH_320;
+			break;
+		default:
+			bandwidth = CHAN_WIDTH_20;
+			break;
+	}
+
+#ifdef CONFIG_QCN_EXTN
+	dfs_range += hostapd_find_dfs_range_extn(iface, bandwidth,
+						 &settings.freq_params);
+#else
+	if (settings.freq_params.center_freq1)
+		dfs_range += hostapd_is_dfs_overlap(
+				iface, bandwidth, settings.freq_params.center_freq1);
+	else
+		dfs_range += hostapd_is_dfs_overlap(
+				iface, bandwidth, settings.freq_params.freq);
+
+	if (settings.freq_params.center_freq2)
+		dfs_range += hostapd_is_dfs_overlap(
+				iface, bandwidth, settings.freq_params.center_freq2);
+#endif
+	if (dfs_range) {
+		if (ieee80211_freq_to_chan(settings.freq_params.freq, &chan_no) ==
+			NUM_HOSTAPD_MODES) {
+			wpa_printf(MSG_ERROR,
+				   "ACS: Failed to get channel for (freq=%d, sec_channel_offset=%d, bw=%d)",
+				   settings.freq_params.freq,
+				   settings.freq_params.sec_channel_offset,
+				   settings.freq_params.bandwidth);
+			return -1;
+	}
+
+
+	if (iface->conf->disable_csa_dfs == 1) {
+		wpa_printf(MSG_DEBUG, "ACS: cancel radar handling timer for %s",
+				iface->conf->bss[0]->iface);
+		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout, iface, NULL);
+	}
+
+	settings.freq_params.channel = chan_no;
+        wpa_printf(MSG_DEBUG,
+                   "ACS DFS/CAC to (channel=%u, freq=%d, sec_channel_offset=%d, bw=%d, center_freq1=%d)",
+                   settings.freq_params.channel,
+                   settings.freq_params.freq,
+                   settings.freq_params.sec_channel_offset,
+                   settings.freq_params.bandwidth,
+                   settings.freq_params.center_freq1);
+
+        /* Perform CAC and switch channel via fallback */
+        iface->is_ch_switch_dfs = true;
+        hostapd_switch_channel_fallback(iface, &settings.freq_params);
+        return 0;
+    }
+
+    if (iface->cac_started) {
+        wpa_printf(MSG_DEBUG,
+                   "ACS: CAC in progress - switching channel without CSA");
+        return hostapd_force_channel_switch(iface, &settings);
+    }
+
+    if (iface->conf->disable_csa_dfs == 1) {
+        wpa_printf(MSG_DEBUG, "ACS: cancel radar handling timer for %s",
+                   iface->conf->bss[0]->iface);
+        eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout, iface, NULL);
+    }
+
+	for (i = 0; i < iface->num_bss; i++) {
+		/* Save CHAN_SWITCH VHT and HE config */
+		hostapd_chan_switch_config(iface->bss[i],
+					   &settings.freq_params);
+
+		wpa_printf(MSG_DEBUG,
+			   "channel=%u, freq=%d, bw=%d, center_freq1=%d",
+			   settings.freq_params.channel,
+			   settings.freq_params.freq,
+			   settings.freq_params.bandwidth,
+			   settings.freq_params.center_freq1);
+
+		if (hostapd_switch_channel(iface->bss[i], &settings))
+			return -1;
+	}
+
+	return 0;
+}
+
+int
+acs_handle_channel_change_extn(struct hostapd_iface *iface,
+			       struct hostapd_channel_data *chan,
+			       int err)
+{
+	int cs_err;
+
+	if (iface->iface_extn.dynamic_acs_action == NO_CHANNEL_CHANGE) {
+		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+		return 0;
+	}
+
+	if (iface->iface_extn.dynamic_acs_action == DYNAMIC_ACS_DISABLE)
+		return -1;
+
+	if (err) {
+		wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
+			   err);
+		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+		return 0;
+	}
+
+	cs_err = hostapd_trigger_channel_switch_for_acs(iface, chan);
+	if (cs_err)
+		wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
+			   cs_err);
+
+	iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+	return 0;
+}
+
+int
+acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
+{
+	if (iface->iface_extn.dynamic_acs_action == DYNAMIC_ACS_DISABLE)
+		return -1;
+
+	wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
+		   err);
+	iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+
+	return 0;
 }

@@ -15,6 +15,8 @@
 #include "ap/ap_drv_ops.h"
 #include "common/ieee802_11_defs.h"
 #include "ap/ap_config.h"
+#include "cmn.h"
+#include "dcs.h"
 
 void
 hostapd_config_defaults_extn(struct hostapd_config *conf)
@@ -33,13 +35,32 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	/*configure qacs_default here*/
 	conf_extn->qacs_enable = 0;                 /* QACS disabled */
 	conf_extn->qacs_conf.wradar = 1;            /* wradar reject enabled */
-	conf_extn->qacs_conf.rep_txpower_policy = 1;/* Option pwr Tput */
+	conf_extn->qacs_conf.rep_txpower_policy = 0;/* Option pwr disabled */
 	conf_extn->qacs_conf.rank_en = 1;           /* rank enabled */
 	conf_extn->qacs_conf.min_dwell = 50;        /* msec */
 	conf_extn->qacs_conf.max_dwell = 250;       /* msec */
 	conf_extn->qacs_conf.dwelltime = 200;   /* msec */
-        conf_extn->qacs_conf.dbg_module_bitmap = 0x0004; /* QACS_MODULE_ID_SELECTOR */
-	conf_extn->qacs_conf.dbg_level = 2; /* QACS_DEBUG_LEVEL_DEFAULT */
+        conf_extn->qacs_conf.dbg_module_bitmap = 0x00; /* bitmap of QACS debug modules id */
+	conf_extn->qacs_conf.dbg_level = 0; /* QACS debug level */
+
+	/* DCS defaults: initialize values; valid_mask reflects only user overrides */
+	os_memset(&conf_extn->dcs_conf, 0, sizeof(conf_extn->dcs_conf));
+	conf_extn->dcs_conf.intr_detection_threshold = DCS_INTR_DETECTION_THR;
+	conf_extn->dcs_conf.phyerr_penalty = DCS_PHYERR_PENALTY;
+	conf_extn->dcs_conf.phyerr_threshold = DCS_PHYERR_THRESHOLD;
+	conf_extn->dcs_conf.radarerr_threshold = DCS_RADARERR_THRESHOLD;
+	conf_extn->dcs_conf.txerr_threshold = DCS_TXERR_THRESHOLD;
+	conf_extn->dcs_conf.sample_size = DCS_SAMPLE_SIZE;
+	conf_extn->dcs_conf.coch_intr_threshold = DCS_COCH_INTR_THRESHOLD;
+	conf_extn->dcs_conf.user_max_cu = DCS_USER_MAX_CU;
+
+	conf_extn->dcs_conf.enable_bitmap = 0;   /* DCS disabled */
+	/*
+	 * Enable random channel selection for AWGN by default; users can
+	 * explicitly disable random channel selection via hostapd.conf/CLI by
+	 * setting the bitmap to 0.
+	 */
+	conf_extn->dcs_conf.dcs_random_chan_bitmap = DCS_AWGN_INTF;
 }
 
 void
@@ -86,6 +107,9 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "skip_cac") == 0) {
 		conf_extn->skip_cac = atoi(pos);
 		return 0;
+	} else if (os_strcmp(buf, "uplink_csa") == 0) {
+		conf_extn->uplink_csa = atoi(pos);
+		return 0;
 	} else if (os_strcmp(buf, "qacs_enable") == 0) {
 		conf_extn->qacs_enable = atoi(pos);
 	} else if (os_strcasecmp(buf, "nontx_profile_elem_size") == 0) {
@@ -95,12 +119,22 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		return ret;
+	} else if (os_strcmp(buf, "repurpose_mode") == 0) {
+		int mode = atoi(pos);
+
+		if (!hostapd_is_valid_repurpose_mode_extn(mode)) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid repurpose_mode %d (allowed 1..3)",
+				   line, mode);
+			return -1;
+		}
+		bss->bss_extn.repurpose_mode = (u8) mode;
 	} else if (os_strcmp(buf, "acs_wradar") == 0) {
 		conf_extn->qacs_conf.wradar = atoi(pos);
 	} else if (os_strcmp(buf, "acs_txpwr_opt") == 0) {
 		int val = atoi(pos);
 		if (val != 1 && val != 2)
-			val = 1;
+			val = 0;
 		conf_extn->qacs_conf.rep_txpower_policy = val;
 	} else if (os_strcmp(buf, "acs_rank_en") == 0) {
 		conf_extn->qacs_conf.rank_en = atoi(pos);
@@ -111,12 +145,13 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		 * Upper 0xFF00 bits -> module bitmap
 		 * Example: "0x0201" means module_bitmap=0x02, dbg_level=0x01
 		 */
-		char *endptr = NULL;
+		char *endptr;
 		unsigned long val = strtoul(pos, &endptr, 0);
-		if (endptr == pos) {
+		if (*endptr) {
 			wpa_printf(MSG_ERROR, "%s: Invalid acs_dbgtrace value '%s' (0xFF00=module mask, 0x00FF=debug level)", __func__, pos);
 			return -1;
 		}
+
 		conf_extn->qacs_conf.dbg_module_bitmap = (u_int16_t)((val & 0xFF00) >> 8);
 		conf_extn->qacs_conf.dbg_level = (int)(val & 0x00FF);
 
@@ -138,6 +173,85 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 
 		conf_extn->qacs_conf.dwelltime = dt;
 
+	} else if (os_strcmp(buf, "dcs_enable") == 0) {
+		char *endptr;
+		unsigned long v;
+
+		while (*pos == ' ' || *pos == '\t')
+			pos++;
+
+		errno = 0;
+		v = strtoul(pos, &endptr, 0);
+		while (*endptr == ' ' || *endptr == '\t')
+			endptr++;
+		if (errno != 0 || endptr == pos || *endptr != '\0' ||
+		    v > 0xFFFF) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid value for dcs_enable '%s' (expected 16-bit value)",
+				   line, pos);
+			conf_extn->dcs_conf.enable_bitmap = 0;
+			return 0;
+		}
+
+		if (v & ~ALLOWED_DCS_MASK) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid value for dcs_enable '%s' (allowed bits mask: 0x%04x)",
+				   line, pos, ALLOWED_DCS_MASK);
+			conf_extn->dcs_conf.enable_bitmap = 0;
+			return 0;
+		}
+
+		conf_extn->dcs_conf.enable_bitmap = (u16) v;
+	} else if (os_strcmp(buf, "dcs_random_chan_bitmap") == 0) {
+		/*
+		 * Parse and set DCS random channel enable bitmap from hostapd.conf.
+		 * Accept numeric values (decimal or hex like 0x1F). Validate range
+		 * and allowed bits (0..4 i.e., 0x001F) to align with CLI handling.
+		 */
+		unsigned long tmp;
+		char *endptr = NULL;
+		u16 val;
+
+		errno = 0;
+		tmp = strtoul(pos, &endptr, 0);
+		if (errno != 0 || endptr == pos) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid dcs random_chan_bitmap value '%s'",
+				   line, pos);
+			return -1;
+		}
+
+		while (endptr && *endptr == ' ')
+			endptr++;
+
+		if (endptr && *endptr != '\0') {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: trailing characters in dcs random_chan_bitmap '%s'",
+				   line, pos);
+			return -1;
+		}
+
+		if (tmp > 0xFFFFUL) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: dcs random_chan_bitmap out of range '%s'",
+				   line, pos);
+			return -1;
+		}
+
+		val = (u16) tmp;
+		/* Allow only bits 0..4; update mask if needed. */
+		if (val & ~0x001Fu) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid dcs random_chan_bitmap 0x%04x (only bits 0..4 allowed)",
+				   line, val);
+			return -1;
+		}
+
+		conf_extn->dcs_conf.dcs_random_chan_bitmap = val;
+		wpa_printf(MSG_DEBUG,
+			   "DCS: dcs_random_chan_bitmap set to 0x%04x (%u)",
+			   conf_extn->dcs_conf.dcs_random_chan_bitmap,
+			   conf_extn->dcs_conf.dcs_random_chan_bitmap);
 	} else {
 		return -1;
 	}
