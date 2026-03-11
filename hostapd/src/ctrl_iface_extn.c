@@ -506,12 +506,18 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	return 0;
 }
 
-int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_bss_config *conf,
+int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_data *hapd,
+						     struct hostapd_bss_config *conf,
 						     char *value)
 {
 	char *end;
 	unsigned long v;
 	u8 optional_elem_size, vendor_elem_size;
+
+	if (hapd && !hapd->disabled) {
+		wpa_printf(MSG_ERROR, "CTRL: BSS should be in disabled state");
+		return -1;
+	}
 
 	v = strtoul(value, &end, 0); /* accepts 0x-prefixed hex or decimal */
 	if (end == value || *end != '\0') {
@@ -546,6 +552,7 @@ int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_bss_config *
 
 	conf->bss_extn.nontx_optional_elem_size = optional_elem_size;
 	conf->bss_extn.nontx_vendor_elem_size = vendor_elem_size;
+	conf->available_vendor_elem_size = vendor_elem_size;
 
 	return 0;
 }
@@ -590,7 +597,7 @@ int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *valu
 		}
 
 	} else if (os_strcasecmp(cmd, "nontx_profile_elem_size") == 0) {
-		ret = hostapd_set_nontx_optional_vendor_elem_size_extn(hapd->conf, value);
+		ret = hostapd_set_nontx_optional_vendor_elem_size_extn(hapd, hapd->conf, value);
 		if (ret < 0) {
 			wpa_printf(MSG_ERROR, "Failed to set nontx_profile_elem_size");
 			return -1;

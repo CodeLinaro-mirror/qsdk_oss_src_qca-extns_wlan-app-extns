@@ -82,7 +82,7 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			 const char *buf, char *pos, int line)
 {
 	struct hostapd_config_extn *conf_extn = &conf->conf_extn;
-	int val, ret;
+	int val;
 
 	if (!conf_extn)
 		return -1;
@@ -114,12 +114,8 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "qacs_enable") == 0) {
 		conf_extn->qacs_enable = atoi(pos);
 	} else if (os_strcasecmp(buf, "nontx_profile_elem_size") == 0) {
-		ret = hostapd_set_nontx_optional_vendor_elem_size_extn(bss, pos);
-		if (ret < 0) {
-			wpa_printf(MSG_ERROR, "Failed to set nontx_profile_elem_size");
-			return -1;
-		}
-		return ret;
+		/* Values are sanitized and set in hostapd_ctrl_iface_set_extn */
+		return 0;
 	} else if (os_strcmp(buf, "repurpose_mode") == 0) {
 		int mode = atoi(pos);
 
