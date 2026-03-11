@@ -24,6 +24,7 @@
 #include "common/wpa_common.h"
 #include "drivers/driver.h"
 #include "drivers/driver_nl80211.h"
+#include "ap/hostapd.h"
 #include "esp.h"
 #include "dcs.h"
 #include "rropinfo.h"
@@ -644,4 +645,71 @@ error:
 	nlmsg_free(msg);
 	wpa_printf(MSG_DEBUG, "nl80211: Could not configure DCS SIM on link %d", link_id);
 	return -1;
+}
+
+int hostapd_drv_mark_vap_submode(struct hostapd_data *hapd,
+				 enum qca_wlan_vendor_vap_submode_type submode)
+{
+	if (submode == QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_NONE)
+		return 0;
+	else
+		return hostapd_drv_mark_vap_submode_extn(hapd->drv_priv,
+				OUI_QCA,
+				QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+				hapd->conf->iface,
+				submode);
+
+}
+
+int hostapd_drv_mark_vap_submode_extn(void *priv, unsigned int vendor_id,
+					      unsigned int subcmd,
+					      const char *ifname,
+					      u8 vap_submode)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *attr;
+	int ret;
+	int ifidx;
+
+	if (!bss || !drv)
+		return -EINVAL;
+
+	ifidx = if_nametoindex(ifname);
+
+	msg = nlmsg_alloc();
+	if (!msg)
+		return -EINVAL;
+
+	if (!genlmsg_put(msg, 0, 0, drv->global->nl80211_id,
+			0,  0, NL80211_CMD_VENDOR, 0))
+		goto fail;
+
+	if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, ifidx) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, vendor_id) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD, subcmd))
+		goto fail;
+
+	attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!attr)
+		goto fail;
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE,
+		       vap_submode))
+		goto fail;
+
+	nla_nest_end(msg, attr);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR, "nl80211: vendor command - vap_submode: %dfailed err=%d",
+			   vap_submode, ret);
+	else {
+		wpa_printf(MSG_INFO, "nl80211: vendorcmd vap_submode: ifname %s vap_submode %d",
+			   ifname, vap_submode);
+	}
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
 }
