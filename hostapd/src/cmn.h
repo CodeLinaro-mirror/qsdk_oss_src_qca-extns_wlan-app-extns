@@ -312,6 +312,7 @@ struct hostapd_iface_extn {
 	enum dynamic_acs_action_extn dynamic_acs_action;
 	bool dfs_available_from_sta;
 	char sta_wpa_state[32]; /* Stores the STA WPA state, in case of repeater */
+	bool acs_dfs_cac_pending;  /* ACS picked DFS channel, waiting for CAC */
 };
 
 struct hostapd_hw_modes_extn {
