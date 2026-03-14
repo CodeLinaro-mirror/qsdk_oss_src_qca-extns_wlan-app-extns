@@ -309,6 +309,7 @@ struct hostapd_config_extn {
 	bool rnr_ess_colocated_en;
 	bool rnr_6ghz_override;
 	bool skip_cac;    /* Skip DFS CAC for Repeater AP */
+	bool ignorecac;   /* Skip DFS CAC for Root AP */
 	int ind_rptr;    /* 1 - Independent Rep; 0 - Dependent */
 	bool qacs_enable;
 	bool uplink_csa;
@@ -402,6 +403,7 @@ struct hostapd_iface_extn {
 	u8 vlp_non_prior_penalty;
 
 	bool dfs_no_wradar;
+	bool ignorecac;
 	char sta_wpa_state[32]; /* Stores the STA WPA state, in case of repeater */
 	bool acs_dfs_cac_pending;  /* ACS picked DFS channel, waiting for CAC */
 	int vap_type;
@@ -1186,6 +1188,19 @@ int hostapd_is_dfs_overlap_extn(struct hostapd_iface *iface,
 				enum chan_width width,
 				int center_freq, u16 punct_bitmap);
 void hostapd_modify_supported_op_class_for_320mhz_extn(int freq, u8 *op_class);
+void hostapd_ignorecac_init_iface_extn(struct hostapd_iface *iface);
+bool hostapd_ignorecac_should_skip_cac_extn(struct hostapd_iface *iface);
+void
+hostapd_ignorecac_update_freq_params_extn(struct hostapd_iface *iface,
+					  struct hostapd_freq_params *freq_params);
+bool hostapd_ignorecac_handle_dfs_extn(struct hostapd_iface *iface,
+				       int start_idx, int n_chans);
+void hostapd_ignorecac_switch_channel_extn(struct hostapd_data *hapd,
+					   struct csa_settings *settings);
+bool hostapd_ignorecac_chan_switch_complete_extn(struct hostapd_data *hapd,
+						 u8 power_mode_6ghz,
+						 int width, int width_device,
+						 int is_dfs);
 
 /* static declaration of this function is present in hostapd */
 u16 get_lower_bandwidth_puncture_pattern(u16 prifreq, u16 cur_pat,

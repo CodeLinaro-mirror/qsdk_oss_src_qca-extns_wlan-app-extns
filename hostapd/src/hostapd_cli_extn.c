@@ -118,6 +118,13 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
 	return hostapd_cli_cmd(ctrl, "ACS", 1, argc, argv);
 }
 
+int hostapd_cli_cmd_ignorecac_extn(struct wpa_ctrl *ctrl, int argc,
+				   char *argv[])
+{
+	/* With no argument, return current configured value. */
+	return hostapd_cli_cmd(ctrl, "IGNORECAC", 0, argc, argv);
+}
+
 #ifdef CONFIG_IEEE80211AC
 int hostapd_cli_cmd_get_mu_cap_war_extn(struct wpa_ctrl *ctrl,
 					     int argc, char *argv[])

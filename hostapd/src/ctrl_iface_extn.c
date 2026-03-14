@@ -833,6 +833,63 @@ hostapd_ctrl_iface_set_autorecovery_after_nol_vapdown_extn(struct hostapd_data *
 	return 0;
 }
 
+#ifdef CONFIG_QCA_LAB_TEST_FEATURES
+static int hostapd_ctrl_iface_ignorecac_extn(struct hostapd_data *hapd,
+					     const char *cmd)
+{
+	struct hostapd_config_extn *conf_extn;
+	char *end;
+	long val;
+
+	if (!hapd || !hapd->iconf || !cmd)
+		return -1;
+
+	conf_extn = &hapd->iconf->conf_extn;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	val = strtol(cmd, &end, 10);
+	if (cmd == end)
+		return -1;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		return -1;
+
+	if (val != 0 && val != 1)
+		return -1;
+
+	conf_extn->ignorecac = val;
+	if (hapd->iface)
+		hapd->iface->iface_extn.ignorecac = val;
+	if (hapd->iface && hapd->iface->conf)
+		hapd->iface->conf->conf_extn.ignorecac = val;
+	wpa_printf(MSG_INFO, "IGNORECAC=%ld on interface %s",
+		   val, hapd->conf->iface);
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_ignorecac_extn(struct hostapd_data *hapd,
+						 char *reply,
+						 size_t reply_size)
+{
+	int res;
+
+	if (!hapd || !hapd->iface)
+		return -1;
+
+	res = os_snprintf(reply, reply_size, "%d\n",
+			  hapd->iconf->conf_extn.ignorecac ? 1 : 0);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+#endif /* CONFIG_QCA_LAB_TEST_FEATURES */
+
 #ifdef CONFIG_IEEE80211AC
 static int hostapd_ctrl_iface_mu_cap_war_extn(struct hostapd_data_extn *hapd_extn,
 					    const char *cmd)
@@ -942,6 +999,14 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn = hostapd_handle_cli_acs_extn(hapd, buf + 4,
 							     reply, reply_size);
 #endif
+#ifdef CONFIG_QCA_LAB_TEST_FEATURES
+	} else if (os_strcmp(buf, "IGNORECAC") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_ignorecac_extn(hapd, reply,
+								       reply_size);
+	} else if (os_strncmp(buf, "IGNORECAC ", 10) == 0) {
+		if (hostapd_ctrl_iface_ignorecac_extn(hapd, buf + 10))
+			reply_len_extn = -1;
+#endif /* CONFIG_QCA_LAB_TEST_FEATURES */
 #ifdef CONFIG_IEEE80211AC
 	} else if (os_strncmp(buf, "MU_CAP_WAR ", 11) == 0) {
 		if (hostapd_ctrl_iface_mu_cap_war_extn(&hapd->hapd_extn, buf + 11))
