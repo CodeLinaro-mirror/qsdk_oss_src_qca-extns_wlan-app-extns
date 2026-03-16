@@ -644,3 +644,33 @@ int hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
 
 	return len;
 }
+
+#ifdef HOSTAPD
+bool hostapd_5ghz_eht_320_channel_bw_extn(struct hostapd_hw_modes *mode,
+					  int channel_idx)
+{
+	static const int allowed[] = { 100, 104, 108, 112, 116, 120,
+				       124, 128, 132, 136, 140, 144 };
+	struct hostapd_channel_data *chan = &mode->channels[channel_idx];
+	bool is_allowed_primary = false;
+	size_t k;
+
+	if (!(chan->allowed_bw & HOSTAPD_CHAN_WIDTH_320))
+		return false;
+
+	for (k = 0; k < ARRAY_SIZE(allowed); k++) {
+		int c = allowed[k];
+		int idx;
+
+		if (chan->chan == c)
+			is_allowed_primary = true;
+
+		idx = hostapd_get_channel_idx(mode, c);
+		if (idx == -1 ||
+		    (mode->channels[idx].flag & HOSTAPD_CHAN_DISABLED))
+			return false;
+	}
+
+	return is_allowed_primary;
+}
+#endif /* HOSTAPD */
