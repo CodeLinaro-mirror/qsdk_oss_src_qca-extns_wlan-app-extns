@@ -8,6 +8,7 @@
 #include "common/ieee802_11_defs.h"
 #include "ap/hostapd.h"
 #include "cmn.h"
+#include "ap/beacon.h"
 
 int
 hostapd_config_check_bss_repurpose_mode_extn(const struct hostapd_config *conf,
@@ -125,4 +126,69 @@ u8 hostapd_get_repurposed_links_bitmap_extn(struct hostapd_data *hapd,
 	}
 
 	return num_repurposed_links;
+}
+
+int
+hostapd_link_remove_repurposed_bss_extn(struct hostapd_data *hapd,
+					u32 removal_type)
+{
+	struct hostapd_data *tx_hapd = NULL;
+	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_iface **tmp;
+	struct hapd_interfaces *interfaces = iface->interfaces;
+	unsigned int i;
+
+	if (removal_type == HAPD_LINK_DISABLE) {
+		hostapd_disable_bss(hapd, 0);
+		goto refresh_beacon;
+	}
+
+	if (iface->num_bss == 1) {
+		for (i = 0; i < interfaces->count; i++) {
+			if (interfaces->iface[i] == iface) {
+				hostapd_interface_deinit_free(iface);
+				os_remove_in_array(interfaces->iface,
+						   interfaces->count,
+						   sizeof(struct hostapd_iface *),
+						   i);
+				interfaces->count--;
+				tmp = os_realloc_array(interfaces->iface,
+						       interfaces->count,
+						       sizeof(struct hostapd_iface *));
+				if (!tmp)
+					return -1;
+				interfaces->iface = tmp;
+				break;
+			}
+		}
+	} else {
+		for (i = 0; i < iface->conf->num_bss; i++) {
+			if (iface->bss[i] == hapd)
+				break;
+		}
+
+		/* Shouldn't happen */
+		if (i >= iface->conf->num_bss) {
+			wpa_printf(MSG_ERROR, "Wrong hapd is provided\n");
+			return -1;
+		}
+
+		/* Store tx_hapd to update MBSSID beacon as hapd will be
+		 * freed by hostapd_remove_bss() */
+		tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
+		if (tx_hapd == hapd)
+			tx_hapd = NULL;
+
+		hostapd_remove_bss(iface, i);
+
+		if (tx_hapd)
+			ieee802_11_update_beacon_mbssid(tx_hapd);
+	}
+
+refresh_beacon:
+	/* Refresh all the partner beacons */
+	if (interfaces->count > 0)
+		hostapd_refresh_all_iface_beacons(interfaces->iface[0]);
+
+	return 0;
 }
