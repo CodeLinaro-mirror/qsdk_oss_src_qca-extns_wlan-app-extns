@@ -156,6 +156,8 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs show_neighbor_report : print ACS neighbor report\n"
 		"  acs periodic_interval <sec> : set periodic ACS interval (0 disables, max 86400)\n"
 		"  acs get_periodic_interval : get periodic ACS interval\n"
+		"  acs 2g_scan_all <1|0>    : 2.4 GHz ACS: 1=all channels, 0=only 1/6/11\n"
+		"  acs get_2g_scan_all      : get 2.4 GHz ACS channel set selection\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -724,6 +726,27 @@ static int hostapd_acs_get_periodic_interval_extn(struct hostapd_config_extn *co
 	return ret;
 }
 
+static int hostapd_acs_set_2g_scan_all_extn(struct hostapd_config_extn *conf_extn,
+                                            const char *pos,
+                                            char *reply, size_t reply_size)
+{
+    int val = atoi(pos);
+    conf_extn->qacs_conf.acs_2g_scan_all = (val != 0);
+    return 0;
+}
+
+static int hostapd_acs_get_2g_scan_all_extn(struct hostapd_config_extn *conf_extn,
+                                            const char *pos,
+                                            char *reply, size_t reply_size)
+{
+    int ret = os_snprintf(reply, reply_size,
+                          "ACS 2g_scan_all: %d\n",
+                          conf_extn->qacs_conf.acs_2g_scan_all ? 1 : 0);
+    if (os_snprintf_error(reply_size, ret))
+        return -1;
+    return ret;
+}
+
 static int hostapd_acs_set_dwelltime_extn(struct hostapd_config_extn *conf_extn,
 					  const char *pos,
 					  char *reply, size_t reply_size)
@@ -1004,6 +1027,14 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 
 	} else if (os_strncmp(pos, "get_6g_only_psc", 15) == 0) {
 		return hostapd_acs_get_6g_only_psc_extn(conf, pos,
+							buf, buflen);
+
+	} else if (os_strncmp(pos, "2g_scan_all ", 12) == 0) {
+		return hostapd_acs_set_2g_scan_all_extn(conf_extn, pos + 12,
+							buf, buflen);
+
+	} else if (os_strncmp(pos, "get_2g_scan_all", 15) == 0) {
+		return hostapd_acs_get_2g_scan_all_extn(conf_extn, pos,
 							buf, buflen);
 
 	} else if (os_strncmp(pos, "invoke ", 7) == 0) {

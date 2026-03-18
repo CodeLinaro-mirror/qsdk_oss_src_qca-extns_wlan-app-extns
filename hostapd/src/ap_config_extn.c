@@ -246,6 +246,16 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 
 		conf_extn->qacs_conf.dwelltime = dt;
 
+	} else if (os_strcmp(buf, "acs_2g_scan_all") == 0) {
+		/*
+		 * Control 2.4 GHz ACS selection set:
+		 * 0 = restrict to non-overlapping primaries (1/6/11) for 20 MHz
+		 * 1 = allow all available 2.4 GHz channels for 20 MHz
+		 * 40 MHz constraints (1/6 for 40+, 6/11 for 40−) stay enforced.
+		 */
+		int v = atoi(pos);
+		conf_extn->qacs_conf.acs_2g_scan_all = (v != 0);
+
 	} else if (os_strcmp(buf, "dcs_enable") == 0) {
 		char *endptr;
 		unsigned long v;
