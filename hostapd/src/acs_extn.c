@@ -159,16 +159,18 @@ acs_print_usage_extn(char *reply, int reply_size)
 
 #ifdef CONFIG_QCN_APP_EXTN
 static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
-				   int nchans, struct qacs_data_extn *data_extn,
+				   struct hostapd_iface *iface, int nchans,
+				   struct qacs_data_extn *data_extn,
 				   char *reply, size_t reply_size)
 {
 	int ret;
 	char *pos = reply;
 	char *end = reply + reply_size;
+	unsigned int best_center_freq = 0;
 
 	/* ---- Single header ---- */
 	ret = os_snprintf(pos, end - pos,
-			" Freq(chan)      BSS    NF   Load  Sec   SRP  Grade  Radar    Eff   Power   Rank\n");
+			" Freq(chan)          BSS    NF   Load  Sec   SRP  Grade  Radar    Eff   Power   Rank\n");
 	if (os_snprintf_error(end - pos, ret)) {
 		return (int)(pos - reply);
 	}
@@ -228,7 +230,7 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 
 		else {
 			ret = os_snprintf(pos, end - pos,
-					" %4u(%3u)      %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d\n",
+					" %4u(%3u)       %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d\n",
 					r->chan_freq, r->ieee_chan,
 					r->chan_nbss, r->noisefloor, r->chan_load,
 					r->sec_chan, r->chan_nbss_srp, r->chan_grade,
@@ -240,11 +242,33 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 			continue;
 		}
 
+		if (!best_center_freq && r->ieee_chan == data_extn->best_chan) {
+			bool is_2g = (r->chan_freq && r->chan_freq < 3000);
+			bool is_6g = (r->chan_freq && r->chan_freq >= 5925);
+
+			if (data_extn->bw == 40 && is_2g) {
+				if (iface->conf->secondary_channel == 1 && r->center_freq1)
+					best_center_freq = r->center_freq1;
+				else if (iface->conf->secondary_channel == -1 && r->center_freq2)
+					best_center_freq = r->center_freq2;
+				else
+					best_center_freq = r->center_freq1 ? r->center_freq1 :
+						r->center_freq2 ? r->center_freq2 : 0;
+			} else if (data_extn->bw == 320 && is_6g) {
+				if (iface->conf->eht_bw320_offset == 1 && r->center_freq1)
+					best_center_freq = r->center_freq1;
+				else if (iface->conf->eht_bw320_offset == 2 && r->center_freq2)
+					best_center_freq = r->center_freq2;
+				else
+					best_center_freq = r->center_freq1 ? r->center_freq1 :
+						r->center_freq2 ? r->center_freq2 : 0;
+			}
+		}
 	}
 
-	if(data_extn->is_fallback_chan) {
+	if (data_extn->is_fallback_chan) {
 		ret = os_snprintf(pos, end - pos,
-				"ACS_SUCCESS: Current channel is selected Random channel algorithm\n");
+				"ACS_SUCCESS: Current channel is selected by Random channel algorithm\n");
 		if (os_snprintf_error(end - pos, ret)) {
 			return (int)(pos - reply);
 		}
@@ -259,10 +283,14 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 		pos += ret;
 	}
 
-	ret = os_snprintf(pos, end - pos,
-			"Best channel %d selected for Bandwidth %d\n",data_extn->best_chan,data_extn->bw);
-	if (os_snprintf_error(end - pos, ret)) {
-		return (int)(pos - reply);
+	if (best_center_freq) {
+		ret = os_snprintf(pos, end - pos,
+				"Best channel %d selected for Bandwidth %d (center_freq=%u)\n",
+				data_extn->best_chan, data_extn->bw, best_center_freq);
+	} else {
+		ret = os_snprintf(pos, end - pos,
+				"Best channel %d selected for Bandwidth %d\n",
+				data_extn->best_chan, data_extn->bw);
 	}
 
 	pos += ret;
@@ -275,6 +303,7 @@ static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
 		char *reply, size_t reply_size)
 {
 	int len = 0;
+	struct hostapd_iface *iface = hapd->iface;
 
 	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
 	struct qacs_data_extn *data_extn = ICM_GET_EXTN_DATA_PTR(mode);
@@ -301,7 +330,7 @@ static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
 	}
 
 	/* Print the report to the reply buffer */
-	len = print_acs_report_to_buf(acs_report, nchans, data_extn ,reply, reply_size);
+	len = print_acs_report_to_buf(acs_report, iface, nchans, data_extn ,reply, reply_size);
 
 	free(acs_report);
 	return len;
