@@ -311,6 +311,8 @@ struct hostapd_iface_extn {
 	bool acs_failed;
 	enum dynamic_acs_action_extn dynamic_acs_action;
 	bool dfs_available_from_sta;
+	char sta_wpa_state[32]; /* Stores the STA WPA state, in case of repeater */
+	bool acs_dfs_cac_pending;  /* ACS picked DFS channel, waiting for CAC */
 };
 
 struct hostapd_hw_modes_extn {
@@ -856,6 +858,12 @@ hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 	return -1;
 }
 
+static inline bool
+hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface)
+{
+	return false;
+}
+
 static inline void
 dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap)
 {
@@ -1049,6 +1057,7 @@ void hostapd_iface_set_supplicant_channel_extn(struct hostapd_iface *hapd_iface)
 int acs_get_bw_center_chan(int freq, enum bw_type bw);
 void hostapd_ml_acs_check_and_notify(struct hostapd_iface *iface, bool status);
 void wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx);
+bool hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface);
 #ifdef HOSTAPD
 struct hostapd_data *
 switch_link_hapd(struct hostapd_data *hapd, int link_id);
@@ -1088,9 +1097,6 @@ struct hostapd_channel_data *
 qacs_find_ideal_chan(struct hostapd_iface *iface);
 int acs_process_hostapd_scan_data(struct hostapd_iface *iface);
 #endif /*CONFIG_QCN_APP_EXTN */
-
-#define MBSSID_NONTX_OPTIONAL_ELEM_SIZE 128
-#define MBSSID_NONTX_VENDOR_ELEM_SIZE  80
 
 int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_bss_config *conf,
 						     char *value);

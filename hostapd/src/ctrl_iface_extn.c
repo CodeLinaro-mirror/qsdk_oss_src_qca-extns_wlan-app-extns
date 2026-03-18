@@ -18,6 +18,7 @@
 #include "ap/ap_drv_ops.h"
 #include "hostapd_rptr_extn.h"
 #include "cmn.h"
+#include "ap/ieee802_11.h"
 
 /**
  * hostapd_ctrl_get_hw_info_extn - Return current hardware info
@@ -528,18 +529,18 @@ int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_bss_config *
 
 	wpa_printf(MSG_INFO,
 		   "CTRL: Optional elem size: %u max limit: %d vendor elem size: %u max limit: %d",
-		   optional_elem_size, MBSSID_NONTX_OPTIONAL_ELEM_SIZE, vendor_elem_size,
-		   MBSSID_NONTX_VENDOR_ELEM_SIZE);
+		   optional_elem_size, MBSSID_NON_TX_DEF_OPTIONAL_ELEM_SIZE, vendor_elem_size,
+		   MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE);
 
-	if (optional_elem_size > MBSSID_NONTX_OPTIONAL_ELEM_SIZE) {
+	if (optional_elem_size > MBSSID_NON_TX_DEF_OPTIONAL_ELEM_SIZE) {
 		wpa_printf(MSG_ERROR, "CTRL: Optional elem size %u bytes exceeds max limit %d",
-			   optional_elem_size, MBSSID_NONTX_OPTIONAL_ELEM_SIZE);
+			   optional_elem_size, MBSSID_NON_TX_DEF_OPTIONAL_ELEM_SIZE);
 		return -1;
 	}
 
-	if (vendor_elem_size > MBSSID_NONTX_VENDOR_ELEM_SIZE) {
+	if (vendor_elem_size > MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE) {
 		wpa_printf(MSG_ERROR, "CTRL: Vendor elem size %u bytes exceeds max limit %d",
-			   vendor_elem_size, MBSSID_NONTX_VENDOR_ELEM_SIZE);
+			   vendor_elem_size, MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE);
 		return -1;
 	}
 
