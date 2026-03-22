@@ -119,8 +119,17 @@ int hostapd_drv_set_esp_param_extn(struct hostapd_data *hapd, const char *param,
 	else if (os_strcmp(param, "enable_esp") == 0)
 		iface_extn->esp.enable = val;
 
-	for (i = 0; i < hapd->iface->num_bss; i++)
-		ieee802_11_set_beacon(hapd->iface->bss[i]);
+	for (i = 0; i < hapd->iface->num_bss; i++) {
+		struct hostapd_data *bss = hapd->iface->bss[i];
+
+		if (!bss)
+			continue;
+		ieee802_11_set_beacon_per_bss_only(bss);
+#ifdef CONFIG_IEEE80211BE
+		if (bss->conf && bss->conf->mld_ap)
+			hostapd_gen_per_sta_profiles(bss);
+#endif /* CONFIG_IEEE80211BE */
+	}
 
 	return 0;
 
