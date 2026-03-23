@@ -253,6 +253,14 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			   "DCS: dcs_random_chan_bitmap set to 0x%04x (%u)",
 			   conf_extn->dcs_conf.dcs_random_chan_bitmap,
 			   conf_extn->dcs_conf.dcs_random_chan_bitmap);
+	} else if (os_strcmp(buf, "vap_submode") == 0) {
+		u8 val = atoi(pos);
+		if (val > QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MAX) {
+			wpa_printf(MSG_ERROR, "Line %d: Invalid vap_submode: %d",
+				   line, val);
+			return 1;
+		}
+		bss->bss_extn.vap_submode = val;
 	} else {
 		return -1;
 	}

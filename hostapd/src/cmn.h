@@ -17,6 +17,7 @@
 #include "utils/common.h"
 #include "common/ieee802_11_defs.h"
 #include "repurpose.h"
+#include "../src/common/qca-vendor.h"
 
 struct hostapd_config;
 struct sta_info;
@@ -288,6 +289,7 @@ struct hostapd_bss_config_extn {
 	u8 nontx_vendor_elem_size;
 	u8 nontx_optional_elem_size;
 	enum repurpose_mode repurpose_mode;
+	enum qca_wlan_vendor_vap_submode_type vap_submode;
 };
 
 struct esp_extn {
@@ -1192,5 +1194,12 @@ hostapd_5ghz_eht_320_channel_bw_extn(struct hostapd_hw_modes *mode,
 	return false;
 }
 #endif /* HOSTAPD */
+
+int hostapd_drv_mark_vap_submode(struct hostapd_data *hapd,
+				 enum qca_wlan_vendor_vap_submode_type submode);
+int hostapd_drv_mark_vap_submode_extn(void *priv, unsigned int vendor_id,
+				      unsigned int subcmd,
+				      const char *ifname,
+				      u8 vap_submode);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
