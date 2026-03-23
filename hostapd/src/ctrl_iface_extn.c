@@ -47,6 +47,55 @@ int hostapd_ctrl_get_hw_info_extn(struct hostapd_data *hapd, char *buf, size_t b
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_ht40intol_extn(struct hostapd_data *hapd, char *pos)
+{
+	int ret = -1;
+	char *end;
+	long value;
+	bool user_ht40intol, current_ht40intol;
+
+	if (!hapd || !hapd->iconf || !pos)
+		return ret;
+
+	value = strtol(pos, &end, 10);
+	if (pos == end || *end != '\0' || value < 0 || value > 1) {
+		wpa_printf(MSG_ERROR, "Invalid input for ht40intol (expected 0 or 1)\n");
+		return ret;
+	}
+
+	user_ht40intol = (value == 1);
+	current_ht40intol = !!(hapd->iconf->ht_capab & HT_CAP_INFO_40MHZ_INTOLERANT);
+	if (current_ht40intol == user_ht40intol) {
+		wpa_printf(MSG_DEBUG, "Intolerance is already %d\n", current_ht40intol);
+		return 0;
+	}
+
+	if (user_ht40intol)
+		hapd->iconf->ht_capab |= HT_CAP_INFO_40MHZ_INTOLERANT;
+	else
+		hapd->iconf->ht_capab &= ~HT_CAP_INFO_40MHZ_INTOLERANT;
+
+	ret = ieee802_11_update_beacons(hapd->iface);
+	if (ret)
+		wpa_printf(MSG_ERROR, "Failed to update beacons.\n");
+
+	return ret;
+}
+
+static int hostapd_ctrl_iface_get_ht40intol_extn(struct hostapd_data *hapd, char *buf,
+						 size_t buflen)
+{
+	int ret = -1;
+
+	if (!hapd || !hapd->iconf)
+		return ret;
+
+	ret = os_snprintf(buf, buflen, "ht40intol: %d\n",
+			  !!(hapd->iconf->ht_capab & HT_CAP_INFO_40MHZ_INTOLERANT));
+
+	return ret;
+}
+
 static int hostapd_ctrl_iface_set_esp_extn(struct hostapd_data *hapd, char *cmd)
 {
 	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
@@ -784,6 +833,12 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 			hostapd_ctrl_iface_get_obss_rx_snr_threshold_extn(hapd,
 									   reply,
 									   reply_size);
+	} else if (os_strncmp(buf, "HT40INTOL ", 10) == 0) {
+		if (hostapd_ctrl_iface_set_ht40intol_extn(hapd, buf + 10))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_HT40INTOL") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_ht40intol_extn(hapd, reply,
+								       reply_size);
         } else {
 		return -1;
 	}
