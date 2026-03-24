@@ -316,6 +316,7 @@ struct hostapd_iface_extn {
 	char sta_wpa_state[32]; /* Stores the STA WPA state, in case of repeater */
 	bool acs_dfs_cac_pending;  /* ACS picked DFS channel, waiting for CAC */
 	int vap_type;
+	u16 vlp_threshold_freq; /* Stores 6 GHz VLP priority threshold frequency */
 };
 
 struct hostapd_hw_modes_extn {
@@ -1154,6 +1155,14 @@ void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
 			u32 chan_bw_interference_bitmap);
 int hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
 				  char *buf, size_t buflen);
+/**
+ * hostapd_get_6ghz_thresh_priority_freq_extn() - Helper function to fetch the
+ * VLP priority threshold frequency from driver
+ * @iface: Pointer to hostapd interface data
+ *
+ * Return: 0 if threshold frequency was fetched successfully, else error code.
+ */
+int hostapd_get_6ghz_thresh_priority_freq_extn(struct hostapd_iface *iface);
 int intf_chan_range_available_5g(struct hostapd_hw_modes *mode,
 				 int first_chan_idx, int num_chans);
 int intf_chan_range_available_2g(struct hostapd_hw_modes *mode,
