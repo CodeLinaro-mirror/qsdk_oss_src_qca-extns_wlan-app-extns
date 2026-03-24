@@ -10,6 +10,10 @@ struct wpa_ctrl;
 
 int hostapd_cli_cmd_set_esp_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_esp_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_set_non_prior_penalty_extn(struct wpa_ctrl *ctrl, int argc,
+					       char *argv[]);
+int hostapd_cli_cmd_get_non_prior_penalty_extn(struct wpa_ctrl *ctrl, int argc,
+					       char *argv[]);
 int hostapd_cli_cmd_set_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 
@@ -34,6 +38,10 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 		"esp_ppdu_dur 0-255, esp_ba_window 0-7, enable_esp 0-1)" }, \
 	{ "get_esp", hostapd_cli_cmd_get_esp_extn, NULL, \
 		"= get ESP parameters from driver" }, \
+	{ "set_vlp_non_prior_penalty", hostapd_cli_cmd_set_non_prior_penalty_extn, NULL, \
+		"<0-100> = set 6 GHz VLP non-priority channel penalty (%)" }, \
+	{ "get_vlp_non_prior_penalty", hostapd_cli_cmd_get_non_prior_penalty_extn, NULL, \
+		"= get 6 GHz VLP non-priority channel penalty (%)" }, \
 	{ "rnr_6ghz_colocated", hostapd_cli_cmd_set_rnr_6ghz_colocated_extn, NULL, \
 		"<rnr_mode> <frm_val> = config rnr 6ghz colocated" }, \
 	{ "get_rnr_6ghz_colocated", hostapd_cli_cmd_get_rnr_6ghz_colocated_extn, NULL, \

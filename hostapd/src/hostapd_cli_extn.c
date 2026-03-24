@@ -38,6 +38,32 @@ int hostapd_cli_cmd_get_esp_extn(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, "GET_ESP");
 }
 
+int hostapd_cli_cmd_set_non_prior_penalty_extn(struct wpa_ctrl *ctrl, int argc,
+					       char *argv[])
+{
+	char buf[64] = {'\0'};
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: set_vlp_non_prior_penalty <0-100>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "SET_VLP_NON_PRIOR_PENALTY %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("Too long SET_VLP_NON_PRIOR_PENALTY command.\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_non_prior_penalty_extn(struct wpa_ctrl *ctrl, int argc,
+					       char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_VLP_NON_PRIOR_PENALTY");
+}
+
 int hostapd_cli_cmd_set_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl,
 						int argc, char *argv[])
 {
