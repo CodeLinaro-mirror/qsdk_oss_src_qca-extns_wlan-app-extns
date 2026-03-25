@@ -142,6 +142,42 @@ static int hostapd_ctrl_iface_get_eht_config_ccfs0_extn(struct hostapd_data *hap
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_tpe_common_psd_extn(struct hostapd_data *hapd,
+						      char *pos)
+{
+	char *end;
+	long user_input;
+	bool tpe_common_psd;
+
+	if (!hapd || !hapd->conf)
+		return -1;
+
+	user_input = strtol(pos, &end, 10);
+	if (pos == end || *end != '\0' || user_input < 0 || user_input > 1) {
+		wpa_printf(MSG_ERROR, "Invalid input for set_tpe_common_psd\n");
+		return -1;
+	}
+
+	tpe_common_psd = (user_input == 1);
+	hapd->conf->bss_extn.tpe_common_psd = tpe_common_psd;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_tpe_common_psd_extn(struct hostapd_data *hapd,
+						      char *buf, size_t buflen)
+{
+	int ret = -1;
+
+	if (!hapd || !hapd->conf || !buf)
+		return ret;
+
+	ret = os_snprintf(buf, buflen, "tpe_common_psd %d\n",
+			  hapd->conf->bss_extn.tpe_common_psd);
+
+	return ret;
+}
+
 static int hostapd_ctrl_iface_set_esp_extn(struct hostapd_data *hapd, char *cmd)
 {
 	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
@@ -892,6 +928,13 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn = hostapd_ctrl_iface_get_eht_config_ccfs0_extn(hapd,
 									      reply,
 									      reply_size);
+	} else if (os_strncmp(buf, "SET_TPE_COMMON_PSD ", 19) == 0) {
+		if (hostapd_ctrl_iface_set_tpe_common_psd_extn(hapd, buf + 19))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_TPE_COMMON_PSD") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_tpe_common_psd_extn(hapd,
+									    reply,
+									    reply_size);
         } else {
 		return -1;
 	}
