@@ -17,6 +17,7 @@
 #include "utils/common.h"
 #include "common/ieee802_11_defs.h"
 #include "repurpose.h"
+#include "../src/common/qca-vendor.h"
 
 struct hostapd_config;
 struct sta_info;
@@ -288,6 +289,7 @@ struct hostapd_bss_config_extn {
 	u8 nontx_vendor_elem_size;
 	u8 nontx_optional_elem_size;
 	enum repurpose_mode repurpose_mode;
+	enum qca_wlan_vendor_vap_submode_type vap_submode;
 };
 
 struct esp_extn {
@@ -868,6 +870,13 @@ static inline void
 dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap)
 {
 }
+
+static inline bool
+hostapd_5ghz_eht_320_channel_bw_extn(struct hostapd_hw_modes *mode,
+				     int channel_idx)
+{
+	return false;
+}
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -1159,5 +1168,38 @@ int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd,
 int hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 			   struct driver_dcs_config *params);
 void dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap);
+int hostapd_get_channel_idx(struct hostapd_hw_modes *mode, int channel_num);
+
+#ifdef HOSTAPD
+/**
+ * hostapd_5ghz_eht_320_channel_bw_extn() - Helper function to check whether to
+ * report "320MHz" on 5 GHz.
+ * @mode: HW mode with regulatory channel list
+ * @channel_idx: Index into @mode->channels[] for the queried channel
+ *
+ * Return true only if:
+ *  - @channel advertises HOSTAPD_CHAN_WIDTH_320 in allowed_bw,
+ *  - channel number is in {100..144 step 4}, and
+ *  - all channels in that set exist in @mode and are not HOSTAPD_CHAN_DISABLED.
+ *
+ * Return: true if "320MHz" can be shown for this channel; false otherwise.
+ */
+bool hostapd_5ghz_eht_320_channel_bw_extn(struct hostapd_hw_modes *mode,
+					  int channel_idx);
+#else
+static inline bool
+hostapd_5ghz_eht_320_channel_bw_extn(struct hostapd_hw_modes *mode,
+				     int channel_idx)
+{
+	return false;
+}
+#endif /* HOSTAPD */
+
+int hostapd_drv_mark_vap_submode(struct hostapd_data *hapd,
+				 enum qca_wlan_vendor_vap_submode_type submode);
+int hostapd_drv_mark_vap_submode_extn(void *priv, unsigned int vendor_id,
+				      unsigned int subcmd,
+				      const char *ifname,
+				      u8 vap_submode);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
