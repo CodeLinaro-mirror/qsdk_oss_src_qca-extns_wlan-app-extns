@@ -307,3 +307,29 @@ int hostapd_cli_cmd_get_ht40intol(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "GET_HT40INTOL");
 }
+
+int hostapd_cli_cmd_set_eht_config_ccfs0(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char buf[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: set_eht_config_ccfs0 <value>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "SET_EHT_CONFIG_CCFS0 %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("set_eht_config_ccfs0 cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_eht_config_ccfs0(struct wpa_ctrl *ctrl,
+					 int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_EHT_CONFIG_CCFS0");
+}
+

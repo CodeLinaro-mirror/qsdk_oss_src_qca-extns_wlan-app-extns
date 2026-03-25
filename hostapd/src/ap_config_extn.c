@@ -71,6 +71,8 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 
 	/* DCS BW reduction control default */
 	conf_extn->dcs_conf.bw_reduction_ctrl = 0;
+
+	conf_extn->eht_config_ccfs0 = false;
 }
 
 void
