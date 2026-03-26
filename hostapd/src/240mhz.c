@@ -32,29 +32,34 @@ int hostapd_handle_5ghz_320mhz_bw_indication_extn(struct hostapd_data *hapd,
 							  int *bandwidth)
 {
 	u8 pri_chan = hapd->cs_freq_params.channel;
-	u8 ccfs1_160 = 0;
-	u8 start_chan_160;
+	u8 center_chan;
+	u8 start_chan;
 	u16 pri_freq;
 	u16 center_freq_320;
 	u16 original_punct_bitmap = *punct_bitmap;
 	u16 truncated_punct_bitmap;
 	u16 pri_chan_bit_pos;
+	u16 target_bw = CHWIDTH_160;
 
 	center_freq_320 = ieee80211_chan_to_freq(NULL, hapd->iconf->op_class,
-							 *chan1);
+						 *chan1);
 	if (center_freq_320 <= 0)
 		return -1;
 
 	/*
-	 * Map the non-standard 5 GHz "320 MHz" operation to a legal 160 MHz
-	 * channel by choosing the standard 160 MHz center channel that contains
-	 * the CSA primary frequency. For primaries that do not belong to any
-	 * standard 160 MHz block (e.g., ch132-144), this returns 0 and BW Ind
-	 * should be skipped.
+	 * Map QCN 5 GHz 240 MHz CSA to a standards-compatible BWI:
+	 *   ch 100-128 -> 160 MHz, center ch 114
+	 *   ch 132-144 ->  80 MHz, center ch 138
+	 * Primaries outside this 240 MHz span do not need QCN remapping.
 	 */
-	ccfs1_160 = 130;
-	if (!ccfs1_160)
+	if (pri_chan >= 100 && pri_chan <= 128) {
+		center_chan = 114;
+	} else if (pri_chan >= 132 && pri_chan <= 144) {
+		center_chan = 138;
+		target_bw = CHWIDTH_80;
+	} else {
 		return -1;
+	}
 
 	pri_freq = ieee80211_chan_to_freq(NULL, hapd->iconf->op_class, pri_chan);
 	if (pri_freq <= 0)
@@ -63,21 +68,24 @@ int hostapd_handle_5ghz_320mhz_bw_indication_extn(struct hostapd_data *hapd,
 	truncated_punct_bitmap =
 		get_lower_bandwidth_puncture_pattern(pri_freq,
 						     original_punct_bitmap,
-						     center_freq_320, 320, 160);
-	*punct_bitmap = truncated_punct_bitmap & 0xFF;
+						     center_freq_320,
+						     CHWIDTH_320, target_bw);
+	*punct_bitmap = truncated_punct_bitmap &
+		((1 << (target_bw / CHWIDTH_20)) - 1);
 
-	start_chan_160 = ccfs1_160 - 14;
-	pri_chan_bit_pos = (pri_chan - start_chan_160) / 4;
-	if (!is_punct_bitmap_valid(160, pri_chan_bit_pos, *punct_bitmap))
+	start_chan = center_chan - (target_bw == CHWIDTH_160 ? 14 : 6);
+	pri_chan_bit_pos = (pri_chan - start_chan) / 4;
+	if (!is_punct_bitmap_valid(target_bw, pri_chan_bit_pos, *punct_bitmap))
 		return -1;
 
 	/*
-	 * Return a legal 5 GHz 160 MHz representation for BW Indication IE:
-	 * - chan1 as CCFS1 (160 MHz center)
+	 * Return a legal lower-width BWI representation:
+	 * - for 160 MHz, chan1 is the 160 MHz center; BWI derives ccfs0/ccfs1.
+	 * - for 80 MHz, chan1 is the 80 MHz center used directly as ccfs0.
 	 * - chan2 cleared; hostapd_eid_bw_indication() will derive CCFS0/CCFS1.
 	 */
-	*bandwidth = CHWIDTH_160;
-	*chan1 = ccfs1_160;
+	*bandwidth = target_bw;
+	*chan1 = center_chan;
 	*chan2 = 0;
 
 	return 0;
