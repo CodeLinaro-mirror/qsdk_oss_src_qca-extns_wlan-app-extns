@@ -11,6 +11,7 @@
 #include "cmn.h"
 #include "utils/os.h"
 #include "common/ieee802_11_defs.h"
+#include "common/hw_features_common.h"
 #include "ap/ap_config.h"
 #include "ap/beacon.h"
 #include "ap/dfs.h"
@@ -648,6 +649,116 @@ static int hostapd_ctrl_iface_get_ecsa_opclass_extn(struct hostapd_data *hapd,
 		return -1;
 
 	return res;
+}
+
+static int hostapd_ctrl_iface_set_channel_extn(struct hostapd_data *hapd,
+					       const char *cmd)
+{
+#ifdef NEED_AP_MLME
+	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_hw_modes *mode;
+	struct hostapd_channel_data *chan;
+	struct hostapd_freq_params freq_params;
+	char *end;
+	long channel;
+	int freq;
+	int ret;
+
+	channel = strtol(cmd, &end, 10);
+	if (cmd == end || channel <= 0 || channel > 255) {
+		wpa_printf(MSG_ERROR, "CTRL: SET_CHANNEL: Invalid channel number");
+		return -1;
+	}
+
+	while (*end == ' ' || *end == '\t')
+		end++;
+	if (*end != '\0') {
+		wpa_printf(MSG_ERROR, "CTRL: SET_CHANNEL: Unexpected extra arguments");
+		return -1;
+	}
+
+	if (!iface || !iface->current_mode) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_CHANNEL: Interface mode not initialized");
+		return -1;
+	}
+
+	mode = iface->current_mode;
+	chan = hw_get_channel_chan(mode, channel, &freq);
+	if (!chan || !chan_pri_allowed(chan)) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_CHANNEL: Channel %ld is not supported", channel);
+		return -1;
+	}
+
+	if (!chan_in_current_hw_info(iface->current_hw_info, chan)) {
+		if (iface->current_hw_info) {
+			wpa_printf(MSG_ERROR,
+				   "CTRL: SET_CHANNEL: Channel %ld (freq=%d) is outside current radio[%d] range [%d, %d]",
+				   channel, freq, iface->current_hw_info->hw_idx,
+				   iface->current_hw_info->start_freq,
+				   iface->current_hw_info->end_freq);
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "CTRL: SET_CHANNEL: Channel %ld (freq=%d) is not supported by current radio",
+				   channel, freq);
+		}
+		return -1;
+	}
+
+	ret = hostapd_set_freq_params(&freq_params,
+				      iface->conf->hw_mode,
+				      freq, channel,
+				      iface->conf->enable_edmg,
+				      iface->conf->edmg_channel,
+				      iface->conf->ieee80211n,
+				      iface->conf->ieee80211ac,
+				      iface->conf->ieee80211ax,
+				      iface->conf->ieee80211be,
+				      iface->conf->ieee80211bn,
+				      0,
+				      CONF_OPER_CHWIDTH_USE_HT,
+				      0,
+				      0,
+				      iface->conf->vht_capab,
+				      mode ? &mode->he_capab[IEEE80211_MODE_AP] : NULL,
+				      mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
+				      mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
+				      0,
+				      hapd->iconf->he_6ghz_reg_pwr_type,
+				      iface->conf->bandwidth_device,
+				      iface->conf->center_freq_device);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_CHANNEL: Failed to build freq parameters");
+		return -1;
+	}
+
+	ret = hostapd_disable_iface(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "CTRL: SET_CHANNEL: Failed to disable interface");
+		return -1;
+	}
+
+	ret = hostapd_change_config_freq(iface->bss[0], iface->conf,
+					 &freq_params, NULL);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_CHANNEL: Failed to set channel %ld in config",
+			   channel);
+		return -1;
+	}
+
+	ret = hostapd_enable_iface(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "CTRL: SET_CHANNEL: Failed to enable interface");
+		return -1;
+	}
+
+	return 0;
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME */
 }
 
 static int hostapd_ctrl_set_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, char *cmd)
@@ -1343,6 +1454,9 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strcmp(buf, "GET_HT40INTOL") == 0) {
 		reply_len_extn = hostapd_ctrl_iface_get_ht40intol_extn(hapd, reply,
 								       reply_size);
+	} else if (os_strncmp(buf, "SET_CHANNEL ", 12) == 0) {
+		if (hostapd_ctrl_iface_set_channel_extn(hapd, buf + 12))
+			reply_len_extn = -1;
 	} else if (os_strncmp(buf, "SET_EHT_CONFIG_CCFS0 ", 21) == 0) {
 		if (hostapd_ctrl_iface_set_eht_config_ccfs0_extn(hapd, buf + 20))
 			reply_len_extn = -1;
