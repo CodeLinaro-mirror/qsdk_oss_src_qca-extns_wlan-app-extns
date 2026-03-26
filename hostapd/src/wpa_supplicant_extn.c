@@ -76,7 +76,7 @@ bool wpas_ap_link_address_extn(struct wpa_supplicant *wpa_s, const u8 *addr)
 int wpa_drv_send_action_extn(struct wpa_supplicant *wpa_s, unsigned int freq,
 			unsigned int wait, const u8 *dst, const u8 *src,
 			const u8 *bssid, const u8 *data, size_t data_len,
-			int no_cck)
+			int no_cck, int link_id)
 {
 	if (!wpa_s->driver->send_action)
 		return -1;
@@ -90,7 +90,59 @@ int wpa_drv_send_action_extn(struct wpa_supplicant *wpa_s, unsigned int freq,
 	}
 
 	return wpa_s->driver->send_action(wpa_s->drv_priv, freq, wait, dst, src,
-					  bssid, data, data_len, no_cck, -1);
+					  bssid, data, data_len, no_cck, link_id);
+}
+
+static bool wpas_uplink_csa_freq_band_match(unsigned int ref_freq,
+					    unsigned int link_freq)
+{
+	if (!ref_freq || !link_freq)
+		return false;
+
+	if (is_24ghz_freq(ref_freq))
+		return is_24ghz_freq(link_freq);
+
+	if (is_5ghz_freq(ref_freq))
+		return is_5ghz_freq(link_freq);
+
+	if (is_6ghz_freq(ref_freq))
+		return is_6ghz_freq(link_freq);
+
+	return false;
+}
+
+static int wpas_uplink_csa_get_tx_link(struct wpa_supplicant *wpa_s,
+				       unsigned int new_freq,
+				       unsigned int *tx_freq, int *tx_link_id)
+{
+	int i;
+
+	*tx_freq = 0;
+	*tx_link_id = -1;
+
+	if (!new_freq)
+		return -1;
+
+	if (!wpa_s->valid_links) {
+		if (wpas_uplink_csa_freq_band_match(new_freq, wpa_s->assoc_freq)) {
+			*tx_freq = wpa_s->assoc_freq;
+			return 0;
+		}
+		return -1;
+	}
+
+	/* Pick a live link operating in the same band as the new CSA frequency. */
+	for_each_link(wpa_s->valid_links, i) {
+		if (wpa_s->links[i].disabled || !wpa_s->links[i].freq)
+			continue;
+		if (!wpas_uplink_csa_freq_band_match(new_freq, wpa_s->links[i].freq))
+			continue;
+		*tx_freq = wpa_s->links[i].freq;
+		*tx_link_id = i;
+		return 0;
+	}
+
+	return -1;
 }
 
 int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
@@ -100,7 +152,9 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 {
 	struct wpabuf *buf = NULL;
 	u8 chan;
-	u8 res;
+	int res;
+	unsigned int tx_freq;
+	int tx_link_id;
 	bool is_wb_ie_present = false;
 	size_t total_len;
 	u8 width = (new_ch_width == CONF_OPER_CHWIDTH_80MHZ ||
@@ -115,11 +169,22 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 		return -1;
 	}
 
+	/* Here, "freq" refers to the new channel frequency selected by the repeater
+	 * upon radar detection. This frequency is conveyed to the root AP via an
+	 * uplink CSA frame, enabling the root AP to switch to the new channel.
+	 */
 	ieee80211_freq_to_chan(freq, &chan);
-	wpa_printf(MSG_DEBUG, "freq %u chan %u cs_count %u ch_seg_0 %u ch_seg_1 %u new_ch_width %u",
-		   freq, chan, cs_count, ch_seg_0, ch_seg_1, new_ch_width);
+	if (wpas_uplink_csa_get_tx_link(wpa_s, freq, &tx_freq, &tx_link_id) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "Drop uplink CSA: no valid tx link found for new freq %d",
+			   freq);
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG,
+		   "freq %u chan %u cs_count %u ch_seg_0 %u ch_seg_1 %u new_ch_width %u assoc_freq %u tx_freq %u tx_link_id %d",
+		   freq, chan, cs_count, ch_seg_0, ch_seg_1, new_ch_width,
+		   wpa_s->assoc_freq, tx_freq, tx_link_id);
 
-	/* Calculate total buffer size including NOL IE */
 	total_len = UPLINK_CSA_MIN_FRAME_LEN;
 	if (chan == ch_seg_0) {
 		wpa_printf(MSG_DEBUG, "20MHz, ignore adding wide band ie");
@@ -129,7 +194,6 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 		is_wb_ie_present = true;
 	}
 
-	/* Add NOL IE length if present */
 	if (nol_ie && nol_ie_len > 0) {
 		total_len += nol_ie_len;
 		wpa_printf(MSG_INFO, "Adding NOL IE to uplink CSA, len=%zu",
@@ -166,9 +230,10 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 	}
 
 send_action:
-	res = wpa_drv_send_action_extn(wpa_s, wpa_s->assoc_freq, 0, wpa_s->bssid,
+	res = wpa_drv_send_action_extn(wpa_s, tx_freq, 0, wpa_s->bssid,
 				       wpa_s->own_addr, wpa_s->bssid,
-				       wpabuf_head(buf), wpabuf_len(buf), 0);
+				       wpabuf_head(buf), wpabuf_len(buf), 0,
+				       tx_link_id);
 	if (res < 0)
 		wpa_printf(MSG_ERROR,
 			   "Failed to send uplink CSA action frame");
