@@ -269,6 +269,48 @@ hostapd_ctrl_iface_get_non_prior_penalty_extn(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int hostapd_ctrl_iface_country_ie_extn(struct hostapd_data *hapd,
+					      const char *value)
+{
+	char *end;
+	long enabled;
+	int old_enabled;
+
+	enabled = strtol(value, &end, 10);
+	if (value == end || *end != '\0' || (enabled != 0 && enabled != 1)) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL_IFACE COUNTRY_IE: invalid value '%s' (expected 0 or 1)",
+			   value);
+		return -1;
+	}
+
+	old_enabled = hapd->iconf->ieee80211d;
+	if ((int) enabled == old_enabled)
+		return 0;
+
+	hapd->iconf->ieee80211d = enabled;
+	if (ieee802_11_update_beacons(hapd->iface) < 0) {
+		hapd->iconf->ieee80211d = old_enabled;
+		return -1;
+	}
+
+	return 0;
+}
+
+
+static int hostapd_ctrl_iface_get_country_ie_extn(struct hostapd_data *hapd,
+						  char *reply,
+						  size_t reply_size)
+{
+	int ret;
+
+	ret = os_snprintf(reply, reply_size, "%d\n", hapd->iconf->ieee80211d);
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
 static int hostapd_ctrl_set_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, char *cmd)
 {
 #ifdef NEED_AP_MLME
@@ -835,6 +877,13 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 			hostapd_ctrl_iface_get_obss_rx_snr_threshold_extn(hapd,
 									   reply,
 									   reply_size);
+	} else if (os_strncmp(buf, "COUNTRY_IE ", 11) == 0) {
+		if (hostapd_ctrl_iface_country_ie_extn(hapd, buf + 11))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_COUNTRY_IE") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_country_ie_extn(hapd,
+								      reply,
+								      reply_size);
 	} else if (os_strncmp(buf, "HT40INTOL ", 10) == 0) {
 		if (hostapd_ctrl_iface_set_ht40intol_extn(hapd, buf + 10))
 			reply_len_extn = -1;

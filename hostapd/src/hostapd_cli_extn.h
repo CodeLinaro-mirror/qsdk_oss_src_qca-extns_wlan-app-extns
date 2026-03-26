@@ -16,6 +16,8 @@ int hostapd_cli_cmd_get_non_prior_penalty_extn(struct wpa_ctrl *ctrl, int argc,
 					       char *argv[]);
 int hostapd_cli_cmd_set_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_countryie_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_countryie_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 
 #ifdef CONFIG_IEEE80211AC
 int hostapd_cli_cmd_get_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
@@ -64,6 +66,10 @@ int hostapd_cli_cmd_get_ht40intol(struct wpa_ctrl *ctrl, int argc, char *argv[])
 		"<rnr_mode> <frm_val> = config rnr 6ghz colocated" }, \
 	{ "get_rnr_6ghz_colocated", hostapd_cli_cmd_get_rnr_6ghz_colocated_extn, NULL, \
 		"= get rnr 6ghz colocated" }, \
+	{ "countryie", hostapd_cli_cmd_countryie_extn, NULL, \
+		"<0|1> = disable/enable Country IE in beacon" }, \
+	{ "get_countryie", hostapd_cli_cmd_get_countryie_extn, NULL, \
+		"= get Country IE advertisement status" }, \
 	{ "acs", hostapd_cli_acs_extn, NULL, \
 		"get_status           : get ACS current status\n" \
 		"rank_en <1|0>        : enable/disable channel ranking\n" \
