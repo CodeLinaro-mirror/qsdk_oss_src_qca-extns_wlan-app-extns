@@ -483,7 +483,15 @@ bool hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface)
 	if (!iface)
 		return false;
 
-	wpa_printf(MSG_INFO, "sta_wpa_state = %s", iface->iface_extn.sta_wpa_state);
+#ifdef UCODE_SUPPORT
+	wpa_printf(MSG_INFO, "sta_wpa_state = %s vap_type = %s",
+			iface->iface_extn.sta_wpa_state,
+			vap_type_to_string(iface->iface_extn.vap_type));
+
+	if (iface->iface_extn.vap_type == VAP_TYPE_MESH)
+		return false;
+#endif
+
 	if (!os_strncmp(iface->iface_extn.sta_wpa_state, "COMPLETED", 9) ||
 	    !os_strncmp(iface->iface_extn.sta_wpa_state, "AUTHENTICATING", 14))
 		return true;
