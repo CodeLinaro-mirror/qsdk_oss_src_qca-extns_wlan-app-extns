@@ -106,3 +106,23 @@ hostapd_drv_notify_link_repurpose_extn(struct hostapd_data *hapd, u8 link_id)
 	return 0;
 #endif /* CONFIG_IEEE80211BE */
 }
+
+u8 hostapd_get_repurposed_links_bitmap_extn(struct hostapd_data *hapd,
+					    u16 *repurposed_links)
+{
+	struct hostapd_data *lhapd;
+	u8 num_repurposed_links = 0;
+
+	if (repurposed_links)
+		*repurposed_links = 0;
+
+	for_each_mld_link_include_repurposed(lhapd, hapd) {
+		if (hostapd_is_repurpose_disabled_11be_extn(lhapd->conf)) {
+			if (repurposed_links)
+				*repurposed_links |= BIT(lhapd->mld_link_id);
+			num_repurposed_links++;
+		}
+	}
+
+	return num_repurposed_links;
+}
