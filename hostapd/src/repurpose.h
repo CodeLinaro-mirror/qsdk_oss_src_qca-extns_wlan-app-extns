@@ -54,6 +54,13 @@ hostapd_get_repurposed_links_bitmap_extn(struct hostapd_data *hapd,
 
 	return 0;
 }
+
+static inline int
+hostapd_link_remove_repurposed_bss_extn(struct hostapd_data *hapd,
+					u32 removal_type)
+{
+	return 0;
+}
 #else /* CONFIG_QCN_EXTN */
 int
 hostapd_config_check_bss_repurpose_mode_extn(const struct hostapd_config *conf,
@@ -76,5 +83,9 @@ hostapd_drv_notify_link_repurpose_extn(struct hostapd_data *hapd, u8 link_id);
 
 u8 hostapd_get_repurposed_links_bitmap_extn(struct hostapd_data *hapd,
 					    u16 *repurposed_links);
+
+int
+hostapd_link_remove_repurposed_bss_extn(struct hostapd_data *hapd,
+					u32 removal_type);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* REPURPOSE_H */
