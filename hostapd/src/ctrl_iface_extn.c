@@ -178,6 +178,50 @@ static int hostapd_ctrl_iface_get_tpe_common_psd_extn(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_tpe_tx_pwr_interp_extn(struct hostapd_data *hapd,
+							 char *pos)
+{
+	char *end;
+	long user_input;
+
+	if (!hapd || !hapd->conf || !pos)
+		return -1;
+
+	user_input = strtol(pos, &end, 10);
+	if (pos == end || *end != '\0' ||
+	    (user_input != TPE_REG_EIRP_PSD && user_input != TPE_REG_EIRP)) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid input for set_tpe_tx_pwr_interp "
+			   "(expected 0(TPE_REG_EIRP_PSD) or 1(TPE_REG_EIRP))\n");
+		return -1;
+	}
+
+	hapd->conf->bss_extn.tpe_tx_pwr_interp = (enum tpe_tx_pwr_interp_unit)user_input;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_tpe_tx_pwr_interp_extn(struct hostapd_data *hapd,
+							 char *buf, size_t buflen)
+{
+	int ret = -1;
+
+	if (!hapd || !hapd->conf || !buf)
+		return ret;
+
+	if (hapd->conf->bss_extn.tpe_tx_pwr_interp < TPE_REG_EIRP_PSD ||
+	    hapd->conf->bss_extn.tpe_tx_pwr_interp > TPE_REG_EIRP) {
+		wpa_printf(MSG_ERROR, "Invalid tpe_tx_pwr_interp value %d\n",
+			   hapd->conf->bss_extn.tpe_tx_pwr_interp);
+		return ret;
+	}
+
+	ret = os_snprintf(buf, buflen, "tpe_tx_pwr_interp %d\n",
+			  hapd->conf->bss_extn.tpe_tx_pwr_interp);
+
+	return ret;
+}
+
 static int hostapd_ctrl_iface_set_esp_extn(struct hostapd_data *hapd, char *cmd)
 {
 	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
@@ -1040,7 +1084,14 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		if (hostapd_ctrl_iface_set_autorecovery_after_nol_vapdown_extn(hapd,
 									       buf + 35))
 			reply_len_extn = -1;
-	} else {
+	} else if (os_strncmp(buf, "SET_TPE_TX_PWR_INTERP ", 22) == 0) {
+		if (hostapd_ctrl_iface_set_tpe_tx_pwr_interp_extn(hapd, buf + 22))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_TPE_TX_PWR_INTERP") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_tpe_tx_pwr_interp_extn(hapd,
+									       reply,
+									       reply_size);
+        } else {
 		return -1;
 	}
 

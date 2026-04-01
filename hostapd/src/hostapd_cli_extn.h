@@ -59,6 +59,8 @@ int hostapd_cli_cmd_get_eht_config_ccfs0(struct wpa_ctrl *ctrl, int argc, char *
 
 int hostapd_cli_cmd_set_tpe_common_psd(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_tpe_common_psd(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_set_tpe_tx_pwr_interp(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_tpe_tx_pwr_interp(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 #define HOSTAPD_CLI_CMDS_EXTN \
 	{ "set_esp", hostapd_cli_cmd_set_esp_extn, NULL, \
 		"<param> <value> = set ESP param (esp_airtime 0-255, " \
@@ -149,7 +151,11 @@ int hostapd_cli_cmd_get_tpe_common_psd(struct wpa_ctrl *ctrl, int argc, char *ar
 		"Get config for common psd power in TPE IE"}, \
 	{ "set_autorecovery_after_nol_vapdown", \
 	  hostapd_cli_cmd_set_autorecovery_after_nol_vapdown, NULL, \
-	  "<1|0> = enable/disable VAP auto-recovery after NOL expiry" },
+	  "<1|0> = enable/disable VAP auto-recovery after NOL expiry" }, \
+	{ "set_tpe_pwr_unit", hostapd_cli_cmd_set_tpe_tx_pwr_interp, NULL, \
+		"<value 0|1> :Set tx power interpretation unit in TPE IE (0:TPE_REG_EIRP_PSD, 1:TPE_REG_EIRP)" }, \
+	{ "get_tpe_pwr_unit", hostapd_cli_cmd_get_tpe_tx_pwr_interp, NULL, \
+		"Get tx power interpretation unit in TPE IE (0:TPE_REG_EIRP_PSD, 1:TPE_REG_EIRP)"},
 #else
 #define HOSTAPD_CLI_CMDS_EXTN
 

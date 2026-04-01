@@ -93,6 +93,7 @@ hostapd_config_defaults_bss_extn(struct hostapd_bss_config *bss)
 		MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE;
 
 	bss_extn->tpe_common_psd = true;
+	bss_extn->tpe_tx_pwr_interp = TPE_REG_EIRP_PSD;
 }
 
 int

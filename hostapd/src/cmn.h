@@ -298,6 +298,11 @@ struct dcs_conf_extn {
 	u16 dcs_event_notify;
 };
 
+enum tpe_tx_pwr_interp_unit {
+	TPE_REG_EIRP_PSD = 0,	/* Interpretation PSD */
+	TPE_REG_EIRP = 1,	/* Interpretation EIRP */
+};
+
 struct hostapd_config_extn {
 	/* Add Per-radio configuration for extn here */
 
@@ -363,6 +368,8 @@ struct hostapd_bss_config_extn {
 	enum qca_wlan_vendor_vap_submode_type vap_submode;
 	/* Config to control adding single common PSD to TPE IE */
 	bool tpe_common_psd;
+	/* Config to set Tx power interpretation in the TPE IE */
+	enum tpe_tx_pwr_interp_unit tpe_tx_pwr_interp;
 };
 
 struct esp_extn {
