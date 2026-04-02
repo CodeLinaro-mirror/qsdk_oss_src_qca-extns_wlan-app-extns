@@ -1,5 +1,9 @@
 CFLAGS += -DCONFIG_QCN_EXTN
 
+ifdef CONFIG_QCA_LAB_TEST_FEATURES
+CFLAGS += -DCONFIG_QCA_LAB_TEST_FEATURES
+endif
+
 OBJS+= \
 	qcn_extns/240mhz.o \
 	qcn_extns/driver_nl80211_extn.o \
