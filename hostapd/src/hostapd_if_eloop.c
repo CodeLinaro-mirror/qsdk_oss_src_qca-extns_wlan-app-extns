@@ -47,6 +47,7 @@ enum hostapd_if_eloop_opcode {
 	HOSTAPD_IF_ASYNC_SET_GTK = 7,
 	HOSTAPD_IF_ASYNC_START_SA_QUERY = 8,
 	HOSTAPD_IF_ASYNC_TRIGGER_EAPOL_M3 = 9,
+	HOSTAPD_IF_ASYNC_EAPOL_TX = 10,
 	HOSTAPD_IF_ASYNC_OP_MAX
 };
 
@@ -125,6 +126,15 @@ struct hostapd_if_trigger_eapol_m3_msg {
 	uint8_t sta_mac[ETH_ALEN];
 };
 
+struct hostapd_if_eapol_tx_msg {
+	char ifname[IFNAMSIZ + 1];
+	uint8_t sta_mac[ETH_ALEN];
+	int link_id;
+	uint8_t type;
+	uint16_t data_len;
+	uint8_t *data;
+};
+
 union hostapd_if_eloop_msg_union {
 	struct hostapd_if_assoc_response_msg assoc_response;
 	struct hostapd_if_auth_response_msg auth_response;
@@ -136,6 +146,7 @@ union hostapd_if_eloop_msg_union {
 	struct hostapd_if_set_gtk_msg set_gtk;
 	struct hostapd_if_start_sa_query_msg start_sa_query;
 	struct hostapd_if_trigger_eapol_m3_msg trigger_eapol_m3;
+	struct hostapd_if_eapol_tx_msg eapol_tx;
 };
 
 struct hostapd_if_eloop_payload {
@@ -173,6 +184,9 @@ int hostapd_if_start_sa_query_validate_inputs(char *ifname,
 					      uint8_t *sta_mac, int link_id);
 int hostapd_if_trigger_eapol_m3_validate_inputs(char *ifname,
 						uint8_t *sta_mac);
+int hostapd_if_eapol_tx_validate_inputs(char *ifname, uint8_t *sta_mac,
+					int link_id, uint8_t *data,
+					uint16_t data_len);
 void hostapd_if_assoc_response_dump_params(char *ifname, uint8_t *sta_mac,
 					   struct hostapd_if_frame_ctx *ctx);
 void hostapd_if_auth_response_dump_params(char *ifname, uint8_t *sta_mac,
@@ -225,6 +239,8 @@ void __hostapd_if_set_ptk(char *ifname, uint8_t *sta_mac,
 void __hostapd_if_set_gtk(char *ifname, int link_id,
 			  int gtk_idx, uint8_t *gtk, size_t gtk_len);
 void __hostapd_if_start_sa_query(char *ifname, uint8_t *sta_mac, int link_id);
+void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
+			   uint8_t type, uint8_t *data, uint16_t data_len);
 
 
 static int hostapd_if_assoc_response(char *ifname, uint8_t *sta_mac,
@@ -480,6 +496,34 @@ static int hostapd_if_trigger_eapol_m3(char *ifname, uint8_t *sta_mac)
 	return 0;
 }
 
+static void hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
+				uint8_t type, uint8_t *data, uint16_t data_len)
+{
+	int __validate_ret =
+		hostapd_if_eapol_tx_validate_inputs(ifname, sta_mac, link_id,
+						    data, data_len);
+	struct hostapd_if_eloop_payload payload = {0};
+
+	if (__validate_ret < 0) {
+		os_free(data);
+		return;
+	}
+
+	payload.opcode = HOSTAPD_IF_ASYNC_EAPOL_TX;
+	os_strlcpy(payload.msg.eapol_tx.ifname, ifname, IFNAMSIZ + 1);
+	os_memcpy(payload.msg.eapol_tx.sta_mac, sta_mac, ETH_ALEN);
+	payload.msg.eapol_tx.link_id = link_id;
+	payload.msg.eapol_tx.type = type;
+	payload.msg.eapol_tx.data_len = data_len;
+	payload.msg.eapol_tx.data = data;
+
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_eapol_tx(ifname, sta_mac, link_id, type, data,
+				      data_len);
+}
+
 static int hostapd_if_start_sa_query(char *ifname, uint8_t *sta_mac, int link_id)
 {
 	int __validate_ret =
@@ -593,6 +637,14 @@ static void hostapd_if_eloop_socket_read(int sock, void *eloop_ctx,
 			&payload->msg.trigger_eapol_m3;
 
 		__hostapd_if_trigger_eapol_m3(msg->ifname, msg->sta_mac);
+		break;
+	}
+	case HOSTAPD_IF_ASYNC_EAPOL_TX: {
+		struct hostapd_if_eapol_tx_msg *msg = &payload->msg.eapol_tx;
+
+		__hostapd_if_eapol_tx(msg->ifname, msg->sta_mac,
+				      msg->link_id, msg->type,
+				      msg->data, msg->data_len);
 		break;
 	}
 	default:
@@ -772,4 +824,5 @@ void hostapd_if_eloop_inbound_handlers(
 	plugin->set_gtk = hostapd_if_set_gtk;
 	plugin->start_sa_query = hostapd_if_start_sa_query;
 	plugin->trigger_eapol_m3 = hostapd_if_trigger_eapol_m3;
+	plugin->eapol_tx = hostapd_if_eapol_tx;
 }
