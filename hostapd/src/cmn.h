@@ -2148,7 +2148,7 @@ void acs_modify_scan_params_extn(struct hostapd_iface *iface,
 #ifdef CONFIG_IEEE80211AC
 void hostapd_mu_cap_war_state_init_extn(struct hostapd_data *hapd);
 void hostapd_mu_cap_war_update_db_extn(struct hostapd_data *hapd,
-				       const u8 *addr, const u8 *vht_cap_offset);
+				       const u8 *addr, u8 *vht_cap_offset);
 void hostapd_mu_cap_war_mu_state_changed_extn(struct hostapd_data *hapd);
 void hostapd_mu_cap_war_sta_list_flush_extn(struct hostapd_data *hapd);
 void hostapd_mu_cap_war_kickout_timer_extn(void *eloop_ctx, void *timeout_ctx);
