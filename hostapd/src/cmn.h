@@ -370,6 +370,8 @@ struct hostapd_bss_config_extn {
 	bool tpe_common_psd;
 	/* Config to set Tx power interpretation in the TPE IE */
 	enum tpe_tx_pwr_interp_unit tpe_tx_pwr_interp;
+	/* Config to set the minimum TX power for punctured channels in the TPE IE */
+	bool tpe_punct_channel_tx_pwr;
 };
 
 struct esp_extn {

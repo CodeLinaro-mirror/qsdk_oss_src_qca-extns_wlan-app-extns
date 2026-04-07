@@ -222,6 +222,40 @@ static int hostapd_ctrl_iface_get_tpe_tx_pwr_interp_extn(struct hostapd_data *ha
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_tpe_punct_channel_tx_pwr_extn(struct hostapd_data *hapd,
+								char *pos)
+{
+	char *end;
+	long user_input;
+
+	if (!hapd || !hapd->conf || !pos)
+		return -1;
+
+	user_input = strtol(pos, &end, 10);
+	if (pos == end || *end != '\0' || user_input < 0 || user_input > 1) {
+		wpa_printf(MSG_ERROR, "Invalid input for set_tpe_punct_channel_tx_pwr\n");
+		return -1;
+	}
+
+	hapd->conf->bss_extn.tpe_punct_channel_tx_pwr = (user_input == 1);
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_tpe_punct_channel_tx_pwr_extn(struct hostapd_data *hapd,
+								char *buf, size_t buflen)
+{
+	int ret = -1;
+
+	if (!hapd || !hapd->conf || !buf)
+		return ret;
+
+	ret = os_snprintf(buf, buflen, "tpe_punct_channel_tx_pwr %d\n",
+			  hapd->conf->bss_extn.tpe_punct_channel_tx_pwr);
+
+	return ret;
+}
+
 static int hostapd_ctrl_iface_set_esp_extn(struct hostapd_data *hapd, char *cmd)
 {
 	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
@@ -1091,6 +1125,14 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn = hostapd_ctrl_iface_get_tpe_tx_pwr_interp_extn(hapd,
 									       reply,
 									       reply_size);
+	} else if (os_strncmp(buf, "SET_TPE_PUNCT_CHANNEL_TX_PWR ", 29) == 0) {
+		if (hostapd_ctrl_iface_set_tpe_punct_channel_tx_pwr_extn(hapd, buf + 22))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_TPE_PUNCT_CHANNEL_TX_PWR") == 0) {
+		reply_len_extn =
+			hostapd_ctrl_iface_get_tpe_punct_channel_tx_pwr_extn(hapd,
+									     reply,
+									     reply_size);
         } else {
 		return -1;
 	}
