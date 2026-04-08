@@ -313,6 +313,10 @@ struct hostapd_iface_extn {
 	bool acs_failed;
 	enum dynamic_acs_action_extn dynamic_acs_action;
 	bool dfs_available_from_sta;
+
+	/* Penalty percentage to be applied for non-priority channels in QACS */
+	u8 vlp_non_prior_penalty;
+
 	char sta_wpa_state[32]; /* Stores the STA WPA state, in case of repeater */
 	bool acs_dfs_cac_pending;  /* ACS picked DFS channel, waiting for CAC */
 	int vap_type;
