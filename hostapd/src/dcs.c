@@ -805,7 +805,8 @@ static int hostapd_ctrl_iface_dcs_sim(struct hostapd_data *hapd,
 	}
 
 	val = (u16) val_ul;
-	if (val != DCS_CW_INTF && val != DCS_WLAN_INTF && val != DCS_OBSS_INTF) {
+	if (val != DCS_CW_INTF && val != DCS_WLAN_INTF &&
+	    val != DCS_AWGN_INTF && val != DCS_OBSS_INTF) {
 		wpa_printf(MSG_ERROR, "DCS_SIM: invalid value 0x%04x", val);
 		return -1;
 	}
