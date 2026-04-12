@@ -1539,6 +1539,8 @@ int hostapd_send_rcsa_extn(struct hostapd_iface *iface,
 			   u8 oper_centr_freq_seg0_idx,
 			   u8 oper_centr_freq_seg1_idx,
 			   u16 punct_bitmap);
+bool hostapd_rcsa_rx_hdl(struct hostapd_data *hapd,
+			 const u8 *buf, size_t len);
 void hostapd_uplink_cancel_disconnect_timeout_extn(struct hostapd_iface *iface);
 void hostapd_ucode_trigger_bhsta_disconnect_extn(struct hostapd_iface *iface);
 struct ubus_context *ubus_ap_fetch_context_extn(void);
@@ -1573,6 +1575,10 @@ bool hostapd_uplink_csa_hdl(struct hostapd_data *hapd,
 int handle_action_extn(struct hostapd_data *hapd,
 		       const struct ieee80211_mgmt *mgmt, size_t len,
 		       unsigned int freq);
+int handle_action_vs_extn(struct hostapd_data *hapd,
+			  struct sta_info *sta,
+			  const struct ieee80211_mgmt *mgmt,
+			  size_t len, unsigned int freq, bool protected);
 int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 					 bool is_dfs, char *wpa_state,
 					 struct csa_settings *csa);

@@ -24,6 +24,11 @@
 #include "wpa_supplicant_extn.h"
 #include "utils/common.h"
 
+/*
+ * RCSA Vendor Specific Action frame:
+ * category(1) + Atheros OUI(3) + CSA IE [+ optional QCA NOL IE].
+ */
+
 #define RCSA_VENDOR_ACTION_HDR_LEN 4
 #define RCSA_CSA_IE_HDR_LEN 2
 #define RCSA_CSA_IE_BODY_LEN 3
@@ -33,11 +38,15 @@
 #define QCA_VENDOR_OUI_0 0x00
 #define QCA_VENDOR_OUI_1 0x03
 #define QCA_VENDOR_OUI_2 0x7f
+#define RCSA_CSA_IE_MODE_OFFSET 2
+#define RCSA_CSA_IE_NEW_CHANNEL_OFFSET 3
+#define RCSA_CSA_IE_COUNT_OFFSET 4
 
 
 /* To be revisited to send 5 RCSAs */
 #define HOSTAPD_RCSA_TX_COUNT 1
 #define HOSTAPD_RCSA_SWITCH_MODE 1
+
 
 /* RCSA config to be revisited once cswopt is introduced.
  * Hardcoding this to DISABLE for now
@@ -224,9 +233,6 @@ int hostapd_send_rcsa_extn(struct hostapd_iface *iface,
 			   u8 oper_centr_freq_seg1_idx,
 			   u16 punct_bitmap)
 {
-	if (!iface)
-		return -EINVAL;
-
 	if (!hostapd_rcsa_tx_bh_enabled(iface))
 		return -EINVAL;
 
@@ -234,4 +240,64 @@ int hostapd_send_rcsa_extn(struct hostapd_iface *iface,
 
 	return hostapd_ucode_notify_rcsa_tx(iface, channel, freq,
 					    HOSTAPD_RCSA_SWITCH_MODE);
+}
+
+static int hostapd_parse_rcsa_frame(struct hostapd_data *hapd,
+				    const u8 *buf, size_t len,
+				    u8 *new_chan, int *freq,
+				    u8 *csa_count, u8 *switch_mode)
+{
+	const u8 *cs_ie = NULL;
+	const u8 *pos, *end;
+
+	if (len < IEEE80211_HDRLEN + RCSA_VENDOR_ACTION_HDR_LEN) {
+		wpa_printf(MSG_ERROR, "rcsa: frame too short");
+		return -EINVAL;
+	}
+
+	end = buf + len;
+	pos = buf + IEEE80211_HDRLEN + RCSA_VENDOR_ACTION_HDR_LEN;
+
+	len = end - pos;
+
+	cs_ie = get_ie(pos, len, WLAN_EID_CHANNEL_SWITCH);
+	if (!cs_ie || cs_ie[1] < RCSA_CSA_IE_BODY_LEN) {
+		wpa_printf(MSG_ERROR, "rcsa: no valid CSA IE found");
+		return -EINVAL;
+	}
+
+	*new_chan = cs_ie[RCSA_CSA_IE_NEW_CHANNEL_OFFSET];
+	*csa_count = cs_ie[RCSA_CSA_IE_COUNT_OFFSET];
+	*switch_mode = cs_ie[RCSA_CSA_IE_MODE_OFFSET];
+	*freq = hostapd_hw_get_freq(hapd, *new_chan);
+
+	wpa_printf(MSG_DEBUG, "rcsa: chan %u, csa_cnt %u, switch_mode %u, freq %u",
+		   *new_chan, *csa_count, *switch_mode, *freq);
+
+	return 0;
+}
+
+
+bool hostapd_rcsa_rx_hdl(struct hostapd_data *hapd,
+			 const u8 *buf, size_t len)
+{
+	struct hostapd_iface *iface;
+	u8 new_chan = 0;
+	u8 csa_count = 0;
+	u8 switch_mode = 0;
+	int freq = 0;
+
+	iface = hapd->iface;
+
+	if (!iface->conf->conf_extn.process_rcsa)
+		return 1;
+
+	wpa_printf(MSG_INFO, "RCSA: received RCSA from repeater");
+
+	if (hostapd_parse_rcsa_frame(hapd, buf, len, &new_chan, &freq,
+				     &csa_count, &switch_mode))
+		return 0;
+
+	return hostapd_ucode_notify_rcsa_tx(iface, new_chan, freq,
+					    switch_mode);
 }
