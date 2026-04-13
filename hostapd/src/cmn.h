@@ -1207,6 +1207,9 @@ int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd,
 int hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 			   struct driver_dcs_config *params);
 void dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap);
+
+int hostapd_validate_mbssid_group_size_extn(struct hostapd_data *hapd);
+
 int hostapd_get_channel_idx(struct hostapd_hw_modes *mode, int channel_num);
 
 #ifdef HOSTAPD
@@ -1240,5 +1243,8 @@ int hostapd_drv_mark_vap_submode_extn(void *priv, unsigned int vendor_id,
 				      unsigned int subcmd,
 				      const char *ifname,
 				      u8 vap_submode);
+
+#define MGMT_MIN_FRAME_SIZE_REQUIRED_MLO_MBSSID 2000
+
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
