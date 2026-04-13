@@ -20,6 +20,8 @@
 #include "cmn.h"
 #include "ap/ieee802_11.h"
 
+#define DEF_VLP_NON_PRIOR_PENALTY	30
+
 /**
  * hostapd_ctrl_get_hw_info_extn - Return current hardware info
  * @hapd: Pointer to the hostapd instance
@@ -155,6 +157,63 @@ static int hostapd_ctrl_iface_get_esp_extn(struct hostapd_data *hapd,
 			  ppdu_dur,
 			  ba_window,
 			  iface_extn->esp.enable);
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int
+hostapd_ctrl_iface_set_non_prior_penalty_extn(struct hostapd_data *hapd,
+					      const char *cmd)
+{
+	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
+	char *end = NULL;
+	long val;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+	if (*cmd == '\0')
+		return -1;
+
+	errno = 0;
+	val = strtol(cmd, &end, 10);
+	if (errno != 0 || end == cmd)
+		return -1;
+
+	while (end && *end == ' ')
+		end++;
+	if (end && *end != '\0')
+		return -1;
+
+	if (val < 0 || val > 100) {
+		wpa_printf(MSG_ERROR,
+			   "VLP Non-priority penalty out of range (0-100): %ld",
+			   val);
+		return -1;
+	}
+
+	iface_extn->vlp_non_prior_penalty = (u8)val;
+	wpa_printf(MSG_DEBUG, "VLP Non-priority penalty set to %u%%",
+		   iface_extn->vlp_non_prior_penalty);
+	return 0;
+}
+
+static int
+hostapd_ctrl_iface_get_non_prior_penalty_extn(struct hostapd_data *hapd,
+					      char *reply,
+					      int reply_size)
+{
+	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
+	u8 non_prior_penalty = DEF_VLP_NON_PRIOR_PENALTY;
+	int ret;
+
+	if (iface_extn->vlp_non_prior_penalty)
+		non_prior_penalty = iface_extn->vlp_non_prior_penalty;
+	ret = os_snprintf(reply, reply_size, "%u\n", non_prior_penalty);
 	if (os_snprintf_error(reply_size, ret))
 		return -1;
 
@@ -492,6 +551,13 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "DCS ", 4) == 0) {
 		reply_len_extn = hostapd_ctrl_iface_dcs_extn(hapd, buf + 4, reply,
 							     reply_size);
+	} else if (os_strncmp(buf, "SET_VLP_NON_PRIOR_PENALTY ", 22) == 0) {
+		if (hostapd_ctrl_iface_set_non_prior_penalty_extn(hapd, buf + 22))
+			reply_len_extn = -1;
+	} else if (os_strncmp(buf, "GET_VLP_NON_PRIOR_PENALTY", 21) == 0) {
+		reply_len_extn =
+			hostapd_ctrl_iface_get_non_prior_penalty_extn(hapd, reply,
+								      reply_size);
         } else {
 		return -1;
 	}

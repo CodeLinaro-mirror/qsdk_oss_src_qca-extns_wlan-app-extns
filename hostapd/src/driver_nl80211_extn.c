@@ -25,6 +25,7 @@
 #include "drivers/driver.h"
 #include "drivers/driver_nl80211.h"
 #include "ap/hostapd.h"
+#include "ap/hw_features.h"
 #include "esp.h"
 #include "dcs.h"
 #include "rropinfo.h"
@@ -60,6 +61,133 @@ static int mac_config_handler(struct nl_msg *msg, void *arg)
 	}
 
 	return NL_SKIP;
+}
+
+static int
+nl80211_get_6ghz_thresh_priority_freq_handler(struct nl_msg *msg,
+					      void *arg)
+{
+	u16 *val = arg;
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct nlattr *vendor_data;
+	struct nlattr *thresh_attr;
+
+	if (nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		      genlmsg_attrlen(gnlh, 0), NULL)) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to parse netlink attributes");
+		return NL_SKIP;
+	}
+
+	vendor_data = tb[NL80211_ATTR_VENDOR_DATA];
+	if (vendor_data) {
+		struct nlattr *vendor_tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1];
+
+		if (nla_parse(vendor_tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+			      nla_data(vendor_data), nla_len(vendor_data),
+			      NULL)) {
+			wpa_printf(MSG_ERROR, "nl80211: Failed to parse netlink attributes");
+			return NL_SKIP;
+		}
+
+		thresh_attr = vendor_tb[QCA_WLAN_VENDOR_ATTR_CONFIG_6GHZ_VLP_PRIORITY_THRESH_FREQ];
+		if (thresh_attr)
+			*val = nla_get_u16(thresh_attr);
+	}
+
+	return NL_SKIP;
+}
+
+int hostapd_get_6ghz_thresh_priority_freq_extn(struct hostapd_iface *iface)
+{
+	struct hostapd_data *hapd;
+	struct i802_bss *bss;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg = NULL;
+	struct nlattr *params;
+	u8 radio_idx = NL80211_WIPHY_RADIO_ID_MAX;
+	u16 val = 0;
+	unsigned int i;
+	int ret;
+
+	if (!iface || !iface->bss || !iface->bss[0]) {
+		wpa_printf(MSG_ERROR, "invalid iface for threshold fetch");
+		return -EINVAL;
+	}
+
+	hapd = iface->bss[0];
+	bss = hapd->drv_priv;
+	if (!bss || !bss->drv) {
+		wpa_printf(MSG_ERROR, "driver not initialized");
+		return -ENODEV;
+	}
+
+	drv = bss->drv;
+
+	if (iface->num_multi_hws) {
+		hostapd_set_current_hw_info(iface, iface->freq);
+		if (iface->current_hw_info) {
+			radio_idx = iface->current_hw_info->hw_idx;
+		} else {
+			for (i = 0; i < iface->num_multi_hws; i++) {
+				if (iface->multi_hw_info[i].start_freq >= 5945 &&
+				    iface->multi_hw_info[i].end_freq <= 7125) {
+					radio_idx = iface->multi_hw_info[i].hw_idx;
+					wpa_printf(MSG_DEBUG,
+						   "fallback selected first 6 GHz hw_idx=%u",
+						   radio_idx);
+					break;
+				}
+			}
+
+			if (radio_idx == NL80211_WIPHY_RADIO_ID_MAX) {
+				wpa_printf(MSG_DEBUG, "no radio_idx");
+				return -EINVAL;
+			}
+		}
+	}
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put_u16(msg,
+			QCA_WLAN_VENDOR_ATTR_CONFIG_6GHZ_VLP_PRIORITY_THRESH_FREQ,
+			0))
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX, radio_idx))
+		goto fail;
+
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_resp(drv, msg,
+				 nl80211_get_6ghz_thresh_priority_freq_handler,
+				 &val);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "failed to get 6 GHz threshold freq ret=%d", ret);
+		iface->iface_extn.vlp_threshold_freq = 0;
+		return ret;
+	}
+
+	iface->iface_extn.vlp_threshold_freq = val;
+	wpa_printf(MSG_DEBUG, "6 GHz VLP threshold freq=%u", val);
+
+	return 0;
+
+fail:
+	if (msg)
+		nlmsg_free(msg);
+	iface->iface_extn.vlp_threshold_freq = 0;
+	return -EINVAL;
 }
 
 /* This function sends a NL message only if extension parameters exist;

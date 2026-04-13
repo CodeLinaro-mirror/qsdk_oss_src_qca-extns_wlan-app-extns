@@ -42,7 +42,7 @@ void hostapd_csa_bitmap_update_extn(struct hostapd_iface *iface, int freq)
 			wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
 				"Revd CSA/CAC completion, notify wpa_supplicant");
 #ifdef CONFIG_HOSTAPD_SRC_DIR
-			hostapd_ucode_chsw_comp_ev_notify(iface->bss[0], freq);
+			hostapd_ucode_chsw_result_ev_notify(iface->bss[0], freq, 0);
 #endif
 		}
 	}
@@ -220,9 +220,10 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 					   " ret = %d", ret);
 #ifdef CONFIG_HOSTAPD_SRC_DIR
 				if (pre_connect) {
-					hostapd_ucode_chsw_comp_ev_notify(
+					hostapd_ucode_chsw_result_ev_notify(
 							iface->bss[0],
-							csa->freq_params.freq);
+							csa->freq_params.freq,
+							ret);
 				}
 #endif
 				return ret;
@@ -236,8 +237,9 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 		wpa_printf(MSG_INFO, "AP is already UP in same channel");
 		if (pre_connect) {
 #ifdef CONFIG_HOSTAPD_SRC_DIR
-			hostapd_ucode_chsw_comp_ev_notify(iface->bss[0],
-							  csa->freq_params.freq);
+			hostapd_ucode_chsw_result_ev_notify(iface->bss[0],
+							    csa->freq_params.freq,
+							    0);
 #endif
 		}
 	}
