@@ -24,6 +24,7 @@ int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 		break;
 	case EVENT_DCS_INTF:
 		hostapd_dcs_intf_event_extn(hapd, data);
+		break;
 	default:
 		return -EINVAL;
 	}

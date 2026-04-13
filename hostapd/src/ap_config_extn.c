@@ -56,6 +56,8 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->dcs_conf.user_max_cu = DCS_USER_MAX_CU;
 
 	conf_extn->dcs_conf.enable_bitmap = 0;   /* DCS disabled */
+	conf_extn->dcs_conf.dcs_event_action = ALLOWED_DCS_EVENT_ACTION_MASK;
+	conf_extn->dcs_conf.dcs_event_notify = 0;
 	/*
 	 * Enable random channel selection for AWGN by default; users can
 	 * explicitly disable random channel selection via hostapd.conf/CLI by
@@ -203,6 +205,62 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		}
 
 		conf_extn->dcs_conf.enable_bitmap = (u16) v;
+	} else if (os_strcmp(buf, "dcs_event_action") == 0) {
+		char *endptr;
+		unsigned long v;
+
+		while (*pos == ' ' || *pos == '\t')
+			pos++;
+
+		errno = 0;
+		v = strtoul(pos, &endptr, 0);
+		while (*endptr == ' ' || *endptr == '\t')
+			endptr++;
+		if (errno != 0 || endptr == pos || *endptr != '\0' || v > 0xFFFF) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid value for dcs_event_action '%s' (expected 16-bit value)",
+				   line, pos);
+			conf_extn->dcs_conf.dcs_event_action = 0;
+			return 0;
+		}
+
+		if (v & ~ALLOWED_DCS_EVENT_ACTION_MASK) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid value for dcs_event_action '%s' (allowed bits mask: 0x%04x)",
+				   line, pos, ALLOWED_DCS_EVENT_ACTION_MASK);
+			conf_extn->dcs_conf.dcs_event_action = 0;
+			return 0;
+		}
+
+		conf_extn->dcs_conf.dcs_event_action = (u16) v;
+	} else if (os_strcmp(buf, "dcs_event_notify") == 0) {
+		char *endptr;
+		unsigned long v;
+
+		while (*pos == ' ' || *pos == '\t')
+			pos++;
+
+		errno = 0;
+		v = strtoul(pos, &endptr, 0);
+		while (*endptr == ' ' || *endptr == '\t')
+			endptr++;
+		if (errno != 0 || endptr == pos || *endptr != '\0' || v > 0xFFFF) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid value for dcs_event_notify '%s' (expected 16-bit value)",
+				   line, pos);
+			conf_extn->dcs_conf.dcs_event_notify = 0;
+			return 0;
+		}
+
+		if (v & ~ALLOWED_DCS_EVENT_ACTION_MASK) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid value for dcs_event_notify '%s' (allowed bits mask: 0x%04x)",
+				   line, pos, ALLOWED_DCS_EVENT_ACTION_MASK);
+			conf_extn->dcs_conf.dcs_event_notify = 0;
+			return 0;
+		}
+
+		conf_extn->dcs_conf.dcs_event_notify = (u16) v;
 	} else if (os_strcmp(buf, "dcs_random_chan_bitmap") == 0) {
 		/*
 		 * Parse and set DCS random channel enable bitmap from hostapd.conf.

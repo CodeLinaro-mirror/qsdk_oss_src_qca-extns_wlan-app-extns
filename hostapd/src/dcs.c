@@ -15,6 +15,7 @@
 #include "ap/ieee802_11.h"
 #include "ap/beacon.h"
 #include "ap/hw_features.h"
+#include "ap/interference.h"
 #include "common/wpa_ctrl.h"
 #include "cmn.h"
 #include "dcs.h"
@@ -302,7 +303,12 @@ dcs_print_usage_extn(char *reply, int reply_size)
 		"  dcs random_chan_bitmap : set random channel bitmask\n"
 		"  (Bit(0)=CW, Bit(1)=WLAN, Bit(2)=AWGN, Bit(4)=OBSS, 0=Disabled; AWGN enabled by default during init)"
 		"  It is advised for user to keep it enabled for AWGN through CLI\n"
+		"  dcs event_action : set DCS event action bitmap\n"
+		"  (Bit(0)=process CW, Bit(1)=process WLAN, Bit(2)=process AWGN, Bit(4)=process OBSS; bit not set => discard)\n"
+		"  dcs event_notify : <mask> control INTERFERENCE_DETECTED notification bitmap\n"
 		"  dcs get_enable   : get DCS enable value\n"
+		"  dcs get_event_action : get DCS event action bitmap\n"
+		"  dcs get_event_notify : get DCS event notification state\n"
 		"  dcs set_dcs_enable_timer : <sec> = set DCS re-enable time\n"
 		"  dcs get_dcs_enable_timer : get DCS re-enable time\n"
 		"  dcs sim              : DCS simulator\n"
@@ -697,6 +703,147 @@ static int hostapd_ctrl_iface_get_dcs_enable(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_dcs_event_action(struct hostapd_data *hapd,
+						    const char *cmd, char *reply,
+						    int reply_size)
+{
+	struct hostapd_config_extn *conf_extn;
+	char *end;
+	unsigned long v;
+
+	(void) reply;
+	(void) reply_size;
+
+	if (!hapd || !hapd->iconf || !cmd)
+		return -1;
+
+	while (*cmd == ' ' || *cmd == '\t')
+		cmd++;
+	if (*cmd == '\0') {
+		wpa_printf(MSG_ERROR, "CTRL: DCS_EVENT_ACTION: empty value");
+		return -1;
+	}
+
+	errno = 0;
+	v = strtoul(cmd, &end, 0);
+	while (*end == ' ' || *end == '\t')
+		end++;
+	if (errno != 0 || end == cmd || *end != '\0' || v > 0xFFFF) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DCS_EVENT_ACTION: invalid value '%s'", cmd);
+		return -1;
+	}
+
+	if (v & ~ALLOWED_DCS_EVENT_ACTION_MASK) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DCS_EVENT_ACTION: invalid value 0x%lx (allowed bits mask: 0x%04x)",
+			   v, ALLOWED_DCS_EVENT_ACTION_MASK);
+		return -1;
+	}
+
+	conf_extn = &hapd->iconf->conf_extn;
+	conf_extn->dcs_conf.dcs_event_action = (u16) v;
+
+	wpa_printf(MSG_DEBUG,
+		   "CTRL: DCS_EVENT_ACTION set to 0x%04x",
+		   conf_extn->dcs_conf.dcs_event_action);
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_dcs_event_action(struct hostapd_data *hapd,
+						    const char *cmd, char *reply,
+						    int reply_size)
+{
+	struct hostapd_config_extn *conf_extn;
+	int ret;
+
+	(void) cmd;
+
+	if (!hapd || !hapd->iconf)
+		return -1;
+
+	conf_extn = &hapd->iconf->conf_extn;
+	ret = os_snprintf(reply, reply_size, "dcs_event_action=0x%04x\n",
+			  conf_extn->dcs_conf.dcs_event_action);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_ctrl_iface_set_dcs_event_notify(struct hostapd_data *hapd,
+						    const char *cmd, char *reply,
+						    int reply_size)
+{
+	struct hostapd_config_extn *conf_extn;
+	char *end;
+	unsigned long v;
+
+	(void) reply;
+	(void) reply_size;
+
+	if (!hapd || !hapd->iconf || !cmd)
+		return -1;
+
+	while (*cmd == ' ' || *cmd == '\t')
+		cmd++;
+	if (*cmd == '\0') {
+		wpa_printf(MSG_ERROR, "CTRL: DCS_EVENT_NOTIFY: empty value");
+		return -1;
+	}
+
+	errno = 0;
+	v = strtoul(cmd, &end, 0);
+	while (*end == ' ' || *end == '\t')
+		end++;
+	if (errno != 0 || end == cmd || *end != '\0' || v > 0xFFFF) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DCS_EVENT_NOTIFY: invalid value '%s' (expected 16-bit value)",
+			   cmd);
+		return -1;
+	}
+
+	if (v & ~ALLOWED_DCS_EVENT_ACTION_MASK) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DCS_EVENT_NOTIFY: invalid value 0x%lx (allowed bits mask: 0x%04x)",
+			   v, ALLOWED_DCS_EVENT_ACTION_MASK);
+		return -1;
+	}
+
+	conf_extn = &hapd->iconf->conf_extn;
+	conf_extn->dcs_conf.dcs_event_notify = (u16) v;
+
+	wpa_printf(MSG_DEBUG,
+		   "CTRL: DCS_EVENT_NOTIFY set to 0x%04x",
+		   conf_extn->dcs_conf.dcs_event_notify);
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_dcs_event_notify(struct hostapd_data *hapd,
+						    const char *cmd, char *reply,
+						    int reply_size)
+{
+	struct hostapd_config_extn *conf_extn;
+	int ret;
+
+	(void) cmd;
+
+	if (!hapd || !hapd->iconf)
+		return -1;
+
+	conf_extn = &hapd->iconf->conf_extn;
+	ret = os_snprintf(reply, reply_size, "dcs_event_notify=0x%04x\n",
+			  conf_extn->dcs_conf.dcs_event_notify);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
 static int hostapd_ctrl_iface_set_dcs_reenable_time(struct hostapd_data *hapd,
 						    const char *cmd, char *reply,
 						    int reply_size)
@@ -926,9 +1073,21 @@ int hostapd_ctrl_iface_dcs_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(cmd, "random_chan_bitmap ", 19) == 0) {
 		return hostapd_ctrl_iface_set_random_chan_en(hapd, cmd + 19,
 							     reply, reply_size);
+	} else if (os_strncmp(cmd, "event_action ", 13) == 0) {
+		return hostapd_ctrl_iface_set_dcs_event_action(hapd, cmd + 13,
+							       reply, reply_size);
+	} else if (os_strncmp(cmd, "event_notify ", 13) == 0) {
+		return hostapd_ctrl_iface_set_dcs_event_notify(hapd, cmd + 13,
+							       reply, reply_size);
 	} else if (os_strcmp(cmd, "get_enable") == 0) {
 		return hostapd_ctrl_iface_get_dcs_enable(hapd, cmd, reply,
 							 reply_size);
+	} else if (os_strcmp(cmd, "get_event_action") == 0) {
+		return hostapd_ctrl_iface_get_dcs_event_action(hapd, cmd,
+							       reply, reply_size);
+	} else if (os_strcmp(cmd, "get_event_notify") == 0) {
+		return hostapd_ctrl_iface_get_dcs_event_notify(hapd, cmd,
+							       reply, reply_size);
 	} else if (os_strncmp(cmd, "set_dcs_enable_timer ", 21) == 0) {
 		return hostapd_ctrl_iface_set_dcs_reenable_time(hapd, cmd + 21,
 								reply,
@@ -1197,6 +1356,22 @@ static u16 hostapd_dcs_find_legitimate_puncture_pattern(u16 pp, int freq,
 	return PUNCTURE_INVALID;
 }
 
+static const char *hostapd_dcs_intf_type_str(u16 type)
+{
+	switch (type) {
+	case DCS_CW_INTF:
+		return "CW";
+	case DCS_WLAN_INTF:
+		return "WLAN";
+	case DCS_AWGN_INTF:
+		return "AWGN";
+	case DCS_OBSS_INTF:
+		return "OBSS";
+	default:
+		return NULL;
+	}
+}
+
 void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 				 union wpa_event_data *data)
 {
@@ -1209,8 +1384,13 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 	struct csa_settings settings ={};
 	int new_chan_width, new_centre_freq, new_freq, ret;
 	u8 rand_chan_bitmap;
+	u16 event_notify;
 	struct hostapd_iface_extn *iface_extn;
 	u16 enable_bitmap;
+	u16 event_action;
+	const char *intf_type_str;
+	u32 report_freq, report_cf1, report_cf2, report_bitmap;
+	enum chan_width report_chan_width;
 
 	link_hapd = switch_link_hapd(hapd, dcs_intf_event->link_id);
 	if (!link_hapd)
@@ -1226,12 +1406,38 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 	cf2 = iface->conf->conf_extn.cur_chan_params.cf2;
 	ch_width = iface->conf->conf_extn.cur_chan_params.chan_width;
 	type = dcs_intf_event->type;
+	intf_type_str = hostapd_dcs_intf_type_str(type);
+	report_freq = dcs_intf_event->freq ? dcs_intf_event->freq : freq;
+	report_chan_width = dcs_intf_event->chan_width ?
+		dcs_intf_event->chan_width : ch_width;
+	report_cf1 = dcs_intf_event->cf1 ? dcs_intf_event->cf1 : cf1;
+	report_cf2 = dcs_intf_event->cf2 ? dcs_intf_event->cf2 : cf2;
+	report_bitmap = dcs_intf_event->chan_bw_interference_bitmap;
+
+
+	event_notify = iface->conf->conf_extn.dcs_conf.dcs_event_notify;
 
 	rand_chan_bitmap = iface->conf->conf_extn.dcs_conf.dcs_random_chan_bitmap;
 	enable_bitmap = iface->conf->conf_extn.dcs_conf.enable_bitmap;
+	event_action = iface->conf->conf_extn.dcs_conf.dcs_event_action;
 	wpa_printf(MSG_ERROR,
-		   "DCS: enable_bitmap=0x%04x rand_chan_bitmap=0x%02x dcs_in_progress=%d",
-		   enable_bitmap, rand_chan_bitmap, iface_extn->dcs_in_progress);
+		   "DCS: enable_bitmap=0x%04x event_action=0x%04x rand_chan_bitmap=0x%02x dcs_in_progress=%d",
+		   enable_bitmap, event_action, rand_chan_bitmap,
+		   iface_extn->dcs_in_progress);
+
+	if ((event_notify & type) && intf_type_str && iface->bss && iface->bss[0] &&
+	    iface->bss[0]->msg_ctx)
+		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, INTERFERENCE_DETECTED
+			"type=%s freq=%u chan_width=%d cf1=%u cf2=%u bitmap=0x%x",
+			intf_type_str, report_freq, report_chan_width,
+			report_cf1, report_cf2, report_bitmap);
+
+	if (!(event_action & type)) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: discarding interference event type=0x%04x since dcs_event_action bit is not set (dcs_event_action=0x%04x)",
+			   type, event_action);
+		return;
+	}
 
 	if (type == DCS_WLAN_INTF &&
 	    iface_extn->dcs_disabled_excessive_triggers) {
