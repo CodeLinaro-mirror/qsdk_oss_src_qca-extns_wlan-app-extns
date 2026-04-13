@@ -6,6 +6,7 @@
 #include "includes.h"
 #include "common.h"
 #include "common/ieee802_11_defs.h"
+#include "common/ieee802_11_common.h"
 #include "common/hw_features_common.h"
 #include "common/wpa_ctrl.h"
 #include "common/qca-vendor.h"
@@ -497,16 +498,115 @@ int hostapd_send_uplink_csa_extn(struct hostapd_iface *iface,
 #define IEEE80211_WB_CSA_IE_CF0_OFFSET 3
 #define IEEE80211_WB_CSA_IE_CF1_OFFSET 4
 #define IEEE80211_WB_CSA_IE_TOTAL_LEN 5
+
+static
+int hostapd_dfs_prepare_channel_switch_settings(struct hostapd_iface *iface,
+						int channel, int freq,
+						int secondary_channel,
+						u8 oper_chwidth,
+						u8 oper_centr_freq_seg0_idx,
+						u8 oper_centr_freq_seg1_idx,
+						u16 punct_bitmap,
+						struct csa_settings *settings)
+{
+	struct hostapd_hw_modes *cmode = iface->current_mode;
+	int ieee80211_mode = IEEE80211_MODE_AP;
+	int err;
+
+	os_memset(settings, 0, sizeof(*settings));
+	settings->cs_count = 5;
+	settings->block_tx = 1;
+	settings->link_id = -1;
+#ifdef CONFIG_IEEE80211BE
+	if (iface->bss[0]->conf->mld_ap)
+		settings->link_id = iface->bss[0]->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_MESH
+	if (iface->mconf)
+		ieee80211_mode = IEEE80211_MODE_MESH;
+#endif /* CONFIG_MESH */
+
+	err = hostapd_set_freq_params(&settings->freq_params,
+				      iface->conf->hw_mode,
+				      freq, channel,
+				      iface->conf->enable_edmg,
+				      iface->conf->edmg_channel,
+				      iface->conf->ieee80211n,
+				      iface->conf->ieee80211ac,
+				      iface->conf->ieee80211ax,
+				      iface->conf->ieee80211be,
+				      iface->conf->ieee80211bn,
+				      secondary_channel,
+				      oper_chwidth,
+				      oper_centr_freq_seg0_idx,
+				      oper_centr_freq_seg1_idx,
+				      cmode->vht_capab,
+				      &cmode->he_capab[ieee80211_mode],
+				      &cmode->eht_capab[ieee80211_mode],
+				      &cmode->uhr_capab[ieee80211_mode],
+				      punct_bitmap | iface->radar_bit_pattern,
+				      iface->conf->he_6ghz_reg_pwr_type,
+				      iface->conf->bandwidth_device,
+				      iface->conf->center_freq_device);
+	if (err) {
+		wpa_printf(MSG_ERROR,
+			   "DFS failed to calculate CSA freq params");
+		hostapd_disable_iface(iface);
+		return err;
+	}
+
+	return 0;
+}
+
+int hostapd_dfs_abort_cac_and_request_channel_switch(struct hostapd_iface *iface,
+						     int channel, int freq,
+						     int secondary_channel,
+						     u8 current_vht_oper_chwidth,
+						     u8 oper_centr_freq_seg0_idx,
+						     u8 oper_centr_freq_seg1_idx,
+						     u16 punct_bitmap)
+{
+	struct csa_settings settings;
+	u8 op_class, chan;
+	int err;
+
+	wpa_printf(MSG_DEBUG, "DFS will switch to a new channel %d", channel);
+	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_NEW_CHANNEL
+		"freq=%d chan=%d sec_chan=%d", freq, channel,
+		secondary_channel);
+
+	if (ieee80211_freq_to_channel_ext(freq, secondary_channel,
+				current_vht_oper_chwidth, &op_class,
+				&chan) != NUM_HOSTAPD_MODES) {
+		wpa_printf(MSG_DEBUG, "Update op_class %d->%d",
+				iface->conf->op_class, op_class);
+		iface->conf->op_class = op_class;
+	}
+
+	err = hostapd_dfs_prepare_channel_switch_settings(iface, channel,
+							  freq, secondary_channel,
+							  current_vht_oper_chwidth,
+							  oper_centr_freq_seg0_idx,
+							  oper_centr_freq_seg1_idx,
+							  punct_bitmap, &settings);
+	if (err)
+		return err;
+
+	return hostapd_abort_cac_for_channel_switch(iface, &settings);
+}
+
 void hostapd_handle_action_csa(struct hostapd_data *hapd,
 			       const u8 *buf, size_t len)
 {
 	const struct ieee80211_mgmt *mgmt = (const struct ieee80211_mgmt *)buf;
+	struct hostapd_data *link_hapd = NULL;
 	struct hostapd_iface *iface;
 	enum oper_chan_width ch_width;
 	const u8 *wb_cs_ie = NULL;
 	const u8 *cs_ie = NULL;
 	const u8 *pos, *end;
 	int freq, sec_chan;
+	int link_id = -1;
 	u8 cf0, cf1;
 	const u8 *vendor_ie = NULL;
 	struct dfs_nol_ie_list nol_list;
@@ -558,8 +658,6 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 		cf1 = 0;
 	}
 
-	freq = hostapd_hw_get_freq(hapd, new_chan);
-
 	/* Width 0 in the WB IE covers HT operation; use seg0 to detect HT40. */
 	if (!wb_cs_ie) {
 		sec_chan = 0;
@@ -580,6 +678,23 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 	} else {
 		pos = wb_cs_ie + IEEE80211_WB_CSA_IE_TOTAL_LEN;
 		len = end - pos;
+	}
+
+	link_hapd = get_link_hapd(hapd, pos, len, &link_id);
+	if (link_hapd) {
+		hapd = link_hapd;
+		iface = hapd->iface;
+		wpa_printf(MSG_INFO,
+			   "uplink_csa: using iface %s for link_id=%d",
+			   hapd->conf->iface, link_id);
+	}
+
+	freq = hostapd_hw_get_freq(hapd, new_chan);
+	if (freq <= 0) {
+		wpa_printf(MSG_WARNING,
+			   "uplink_csa: channel %u not found on iface %s, dropping CSA",
+			   new_chan, hapd->conf->iface);
+		return;
 	}
 
 	while (len >= 2) {
@@ -629,7 +744,19 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 		}
 	}
 
-	hostapd_dfs_request_channel_switch(iface, new_chan, freq, sec_chan, ch_width, cf0, cf1, 0);
+	if (iface->cac_started) {
+		wpa_printf(MSG_DEBUG,
+			   "uplink_csa: CSA on iface:%s for link_id=%d, freq:%d aborting CAC before channel switch",
+			   hapd->conf->iface, link_id, freq);
+		hostapd_dfs_abort_cac_and_request_channel_switch(iface, new_chan,
+								 freq, sec_chan,
+								 ch_width, cf0,
+								 cf1, 0);
+	} else {
+		hostapd_dfs_request_channel_switch(iface, new_chan, freq,
+						   sec_chan, ch_width, cf0,
+						   cf1, 0);
+	}
 }
 
 bool hostapd_uplink_csa_hdl(struct hostapd_data *hapd,

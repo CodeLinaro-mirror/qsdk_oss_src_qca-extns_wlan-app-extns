@@ -1310,6 +1310,13 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 				       u8 oper_centr_freq_seg0_idx,
 				       u8 oper_centr_freq_seg1_idx,
 				       u16 punct_bitmap);
+int hostapd_dfs_abort_cac_and_request_channel_switch(struct hostapd_iface *iface,
+						     int channel, int freq,
+						     int secondary_channel,
+						     u8 current_vht_oper_chwidth,
+						     u8 oper_centr_freq_seg0_idx,
+						     u8 oper_centr_freq_seg1_idx,
+						     u16 punct_bitmap);
 int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
 		  int chan_offset, int chan_width, int cf1,
 		  int cf2, u32 state, u16 radar_bitmap);
@@ -1340,11 +1347,24 @@ bool hostapd_ht40_intolerant_snr_below_threshold_extn(
 #ifdef HOSTAPD
 struct hostapd_data *
 switch_link_hapd(struct hostapd_data *hapd, int link_id);
+struct hostapd_data *
+get_link_hapd(struct hostapd_data *hapd, const u8 *ies, size_t len,
+	      int *link_id);
 #else
 static inline struct hostapd_data *
 switch_link_hapd(struct hostapd_data *hapd, int link_id)
 {
     return hapd;
+}
+
+static inline struct hostapd_data *
+get_link_hapd(struct hostapd_data *hapd, const u8 *ies, size_t len,
+	      int *link_id)
+{
+	if (link_id)
+		*link_id = -1;
+
+	return NULL;
 }
 #endif
 int qca_nl80211_handle_wifi_config_evt_extn(struct i802_bss *bss,
