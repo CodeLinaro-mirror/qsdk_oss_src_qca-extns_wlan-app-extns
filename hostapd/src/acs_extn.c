@@ -154,6 +154,8 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs get_block_chan_list  : get the blocked channels\n"
 		"  acs clear_block_chan_list: clear the blocked channels \n"
 		"  acs show_neighbor_report : print ACS neighbor report\n"
+		"  acs periodic_interval <sec> : set periodic ACS interval (0 disables, max 86400)\n"
+		"  acs get_periodic_interval : get periodic ACS interval\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -481,6 +483,70 @@ int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd, enum dynamic_acs_acti
         return 0;
 }
 
+static void hostapd_periodic_acs_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_iface *iface = eloop_ctx;
+
+	iface->iface_extn.periodic_acs_timer_set = false;
+
+	if (!iface->conf->conf_extn.acs_periodic_interval)
+		return;
+
+	if (iface->state != HAPD_IFACE_ENABLED) {
+		eloop_register_timeout(iface->conf->conf_extn.acs_periodic_interval, 0,
+				       hostapd_periodic_acs_timeout, iface, NULL);
+		iface->iface_extn.periodic_acs_timer_set = true;
+		return;
+	}
+
+	wpa_printf(MSG_INFO, "Periodic ACS: triggering ACS (interval=%u sec)",
+		   iface->conf->conf_extn.acs_periodic_interval);
+
+	if (hostapd_trigger_dynamic_acs(iface->bss[0], CHANNEL_CHANGE_CSA) < 0) {
+		wpa_printf(MSG_ERROR, "Periodic ACS: trigger failed");
+		hostapd_periodic_acs_schedule(iface);
+	}
+}
+
+void hostapd_periodic_acs_schedule(struct hostapd_iface *iface)
+{
+	if (!iface || !iface->conf)
+		return;
+
+	if (!iface->conf->conf_extn.acs_periodic_interval)
+		return;
+
+	eloop_cancel_timeout(hostapd_periodic_acs_timeout, iface, NULL);
+	iface->iface_extn.periodic_acs_timer_set = false;
+
+	eloop_register_timeout(iface->conf->conf_extn.acs_periodic_interval, 0,
+			       hostapd_periodic_acs_timeout, iface, NULL);
+	iface->iface_extn.periodic_acs_timer_set = true;
+}
+
+void hostapd_periodic_acs_start(struct hostapd_iface *iface)
+{
+	if (!iface || !iface->conf)
+		return;
+
+	eloop_cancel_timeout(hostapd_periodic_acs_timeout, iface, NULL);
+	iface->iface_extn.periodic_acs_timer_set = false;
+
+	if (!iface->conf->conf_extn.acs_periodic_interval)
+		return;
+
+	hostapd_periodic_acs_schedule(iface);
+}
+
+void hostapd_periodic_acs_stop(struct hostapd_iface *iface)
+{
+	if (!iface)
+		return;
+
+	eloop_cancel_timeout(hostapd_periodic_acs_timeout, iface, NULL);
+	iface->iface_extn.periodic_acs_timer_set = false;
+}
+
 static int hostapd_acs_run_extn(struct hostapd_data *hapd, const char *pos,
                                 char *reply, size_t reply_size)
 {
@@ -618,6 +684,39 @@ static int hostapd_acs_get_dfs_exclude_extn(struct hostapd_config *conf,
 	int ret = os_snprintf(reply, reply_size,
 			      "ACS dfs_exclude: %d\n",
 			      conf->acs_exclude_dfs);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_acs_set_periodic_interval_extn(struct hostapd_iface *iface,
+						  const char *pos,
+						  char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val < 60 || val > 86400) {
+		wpa_printf(MSG_ERROR,
+			   "%s: Invalid acs_periodic_interval %d (expected 60..86400)",
+			   __func__, val);
+		return -1;
+	}
+
+	iface->conf->conf_extn.acs_periodic_interval = val;
+	hostapd_periodic_acs_start(iface);
+
+	return 0;
+}
+
+static int hostapd_acs_get_periodic_interval_extn(struct hostapd_config_extn *conf_extn,
+						  const char *pos,
+						  char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS periodic_interval: %u\n",
+			      conf_extn->acs_periodic_interval);
 
 	if (os_snprintf_error(reply_size, ret))
 		return -1;
@@ -860,6 +959,14 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(pos, "get_dfs_exclude", 15) == 0) {
 		return hostapd_acs_get_dfs_exclude_extn(conf, pos,
 							buf, buflen);
+
+	} else if (os_strncmp(pos, "periodic_interval ", 18) == 0) {
+		return hostapd_acs_set_periodic_interval_extn(hapd->iface,
+							     pos + 18, buf, buflen);
+
+	} else if (os_strncmp(pos, "get_periodic_interval", 21) == 0) {
+		return hostapd_acs_get_periodic_interval_extn(conf_extn, pos,
+							     buf, buflen);
 
 	} else if (os_strncmp(pos, "dwelltime ", 10) == 0) {
 		return hostapd_acs_set_dwelltime_extn(conf_extn, pos + 9,
