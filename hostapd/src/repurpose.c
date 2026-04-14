@@ -192,3 +192,18 @@ refresh_beacon:
 
 	return 0;
 }
+
+
+struct hostapd_data *
+hostapd_get_non_repurposed_link_of_mld_extn(struct hostapd_data *hapd)
+{
+	struct hostapd_data *link_hapd;
+
+	/* Use for_each_mld_link as it loops only non-repurposed links */
+	for_each_mld_link(link_hapd, hapd) {
+		return link_hapd;
+	}
+
+	return NULL;
+}
+
