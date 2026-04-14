@@ -40,6 +40,14 @@ hostapd_config_check_bss_repurpose_mode_extn(const struct hostapd_config *conf,
 			   "repurpose: Can't disable 11AX on 6GHz BSS");
 		return -1;
 	}
+
+	/* 11AC requires ieee80211ac to be enabled */
+	if (bss->bss_extn.repurpose_mode == REPURPOSE_11AC &&
+	    (!conf->ieee80211ac || bss->disable_11ac)) {
+		wpa_printf(MSG_ERROR,
+			   "repurpose: REPURPOSE_11AC requires ieee80211ac enabled");
+		return -1;
+	}
 #endif /* CONFIG_IEEE80211BE */
 	return 0;
 }
@@ -193,7 +201,6 @@ refresh_beacon:
 	return 0;
 }
 
-
 struct hostapd_data *
 hostapd_get_non_repurposed_link_of_mld_extn(struct hostapd_data *hapd)
 {
@@ -206,4 +213,3 @@ hostapd_get_non_repurposed_link_of_mld_extn(struct hostapd_data *hapd)
 
 	return NULL;
 }
-
