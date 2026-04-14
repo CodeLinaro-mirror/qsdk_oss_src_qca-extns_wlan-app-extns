@@ -558,6 +558,24 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn =
 			hostapd_ctrl_iface_get_non_prior_penalty_extn(hapd, reply,
 								      reply_size);
+	} else if (os_strncmp(buf, "SET_PRIMARY_CHANS ", 18) == 0) {
+		/*
+		 * SET_PRIMARY_CHANS <ch1> [<ch2> ...]
+		 * Restrict ACS/DFS/scan to the listed primary channels.
+		 * An empty argument list clears the restriction and reverts
+		 * to the full regulatory channel set (ChanSel-001..003,011).
+		 */
+		if (hostapd_set_primary_chanlist(hapd->iface, buf + 18) < 0)
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_PRIMARY_CHANS") == 0) {
+		/*
+		 * GET_PRIMARY_CHANS
+		 * Returns the currently configured primary channel list.
+		 */
+		reply_len_extn = hostapd_get_primary_chanlist(hapd->iface,
+							      reply, reply_size);
+		if (reply_len_extn < 0)
+			reply_len_extn = -1;
         } else {
 		return -1;
 	}

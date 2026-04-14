@@ -5,6 +5,7 @@ OBJS+= \
 	qcn_extns/driver_nl80211_extn.o \
 	qcn_extns/ap_config_extn.o \
 	qcn_extns/ctrl_iface_extn.o \
+	qcn_extns/primary_chanlist.o \
 	qcn_extns/drv_callbacks_extn.o \
 	qcn_extns/hostapd_rptr_extn.o \
 	qcn_extns/esp.o \
@@ -31,4 +32,3 @@ ifneq ($(wildcard ../qcn_extns/qacs/qacs.c),)
 	CFLAGS += -DCONFIG_QCN_APP_EXTN
 	OBJS += qcn_extns/qacs/qacs.o
 endif
-

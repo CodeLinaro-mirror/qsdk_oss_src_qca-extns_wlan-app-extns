@@ -18,6 +18,7 @@
 #include "common/ieee802_11_defs.h"
 #include "repurpose.h"
 #include "../src/common/qca-vendor.h"
+#include "rropinfo.h"
 
 struct hostapd_config;
 struct sta_info;
@@ -299,6 +300,16 @@ struct hostapd_config_extn {
 	struct qacs_conf_extn qacs_conf;
 	struct chan_params cur_chan_params;
 	struct dcs_conf_extn dcs_conf;
+
+	/*
+	 * Primary channel list – restricts ACS, DFS channel hopping, and
+	 * scan operations to a user-configured subset of the regulatory
+	 * channel list (ChanSel-001..003).
+	 * Stored as frequencies (MHz, u16 is sufficient for all bands).
+	 */
+	u16 primary_freq_list[MAX_NUM_CHANNELS];
+	u8 num_primary_freq;
+
 };
 
 struct hostapd_bss_config_extn {
@@ -926,6 +937,21 @@ hostapd_5ghz_eht_320_channel_bw_extn(struct hostapd_hw_modes *mode,
 {
 	return false;
 }
+
+/* Primary channel list stubs (ChanSel-001..012) */
+static inline int
+hostapd_set_primary_chanlist(struct hostapd_iface *iface, const char *chan_str)
+{
+	return -1;
+}
+
+static inline int
+hostapd_get_primary_chanlist(struct hostapd_iface *iface,
+			     char *buf, size_t buflen)
+{
+	return -1;
+}
+
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -1265,5 +1291,10 @@ int hostapd_drv_mark_vap_submode_extn(void *priv, unsigned int vendor_id,
 
 #define MGMT_MIN_FRAME_SIZE_REQUIRED_MLO_MBSSID 2000
 
+/* Primary channel list APIs (ChanSel-001..012) */
+int hostapd_set_primary_chanlist(struct hostapd_iface *iface,
+				 const char *chan_str);
+int hostapd_get_primary_chanlist(struct hostapd_iface *iface,
+				 char *buf, size_t buflen);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
