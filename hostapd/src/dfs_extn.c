@@ -290,6 +290,43 @@ bool hostapd_ignorecac_chan_switch_complete_extn(struct hostapd_data *hapd,
 }
 #endif /* CONFIG_QCA_LAB_TEST_FEATURES */
 
+bool hostapd_is_ml_info_ie(const u8 *ie, size_t rem_len)
+{
+	if (!ie || rem_len < 2)
+		return false;
+
+	if (ie[0] != WLAN_EID_EXT_CAPAB && ie[0] != WLAN_EID_EXTENSION)
+		return false;
+	if (ie[2] == WLAN_EID_EXT_MULTI_LINK)
+		return true;
+
+	return false;
+}
+
+u8 *add_ml_link_info_ie(u8 *buf, size_t buf_len,
+			     u16 link_id_bitmap)
+{
+	u8 *pos = buf;
+
+	if (!pos || buf_len < 5)
+		return NULL;
+
+	/*
+	 * ML Info IE for RCSA:
+	 *   Element ID     : Extension
+	 *   Length         : 3
+	 *   Extension ID   : Multi-Link
+	 *   Link bitmap    : 2-byte LE bitmap
+	 */
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = 3;
+	*pos++ = WLAN_EID_EXT_MULTI_LINK;
+	WPA_PUT_LE16(pos, link_id_bitmap);
+	pos += 2;
+
+	return pos;
+}
+
 int handle_action_extn(struct hostapd_data *hapd,
 		       const struct ieee80211_mgmt *mgmt, size_t len,
 		       unsigned int freq)

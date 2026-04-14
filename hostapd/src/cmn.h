@@ -1666,6 +1666,9 @@ int handle_action_vs_extn(struct hostapd_data *hapd,
 			  struct sta_info *sta,
 			  const struct ieee80211_mgmt *mgmt,
 			  size_t len, unsigned int freq, bool protected);
+u8 *add_ml_link_info_ie(u8 *buf, size_t buf_len,
+			u16 link_id_bitmap);
+bool hostapd_is_ml_info_ie(const u8 *ie, size_t rem_len);
 int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 					 bool is_dfs, char *wpa_state,
 					 struct csa_settings *csa);
