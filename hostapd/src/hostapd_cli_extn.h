@@ -24,6 +24,8 @@ int hostapd_cli_cmd_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc, char *argv[
 
 int hostapd_cli_cmd_sync_iface_freq_extn(struct wpa_ctrl *ctrl, int argc,
 					 char *argv[]);
+int hostapd_cli_cmd_dfs_no_wradar_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_dfs_no_wradar_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_dcs_wlan_intr_params(struct wpa_ctrl *ctrl, int argc,
 					    char *argv[]);
@@ -95,6 +97,10 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 		"<snr> = set OBSS RX SNR threshold in dB (per-radio)" }, \
 	{ "get_obss_rx_snr_threshold", hostapd_cli_cmd_get_obss_rx_snr_threshold_extn, NULL, \
 		"= get current OBSS RX SNR threshold in dB" }, \
+	{ "dfs_no_wradar", hostapd_cli_cmd_dfs_no_wradar_extn, NULL, \
+		"<0|1> = avoid ETSI weather radar channels in DFS random channel selection" }, \
+	{ "get_dfs_no_wradar", hostapd_cli_cmd_get_dfs_no_wradar_extn, NULL, \
+		"= get dfs_no_wradar state (0|1)" }, \
 	{ "dcs", hostapd_cli_cmd_dcs_extn, NULL, \
 		"enable		: enable DCS configuration\n" \
 		"bw_reduction_ctrl	: <mask> = set DCS bw reduction control\n" \

@@ -642,6 +642,52 @@ static int hostapd_ctrl_iface_get_mu_cap_war_extn(struct hostapd_data_extn *hapd
 }
 #endif /* CONFIG_IEEE80211AC */
 
+static int hostapd_ctrl_iface_dfs_no_wradar_extn(struct hostapd_data *hapd,
+						 const char *value)
+{
+	char *end = NULL;
+	long val;
+	struct hostapd_iface_extn *iface_extn;
+
+	if (!hapd || !hapd->iface || !value) {
+		wpa_printf(MSG_ERROR, "DFS_NO_WRADAR: Invalid parameters");
+		return -1;
+	}
+
+	iface_extn = &hapd->iface->iface_extn;
+
+	val = strtol(value, &end, 10);
+	if (end == value) {
+		wpa_printf(MSG_ERROR, "DFS_NO_WRADAR: Invalid value format");
+		return -1;
+	}
+	while (end && (*end == ' ' || *end == '\n' || *end == '\r' ||
+		       *end == '\t'))
+		end++;
+	if (end && *end != '\0') {
+		wpa_printf(MSG_ERROR, "DFS_NO_WRADAR: Trailing characters after value");
+		return -1;
+	}
+
+	if (val != 0 && val != 1) {
+		wpa_printf(MSG_ERROR, "DFS_NO_WRADAR: Value must be 0 or 1");
+		return -1;
+	}
+
+	iface_extn->dfs_no_wradar = !!val;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_dfs_no_wradar_extn(struct hostapd_data *hapd,
+						     char *reply,
+						     size_t reply_size)
+{
+	return os_snprintf(reply, reply_size, "%d\n",
+			   hapd && hapd->iface &&
+			   hapd->iface->iface_extn.dfs_no_wradar);
+}
+
 int
 hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 					char *buf, char *reply,
@@ -679,6 +725,14 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn = hostapd_ctrl_iface_get_mu_cap_war_extn(&hapd->hapd_extn, reply,
 								      reply_size);
 #endif /* CONFIG_IEEE80211AC */
+	} else if (os_strncmp(buf, "DFS_NO_WRADAR ", 14) == 0) {
+		if (hostapd_ctrl_iface_dfs_no_wradar_extn(hapd, buf + 14))
+			reply_len_extn = -1;
+		else
+			reply_len_extn = os_snprintf(reply, reply_size, "OK\n");
+	} else if (os_strcmp(buf, "GET_DFS_NO_WRADAR") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_dfs_no_wradar_extn(
+			hapd, reply, reply_size);
 	} else if (os_strncmp(buf, "DCS ", 4) == 0) {
 		reply_len_extn = hostapd_ctrl_iface_dcs_extn(hapd, buf + 4, reply,
 							     reply_size);

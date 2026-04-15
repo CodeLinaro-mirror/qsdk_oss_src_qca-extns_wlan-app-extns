@@ -23,6 +23,8 @@
 #define IEEE80211_DFS_MIN_CAC_TIME_MS  60000
 #define HAPD_DFS_WAIT_FOR_CSA_FROM_ROOT_DUR 500000
 
+#define DFS_WEATHER_RADAR_CHANNEL(freq)  ((freq) >= 5600 && (freq) <= 5650)
+
 /**
  * enum qca_wlan_vendor_attr_dfs_nol_info - DFS NOL information attributes
  * Used for NOL IE in uplink CSA action frames
@@ -81,6 +83,46 @@ enum dfs_channel_type_extn {
 	DFS_AVAILABLE_EXTN,	/* non-radar or radar-available */
 	DFS_NO_CAC_YET_EXTN,	/* radar-not-yet-available */
 };
+
+static struct hostapd_channel_data *
+hostapd_dfs_get_chan_data_extn(struct hostapd_hw_modes *mode, int freq,
+			       int first_chan_idx)
+{
+	int i;
+
+	for (i = first_chan_idx; i < mode->num_channels; i++) {
+		if (mode->channels[i].freq == freq)
+			return &mode->channels[i];
+	}
+
+	return NULL;
+}
+
+bool hostapd_dfs_skip_wradar_chan_extn(struct hostapd_iface *iface,
+				       struct hostapd_hw_modes *mode,
+				       struct hostapd_channel_data *chan,
+				       int first_chan_idx, int n_chans)
+{
+	int j;
+
+	if (!iface || !mode || !chan || !iface->iface_extn.dfs_no_wradar)
+		return false;
+
+	for (j = 0; j < n_chans; j++) {
+		struct hostapd_channel_data *c;
+
+		c = hostapd_dfs_get_chan_data_extn(mode, chan->freq + j * 20,
+						   first_chan_idx);
+		if (c && DFS_WEATHER_RADAR_CHANNEL(c->freq)) {
+			wpa_printf(MSG_DEBUG,
+				   "DFS: dfs_no_wradar enabled, skip chandef starting at %d (%d MHz)",
+				   chan->chan, chan->freq);
+			return true;
+		}
+	}
+
+	return false;
+}
 
 int handle_action_extn(struct hostapd_data *hapd,
 		       const struct ieee80211_mgmt *mgmt, size_t len,

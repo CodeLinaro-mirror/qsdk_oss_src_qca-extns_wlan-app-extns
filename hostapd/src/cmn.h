@@ -393,6 +393,7 @@ struct hostapd_iface_extn {
 	/* Penalty percentage to be applied for non-priority channels in QACS */
 	u8 vlp_non_prior_penalty;
 
+	bool dfs_no_wradar;
 	char sta_wpa_state[32]; /* Stores the STA WPA state, in case of repeater */
 	bool acs_dfs_cac_pending;  /* ACS picked DFS channel, waiting for CAC */
 	int vap_type;
@@ -619,6 +620,15 @@ hostapd_find_dfs_range_extn(struct hostapd_iface *iface,
 			    struct hostapd_freq_params *freq_params)
 {
 	return -1;
+}
+
+static inline bool
+hostapd_dfs_skip_wradar_chan_extn(struct hostapd_iface *iface,
+				  struct hostapd_hw_modes *mode,
+				  struct hostapd_channel_data *chan,
+				  int first_chan_idx, int n_chans)
+{
+	return false;
 }
 
 static inline int
@@ -1117,6 +1127,10 @@ bool hostapd_dfs_get_valid_punc_bitmap_extn(int chan_freq,
 int hostapd_find_dfs_range_extn(struct hostapd_iface *iface,
 				enum chan_width bandwidth,
 				struct hostapd_freq_params *freq_params);
+bool hostapd_dfs_skip_wradar_chan_extn(struct hostapd_iface *iface,
+				       struct hostapd_hw_modes *mode,
+				       struct hostapd_channel_data *chan,
+				       int first_chan_idx, int n_chans);
 int hostapd_is_dfs_overlap_extn(struct hostapd_iface *iface,
 				enum chan_width width,
 				int center_freq, u16 punct_bitmap);
