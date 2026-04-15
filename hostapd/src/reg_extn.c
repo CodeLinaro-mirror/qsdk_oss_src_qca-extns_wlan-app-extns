@@ -11,6 +11,8 @@
 #include "drivers/driver_nl80211.h"
 #include "ap/hostapd.h"
 #include "ap/hw_features.h"
+#include "../wpa_supplicant/wpa_supplicant_i.h"
+#include "../wpa_supplicant/bss.h"
 #include "reg_extn.h"
 
 void hostapd_query_hw_blocklist_extn(struct hostapd_iface *iface,
@@ -55,6 +57,60 @@ void hostapd_query_hw_blocklist_extn(struct hostapd_iface *iface,
 			   "Failed to fetch HW blocklist channels (radio_idx=%d ret=%d)",
 			   radio_idx, ret);
 		return;
+	}
+}
+
+static struct hostapd_multi_hw_info *
+wpas_get_current_hw_info_extn(struct wpa_supplicant *wpa_s, int freq)
+{
+	u8 i;
+
+	if (!wpa_s || !freq || !wpa_s->multi_hw_info || !wpa_s->num_multi_hws)
+		return NULL;
+
+	for (i = 0; i < wpa_s->num_multi_hws; i++) {
+		struct hostapd_multi_hw_info *hw_info = &wpa_s->multi_hw_info[i];
+
+		if (hw_info->start_freq <= freq && hw_info->end_freq >= freq)
+			return hw_info;
+	}
+
+	return NULL;
+}
+
+void wpas_query_hw_blocklist_extn(struct wpa_supplicant *wpa_s)
+{
+	struct hostapd_multi_hw_info *hw_info;
+	int radio_idx = -1;
+	int query_freq = 0;
+	int ret;
+
+	if (!wpa_s || !wpa_s->support_6ghz)
+		return;
+
+	if (!wpa_s->driver || !wpa_s->drv_priv ||
+	    !wpa_s->driver->is_6ghz_hw_blocked_chans_supported ||
+	    !wpa_s->driver->fetch_hw_blocked_chans)
+		return;
+
+	if (!wpa_s->driver->is_6ghz_hw_blocked_chans_supported(wpa_s->drv_priv))
+		return;
+
+	if (wpa_s->assoc_freq)
+		query_freq = wpa_s->assoc_freq;
+	else if (wpa_s->current_bss)
+		query_freq = wpa_s->current_bss->freq;
+
+	hw_info = wpas_get_current_hw_info_extn(wpa_s, query_freq);
+	if (query_freq && hw_info)
+		radio_idx = hw_info->hw_idx;
+
+	ret = wpa_s->driver->fetch_hw_blocked_chans(wpa_s->drv_priv,
+						    radio_idx);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "wpas: Failed to fetch HW blocklist channels (ifname=%s radio_idx=%d ret=%d)",
+			   wpa_s->ifname, radio_idx, ret);
 	}
 }
 
@@ -181,6 +237,35 @@ static int hw_blocklist_update_list_extn(
 	(*hw_blocklist_info)[*num_hw_blocklist] = copy;
 	(*num_hw_blocklist)++;
 	return 0;
+}
+
+void wpas_event_hw_blocklist_notify_extn(
+	struct wpa_supplicant *wpa_s,
+	const struct hostapd_hw_blocklist_info *hw_blocklist_info)
+{
+	struct wpa_supplicant_extn *wpas_extn;
+	int ret;
+
+	if (!wpa_s || !hw_blocklist_info)
+		return;
+
+	wpas_extn = &wpa_s->wpas_extn;
+
+	ret = hw_blocklist_update_list_extn(&wpas_extn->hw_blocklist_info,
+					    &wpas_extn->num_hw_blocklist,
+					    hw_blocklist_info);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "wpas: Failed to store HW blocklist info for ifname=%s hw_idx=%u ret=%d",
+			   wpa_s->ifname, hw_blocklist_info->hw_idx, ret);
+		return;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "wpas: Stored HW blocklist info for ifname=%s hw_idx=%u modes=%u total_hw=%u",
+		   wpa_s->ifname, hw_blocklist_info->hw_idx,
+		   hw_blocklist_info->num_pwr_modes,
+		   wpas_extn->num_hw_blocklist);
 }
 
 static void hostapd_reg_dump_hw_blocklist_extn(struct hostapd_iface *iface)
