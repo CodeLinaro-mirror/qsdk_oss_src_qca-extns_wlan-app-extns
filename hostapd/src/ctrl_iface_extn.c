@@ -537,9 +537,11 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "REP_AP_ENABLE ", 14) == 0) {
 		if (hostapd_iface_rep_ap_enable_extn(hapd->iface, buf + 14))
 			reply_len_extn = -1;
+#ifdef CONFIG_ACS
 	} else if (os_strncmp(buf, "ACS ", 4) == 0) {
 		reply_len_extn = hostapd_handle_cli_acs_extn(hapd, buf + 4,
 							     reply, reply_size);
+#endif
 #ifdef CONFIG_IEEE80211AC
 	} else if (os_strncmp(buf, "MU_CAP_WAR ", 11) == 0) {
 		if (hostapd_ctrl_iface_mu_cap_war_extn(&hapd->hapd_extn, buf + 11))

@@ -1090,8 +1090,10 @@ u8 * hostapd_eid_esp_extn(struct hostapd_data *hapd, u8 *eid, size_t len);
 size_t hostapd_esp_ie_len_extn(struct hostapd_data *hapd);
 int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *cmd,
 				char *buf, size_t buflen);
+#ifdef CONFIG_ACS
 int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd, char *pos,
 				char *buf, size_t buflen);
+#endif /* CONFIG_ACS */
 
 #ifndef CONFIG_QCN_APP_EXTN
 static inline struct hostapd_channel_data *
