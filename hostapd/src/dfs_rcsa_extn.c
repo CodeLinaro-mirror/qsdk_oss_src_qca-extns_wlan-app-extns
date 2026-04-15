@@ -23,12 +23,13 @@
 #include "common/ieee802_11_defs.h"
 #include "wpa_supplicant_extn.h"
 #include "utils/common.h"
+#include "utils/eloop.h"
+#include "qcn_ie_extn.h"
 
 /*
  * RCSA Vendor Specific Action frame:
  * category(1) + Atheros OUI(3) + CSA IE [+ optional QCA NOL IE].
  */
-
 #define RCSA_VENDOR_ACTION_HDR_LEN 4
 #define RCSA_CSA_IE_HDR_LEN 2
 #define RCSA_MIN_FRAME_LEN \
@@ -36,10 +37,11 @@
 	 IEEE80211_CSA_IE_MIN_LEN)
 
 /* To be revisited to send 5 RCSAs */
-#define HOSTAPD_RCSA_SWITCH_MODE 1
 #define HOSTAPD_RCSA_TX_COUNT 1
+#define HOSTAPD_RCSA_SWITCH_MODE 1
 #define RCSA_MAX_OPTIONAL_IE_LEN 256
-
+#define HAPD_DFS_WAIT_FOR_RCSA_FROM_ROOT_DUR(bcn_intval) (HOSTAPD_RCSA_TX_COUNT * (bcn_intval) * 2)
+#define HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_SEC 3
 
 /* RCSA config to be revisited once cswopt is introduced.
  * Hardcoding this to DISABLE for now
@@ -52,10 +54,25 @@ static int dfs_is_rcsa_tx_enabled(struct hostapd_iface *iface)
 	return iface->conf->conf_extn.rcsa_tx;
 }
 
-static bool hostapd_rcsa_tx_bh_enabled(struct hostapd_iface *iface)
+bool hostapd_rcsa_tx_bh_enabled(struct hostapd_iface *iface)
 {
 	if (dfs_is_rcsa_tx_enabled(iface) &&
 	    hostapd_is_backhaul_sta_configured(iface))
+		return true;
+
+	return false;
+}
+
+
+void hostapd_set_rcsa_inprogress(struct hostapd_iface *iface, bool value)
+{
+	iface->iface_extn.rcsa_ctx.rcsa_inprogress = value;
+}
+
+
+static bool hostapd_is_rcsa_inprogress(struct hostapd_iface *iface)
+{
+	if (iface->iface_extn.rcsa_ctx.rcsa_inprogress)
 		return true;
 
 	return false;
@@ -140,7 +157,7 @@ static int wpa_drv_notify_rcsa(struct wpa_supplicant *wpa_s, int freq,
 	}
 
 	wpabuf_put_u8(buf, WLAN_ACTION_VENDOR_SPECIFIC);
-	wpabuf_put_be24(buf, OUI_QCA);
+	wpabuf_put_be24(buf, OUI_QCOM);
 	wpabuf_put_u8(buf, WLAN_EID_CHANNEL_SWITCH);
 	wpabuf_put_u8(buf, IEEE80211_CSA_IE_MIN_LEN);
 	wpabuf_put_u8(buf, switch_mode);
@@ -257,8 +274,14 @@ static int hostapd_ucode_notify_rcsa_tx(struct hostapd_iface *iface, u8 channel,
 	ucv_put(wpa_ucode_call(5));
 	ucv_gc(vm);
 
-	wpa_printf(MSG_INFO, "RCSA event with radio id %d %s\n",
-		   hw_idx, iface->phy);
+	hostapd_set_rcsa_inprogress(iface, true);
+	if (!eloop_is_timeout_registered(hostapd_trigger_backhaul_sta_disconnect,
+					 iface, NULL)) {
+		eloop_register_timeout(1, HAPD_DFS_WAIT_FOR_RCSA_FROM_ROOT_DUR(100000),
+				       hostapd_trigger_backhaul_sta_disconnect,
+				       iface, NULL);
+	}
+
 	return 0;
 }
 
@@ -429,6 +452,18 @@ int hostapd_send_rcsa_extn(struct hostapd_iface *iface,
 	if (!hostapd_rcsa_tx_bh_enabled(iface))
 		return -EINVAL;
 
+	if (hostapd_csa_in_progress(iface)) {
+		wpa_printf(MSG_INFO,
+			   "RCSA: defer TX because channel switch is already in progress");
+		return 0;
+	}
+
+	if (hostapd_is_rcsa_inprogress(iface)) {
+		wpa_printf(MSG_INFO,
+			   "RCSA: inprogress");
+		return -EINVAL;
+	}
+
 	nol_ie_len = hostapd_build_nol_ie(iface, freq,
 					  current_vht_oper_chwidth,
 					  oper_centr_freq_seg0_idx,
@@ -439,8 +474,8 @@ int hostapd_send_rcsa_extn(struct hostapd_iface *iface,
 		attach_nol_ie = true;
 
 	hostapd_get_local_rcsa_ml_info(iface, &attach_ml_ie, &link_id_bitmap);
-
 	wpa_printf(MSG_INFO,"rcsa:attach ml %u",attach_ml_ie);
+
 	opt_ie_len = hostapd_build_rcsa_optional_ies(
 				attach_nol_ie ? nol_ie_buf : NULL,
 				attach_nol_ie ? (size_t) nol_ie_len : 0,
@@ -448,7 +483,7 @@ int hostapd_send_rcsa_extn(struct hostapd_iface *iface,
 				opt_ie, sizeof(opt_ie));
 
 	return hostapd_ucode_notify_rcsa_tx(iface, channel, freq,
-					    IEEE80211_CSA_IE_MODE_OFFSET,
+					    HOSTAPD_RCSA_SWITCH_MODE,
 					    opt_ie_len ? opt_ie : NULL,
 					    opt_ie_len);
 }
@@ -558,6 +593,19 @@ bool hostapd_rcsa_rx_hdl(struct hostapd_data *hapd,
 	if (!iface->conf->conf_extn.process_rcsa)
 		return 1;
 
+	if (hostapd_csa_in_progress(iface)) {
+		wpa_printf(MSG_INFO,
+			   "RCSA: defer forwarding because channel switch is already in progress");
+		return 0;
+	}
+
+	if (hostapd_is_rcsa_inprogress(iface)) {
+		wpa_printf(MSG_INFO, "RCSA: inprogress");
+		return 1;
+	}
+
+	wpa_printf(MSG_INFO, "RCSA: proceeding with Tx");
+
 	/* strip off ml-info iE */
 	if (mlinfo_present &&  (opt_ie_len >= 5))
 		opt_ie_len -= 5;
@@ -575,4 +623,61 @@ bool hostapd_rcsa_rx_hdl(struct hostapd_data *hapd,
 					   rebuilt_opt_ie_len);
 
 	return ret;
+}
+
+void hostapd_rcsa_trigger_channal_change(void *eloop_data, void *user_data)
+{
+	struct hostapd_iface *iface = eloop_data;
+	struct hostapd_rcsa_ctx *rcsa_ctx;
+
+	if (!iface)
+		return;
+
+	rcsa_ctx = &iface->iface_extn.rcsa_ctx;
+
+	if (!hostapd_is_rcsa_inprogress(iface))
+		return;
+
+
+	if ((rcsa_ctx->bh_discon_wait_cnt <= 0) ||
+	    (hostapd_csa_in_progress(iface))) {
+		hostapd_set_rcsa_inprogress(iface, false);
+		return;
+	}
+
+	rcsa_ctx->bh_discon_wait_cnt--;
+	if (hostapd_is_backhaul_sta_configured(iface)) {
+		eloop_register_timeout(HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_SEC, 0,
+				       hostapd_rcsa_trigger_channal_change,
+				       iface, NULL);
+		return;
+	}
+	wpa_printf(MSG_INFO,"RCSA: CSA timeout: trigger channel switch");
+	hostapd_dfs_start_channel_switch(iface);
+	hostapd_set_rcsa_inprogress(iface, false);
+}
+
+void hostapd_rcsa_handle_csa_timeout(struct hostapd_iface *iface)
+{
+	struct hostapd_rcsa_ctx *rcsa_ctx = &iface->iface_extn.rcsa_ctx;
+
+	if(!hostapd_is_rcsa_inprogress(iface))
+		return;
+
+	if (!iface->conf->conf_extn.ind_rptr) {
+		hostapd_set_rcsa_inprogress(iface, false);
+		return;
+	}
+
+	rcsa_ctx->bh_discon_wait_cnt = 3;
+	/* triggering CSA without waiting for BH disconnect would result
+	 * in different chan ctx (BH's old chan ctx and new chan ctx) leading
+	 * to csa failure in driver
+	 */
+	if (!eloop_is_timeout_registered(hostapd_rcsa_trigger_channal_change,
+					 iface, NULL)) {
+		eloop_register_timeout(HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_SEC, 0,
+				       hostapd_rcsa_trigger_channal_change,
+				       iface, NULL);
+	}
 }

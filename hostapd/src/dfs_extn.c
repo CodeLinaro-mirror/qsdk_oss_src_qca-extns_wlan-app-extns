@@ -21,6 +21,7 @@
 #include "dfs_extn.h"
 #include "utils/common.h"
 #include "utils/eloop.h"
+#include "qcn_ie_extn.h"
 
 #define IEEE80211_DFS_MIN_CAC_TIME_MS  60000
 #define HAPD_DFS_WAIT_FOR_CSA_FROM_ROOT_DUR 500000
@@ -362,7 +363,7 @@ int handle_action_vs_extn(struct hostapd_data *hapd,
 			return -1;
 		}
 
-		if (WPA_GET_BE24(pos + 1) != OUI_QCA) {
+		if (WPA_GET_BE24(pos + 1) != OUI_QCOM) {
 			wpa_printf(MSG_DEBUG,
 				   "vendor action OUI mismatch, ignoring");
 			return -1;
@@ -452,6 +453,7 @@ void hostapd_trigger_backhaul_sta_disconnect(void *eloop_data, void *user_data)
 		return;
 
 	wpa_printf(MSG_INFO, "CSA is not received from Root AP");
+	hostapd_rcsa_handle_csa_timeout(iface);
 	hostapd_ucode_trigger_bhsta_disconnect(iface);
 }
 
@@ -469,8 +471,13 @@ void hostapd_uplink_cancel_disconnect_timeout_extn(struct hostapd_iface *iface)
 	if (!iface)
 		return;
 
-	wpa_printf(MSG_INFO, "chanswitch: cancel radar handling timer");
-	eloop_cancel_timeout(hostapd_trigger_backhaul_sta_disconnect, iface, NULL);
+	if (hostapd_uplink_csa_bh_enabled(iface) ||
+	    hostapd_rcsa_tx_bh_enabled(iface)) {
+		wpa_printf(MSG_INFO, "chanswitch: cancel radar handling timer");
+		eloop_cancel_timeout(hostapd_trigger_backhaul_sta_disconnect, iface, NULL);
+		eloop_cancel_timeout(hostapd_rcsa_trigger_channal_change, iface, NULL);
+		hostapd_set_rcsa_inprogress(iface, false);
+	}
 }
 
 static void hostapd_notify_uplink_csa(struct hostapd_iface *iface, u8 channel, int freq,
