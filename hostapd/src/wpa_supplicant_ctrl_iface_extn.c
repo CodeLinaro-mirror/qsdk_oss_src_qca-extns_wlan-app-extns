@@ -77,6 +77,22 @@ int wpas_set_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq)
 	return 0;
 }
 
+void wpas_drv_set_peer_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq,
+					     const u8 *ies, size_t ies_len)
+{
+	struct wpa_supplicant_extn *wpas_extn = &wpa_s->wpas_extn;
+	struct ieee802_11_elems elems;
+
+	if (!ies || !ies_len || !wpa_s->conf->conf_extn.he_mcs_12_13_enabled)
+		return;
+
+	if (ieee802_11_parse_elems(ies, ies_len, &elems, 0) == ParseFailed)
+		return;
+
+	wpas_extn->he_mcs_12_13_peer_cap = elems.elems_extn.he_mcs_12_13_peer_cap;
+	wpas_set_he_mcs_12_13_peer_cap_extn(wpa_s, freq);
+}
+
 static int wpas_he_mcs_12_13_supp(struct wpa_supplicant *wpa_s, bool val)
 {
 	if (wpa_s->conf->conf_extn.he_mcs_12_13_enabled == val)
