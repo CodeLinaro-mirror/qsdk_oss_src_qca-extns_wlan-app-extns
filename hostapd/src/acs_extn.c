@@ -1011,3 +1011,131 @@ acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
 
 	return 0;
 }
+
+bool
+hostapd_hwbl_validate_6ghz(struct hostapd_iface *iface,
+			   struct hostapd_channel_data *chan,
+			   u16 bw, u16 center_freq, u16 punct_bitmap,
+			   u8 nl80211_pwr_mode)
+{
+	u8 target_pwr_mode = nl80211_pwr_mode;
+
+	if (!is_6ghz_freq(chan->freq))
+		return true;
+
+	if (iface->conf->enable_best_power_mode) {
+		u8 best_pwr_mode;
+
+		best_pwr_mode = hostapd_get_best_ap_6ghz_power_mode(
+			iface, chan->freq, center_freq, bw, punct_bitmap);
+		if (best_pwr_mode < NL80211_REG_NUM_POWER_MODES)
+			target_pwr_mode = best_pwr_mode;
+	}
+
+	if (target_pwr_mode >= NL80211_REG_NUM_POWER_MODES)
+		return false;
+
+	return hostapd_validate_chan_bw_in_pwr_mode(iface, chan->freq,
+						    center_freq, bw,
+						    punct_bitmap,
+						    target_pwr_mode);
+}
+
+static u16
+acs_get_chan_center_freq_extn(u16 freq, u32 bw, int bw320_offset)
+{
+	enum bw_type bw_type;
+	int center_chan;
+
+	if (bw == 20)
+		return freq;
+
+	switch (bw) {
+	case 40:
+		bw_type = ACS_BW40;
+		break;
+	case 80:
+		bw_type = ACS_BW80;
+		break;
+	case 160:
+		bw_type = ACS_BW160;
+		break;
+	case 320:
+		bw_type = bw320_offset == ACS_BW320_2 ? ACS_BW320_2 : ACS_BW320_1;
+		break;
+	default:
+		return 0;
+	}
+
+	center_chan = acs_get_bw_center_chan(freq, bw_type);
+	if (!center_chan)
+		return 0;
+
+	return (center_chan == 2) ? 5935 : 5950 + center_chan * 5;
+}
+
+bool
+acs_hwbl_candidate_ok(struct hostapd_iface *iface,
+		      struct hostapd_channel_data *chan,
+		      u32 bw, int bw320_offset, u16 punct_bitmap,
+		      u8 nl80211_pwr_mode)
+{
+	u16 center_freq;
+
+	if (!is_6ghz_freq(chan->freq))
+		return true;
+
+	center_freq = acs_get_chan_center_freq_extn(chan->freq, bw, bw320_offset);
+	if (!center_freq)
+		return false;
+
+	return hostapd_hwbl_validate_6ghz(iface, chan, bw, center_freq,
+					  punct_bitmap, nl80211_pwr_mode);
+}
+
+#ifdef CONFIG_IEEE80211BE
+static int acs_get_primary_index_extn(u16 freq, u32 bw, int bw320_offset)
+{
+	u16 cen_freq, start_freq;
+
+	if (bw == 20)
+		return 0;
+
+	cen_freq = acs_get_chan_center_freq_extn(freq, bw, bw320_offset);
+	if (!cen_freq)
+		return 0;
+
+	start_freq = cen_freq - (u16)(bw / 2) + 10;
+	return (freq - start_freq) / 20;
+}
+#endif /* CONFIG_IEEE80211BE */
+
+bool
+acs_hwbl_chan_ok_extn(struct hostapd_iface *iface,
+		      struct hostapd_hw_modes *mode, u32 bw, int bw320_offset,
+		      int n_chans, struct hostapd_channel_data *chan,
+		      long double factor)
+{
+	u16 punct_bitmap = iface->conf->punct_bitmap;
+	u16 saved_punct_bitmap = chan->punct_bitmap;
+
+	if (!is_6ghz_freq(chan->freq))
+		return true;
+
+	chan->punct_bitmap = punct_bitmap;
+#ifdef CONFIG_IEEE80211BE
+	if (iface->conf->ieee80211be) {
+		int index_primary = acs_get_primary_index_extn(chan->freq, bw,
+							       bw320_offset);
+
+		acs_update_puncturing_bitmap(iface, mode, bw, n_chans, chan,
+					     factor, index_primary);
+	}
+#endif /* CONFIG_IEEE80211BE */
+	punct_bitmap = chan->punct_bitmap;
+	chan->punct_bitmap = saved_punct_bitmap;
+
+	return acs_hwbl_candidate_ok(iface, chan, bw, bw320_offset,
+				     punct_bitmap,
+				     iface->conf->he_6ghz_reg_pwr_type);
+}
