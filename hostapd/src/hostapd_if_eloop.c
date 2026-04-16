@@ -94,6 +94,9 @@ struct hostapd_if_set_pmk_msg {
 	uint8_t *pmk;
 	size_t pmk_len;
 	uint8_t *pmkid;
+	int session_timeout;
+	struct dot1x_ctx *ctx;
+	bool dot1x_done;
 };
 
 struct hostapd_if_set_ptk_msg {
@@ -231,7 +234,8 @@ void __hostapd_if_set_beacon_probe_vendor_ies(char *ifname, uint8_t *buf,
 					      size_t buf_len, int link_id);
 void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 			  uint8_t *pmk, size_t pmk_len,
-			  uint8_t *pmkid);
+			  uint8_t *pmkid, int session_timeout,
+			  struct dot1x_ctx *ctx, bool dot1x_done);
 void __hostapd_if_set_ptk(char *ifname, uint8_t *sta_mac,
 			  uint8_t *kck, size_t kck_len,
 			  uint8_t *kek, size_t kek_len,
@@ -386,7 +390,8 @@ int hostapd_if_set_beacon_probe_vendor_ies(char *ifname, uint8_t *buf,
 
 static int hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 			      uint8_t *pmk, size_t pmk_len,
-			      uint8_t *pmkid)
+			      uint8_t *pmkid, int session_timeout,
+			      struct dot1x_ctx *ctx, bool dot1x_done)
 {
 	int __validate_ret =
 		hostapd_if_set_pmk_validate_inputs(ifname, sta_mac, pmk,
@@ -402,13 +407,17 @@ static int hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 	payload.msg.set_pmk.pmk = pmk;
 	payload.msg.set_pmk.pmk_len = pmk_len;
 	payload.msg.set_pmk.pmkid = pmkid;
+	payload.msg.set_pmk.session_timeout = session_timeout;
+	payload.msg.set_pmk.ctx = ctx;
+	payload.msg.set_pmk.dot1x_done = dot1x_done;
 
 	hostapd_if_set_pmk_dump_params(ifname, sta_mac, pmk, pmk_len, pmkid);
 
 	if (hostapd_if_eloop_sock >= 0)
 		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
 	else
-		__hostapd_if_set_pmk(ifname, sta_mac, pmk, pmk_len, pmkid);
+		__hostapd_if_set_pmk(ifname, sta_mac, pmk, pmk_len, pmkid, session_timeout,
+				     ctx, dot1x_done);
 	return 0;
 }
 
@@ -606,7 +615,8 @@ static void hostapd_if_eloop_socket_read(int sock, void *eloop_ctx,
 		struct hostapd_if_set_pmk_msg *msg = &payload->msg.set_pmk;
 
 		__hostapd_if_set_pmk(msg->ifname, msg->sta_mac, msg->pmk,
-				     msg->pmk_len, msg->pmkid);
+				     msg->pmk_len, msg->pmkid, msg->session_timeout,
+				     msg->ctx, msg->dot1x_done);
 		break;
 	}
 	case HOSTAPD_IF_ASYNC_SET_PTK: {

@@ -153,6 +153,13 @@ struct hostapd_if_frame_ctx {
 	} data;
 };
 
+struct dot1x_ctx {
+	uint8_t *identity;
+	size_t identity_len;
+	int8_t *cui;
+	size_t cui_len;
+	uint64_t multi_session_id;
+};
 enum hostapd_if_event_type {
 	HOSTAPD_IF_EVENT_AUTH_TX_COMPLETE,
 	HOSTAPD_IF_EVENT_ASSOC_TX_COMPLETE,
@@ -357,7 +364,8 @@ struct hostapd_external_app_object {
 	 * ASYNC: Set PMK
 	 */
 	int (*set_pmk)(char *ifname, uint8_t *sta_mac,
-		       uint8_t *pmk, size_t pmk_len, uint8_t *pmkid);
+		       uint8_t *pmk, size_t pmk_len, uint8_t *pmkid,
+		       int session_timeout, struct dot1x_ctx *ctx, bool dot1x_done);
 
 	int (*get_pmk)(char *ifname, uint8_t *sta_mac,
 		       uint8_t pmk[PMK_LEN_MAX], size_t *pmk_len,
