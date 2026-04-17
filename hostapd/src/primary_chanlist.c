@@ -90,6 +90,7 @@ int hostapd_set_primary_chanlist(struct hostapd_iface *iface,
 	}
 
 	conf_extn->num_primary_freq = (u8)n;
+	hostapd_update_primary_chanlist_flags(iface);
 
 	if (n > 0)
 		wpa_printf(MSG_INFO,
@@ -158,4 +159,37 @@ int hostapd_get_primary_chanlist(struct hostapd_iface *iface,
 	pos += ret;
 
 	return (int)pos;
+}
+
+void
+hostapd_update_primary_chanlist_flags(struct hostapd_iface *iface)
+{
+	struct hostapd_config_extn *conf_extn;
+	struct hostapd_hw_modes *mode;
+	int i, j;
+
+	if (!iface || !iface->conf || !iface->current_mode)
+		return;
+
+	conf_extn = &iface->conf->conf_extn;
+	mode = iface->current_mode;
+
+	for (i = 0; i < mode->num_channels; i++) {
+		if (conf_extn->num_primary_freq) {
+			mode->channels[i].extn.is_non_primary = true;
+			for (j = 0; j < conf_extn->num_primary_freq; j++) {
+				if (mode->channels[i].freq ==
+						conf_extn->primary_freq_list[j]) {
+					mode->channels[i].extn.is_non_primary = false;
+					break;
+				}
+			}
+		} else {
+			mode->channels[i].extn.is_non_primary = false;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "PRIMARY_CHAN: updated flags on %d channel(s) in hw table",
+		   mode->num_channels);
 }

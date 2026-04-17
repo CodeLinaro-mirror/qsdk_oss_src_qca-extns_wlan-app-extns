@@ -371,6 +371,10 @@ struct hostapd_iface_extn {
 	bool dcs_in_progress; /* DCS-triggered channel switch is in progress */
 };
 
+struct hostapd_channel_data_extn {
+	bool is_non_primary;
+};
+
 struct hostapd_hw_modes_extn {
 #ifdef CONFIG_QCN_APP_EXTN
 	struct qacs_data_extn qacs_extn;
@@ -1296,5 +1300,6 @@ int hostapd_set_primary_chanlist(struct hostapd_iface *iface,
 				 const char *chan_str);
 int hostapd_get_primary_chanlist(struct hostapd_iface *iface,
 				 char *buf, size_t buflen);
+void hostapd_update_primary_chanlist_flags(struct hostapd_iface *iface);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
