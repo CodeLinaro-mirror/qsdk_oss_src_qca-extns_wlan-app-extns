@@ -269,7 +269,7 @@ struct dcs_conf_extn {
 	 * DCS event action bitmap.
 	 * 0 = discard all DCS interference events.
 	 * BIT(0) = process CW, BIT(1) = process WLAN,
-	 * BIT(2) = process AWGN, BIT(4) = process OBSS.
+	 * BIT(4) = process OBSS.
 	 */
 	u16 dcs_event_action;
 
@@ -277,7 +277,7 @@ struct dcs_conf_extn {
 	 * DCS event notification bitmap.
 	 * 0 = do not emit INTERFERENCE_DETECTED event.
 	 * BIT(0) = notify CW, BIT(1) = notify WLAN,
-	 * BIT(2) = notify AWGN, BIT(4) = notify OBSS.
+	 * BIT(4) = notify OBSS.
 	 */
 	u16 dcs_event_notify;
 };
@@ -326,7 +326,7 @@ enum dynamic_acs_action_extn {
 #define HOSTAPD_DCS_MAX_TRIGGERS 3
 #define HOSTAPD_DCS_AGING_TIME_SEC 300
 
-#define ALLOWED_DCS_EVENT_ACTION_MASK (DCS_CW_INTF | DCS_WLAN_INTF | DCS_AWGN_INTF | DCS_OBSS_INTF)
+#define ALLOWED_DCS_EVENT_ACTION_MASK (DCS_CW_INTF | DCS_WLAN_INTF | DCS_OBSS_INTF)
 
 #define DCS_ENABLE_TIME         (30 * 60)
 #define DCS_ENABLE_TIME_MIN     (5 * 60)
