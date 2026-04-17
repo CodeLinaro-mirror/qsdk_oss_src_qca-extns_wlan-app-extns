@@ -22,6 +22,8 @@ int hostapd_cli_cmd_get_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc, char *a
 int hostapd_cli_cmd_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 #endif /* CONFIG_IEEE80211AC */
 
+int hostapd_cli_cmd_sync_iface_freq_extn(struct wpa_ctrl *ctrl, int argc,
+					 char *argv[]);
 int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_dcs_wlan_intr_params(struct wpa_ctrl *ctrl, int argc,
 					    char *argv[]);
@@ -73,6 +75,8 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 		"acs invoke <0|1>     : invoke ACS (0=dynamicACS+CSA)|(1=DynamicACS)\n"}, \
 	{ "mu_cap_war", hostapd_cli_cmd_mu_cap_war_extn, NULL, \
 		"enable/disable VHT MU-MIMO capability for MU_CAP_WAR clients" }, \
+	{ "sync_iface_freq", hostapd_cli_cmd_sync_iface_freq_extn, NULL, \
+		"= sync runtime interface frequency from current config" }, \
 	{ "get_mu_cap_war", hostapd_cli_cmd_get_mu_cap_war_extn, NULL, \
 		"get MU_CAP_WAR status" }, \
 	{ "dcs", hostapd_cli_cmd_dcs_extn, NULL, \

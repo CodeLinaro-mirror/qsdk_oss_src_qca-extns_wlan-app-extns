@@ -284,6 +284,29 @@ static int hostapd_ctrl_get_rnr_6ghz_colocated_extn(struct hostapd_data *hapd,
 	return ret;
 }
 
+#ifdef CONFIG_TESTING_OPTIONS
+static int hostapd_ctrl_iface_sync_iface_freq_extn(struct hostapd_data *hapd)
+{
+#ifdef NEED_AP_MLME
+	unsigned int freq;
+
+	if (hapd->started) {
+		wpa_printf(MSG_ERROR, "SYNC_IFACE_FREQ: Cannot sync frequency on already started interface");
+		return -1;
+	}
+
+	freq = hostapd_hw_get_freq(hapd, hapd->iface->conf->channel);
+	if (!freq)
+		return -1;
+
+	hapd->iface->freq = freq;
+	return 0;
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME */
+}
+#endif /* CONFIG_TESTING_OPTIONS */
+
 /**
  * hostapd_iface_rep_ap_enable_extn - Handle REP_AP_ENABLE control command
  * @iface: Pointer to hostapd interface on which repeater AP is enabled
@@ -551,6 +574,11 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "DCS ", 4) == 0) {
 		reply_len_extn = hostapd_ctrl_iface_dcs_extn(hapd, buf + 4, reply,
 							     reply_size);
+#ifdef CONFIG_TESTING_OPTIONS
+	} else if (os_strcmp(buf, "SYNC_IFACE_FREQ") == 0) {
+		if (hostapd_ctrl_iface_sync_iface_freq_extn(hapd))
+			reply_len_extn = -1;
+#endif /* CONFIG_TESTING_OPTIONS */
 	} else if (os_strncmp(buf, "SET_VLP_NON_PRIOR_PENALTY ", 22) == 0) {
 		if (hostapd_ctrl_iface_set_non_prior_penalty_extn(hapd, buf + 22))
 			reply_len_extn = -1;
