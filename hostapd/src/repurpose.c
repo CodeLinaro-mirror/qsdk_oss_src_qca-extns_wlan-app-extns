@@ -201,6 +201,49 @@ refresh_beacon:
 	return 0;
 }
 
+static const char *
+hostapd_repurpose_mode_str_extn(
+	enum repurpose_mode mode)
+{
+	switch (mode) {
+	case REPURPOSE_11AC:
+		return "11ac";
+	case REPURPOSE_11AX:
+		return "11ax";
+	case REPURPOSE_11BE:
+		return "11be";
+	default:
+		return "invalid";
+	}
+}
+
+int
+hostapd_validate_mbssid_group_repurpose_mode_extn(struct hostapd_data *hapd)
+{
+	struct hostapd_data *txbss;
+
+	txbss = hostapd_mbssid_get_tx_bss(hapd);
+	if (!txbss || !txbss->conf) {
+		wpa_printf(MSG_ERROR,
+			   "BSS %s of MBSSID group txbss or txbss->conf is NULL",
+			   hapd->conf->iface);
+		return -1;
+	}
+
+	if (hapd == txbss)
+		return 0;
+
+	if (txbss->conf->bss_extn.repurpose_mode == hapd->conf->bss_extn.repurpose_mode)
+		return 0;
+
+	wpa_printf(MSG_ERROR,
+		   "Repurpose mode mismatch txbss: %s and non tx bss: %s txbss mode %s non tx bss mode %s",
+		   txbss->conf->iface, hapd->conf->iface,
+		   hostapd_repurpose_mode_str_extn(txbss->conf->bss_extn.repurpose_mode),
+		   hostapd_repurpose_mode_str_extn(hapd->conf->bss_extn.repurpose_mode));
+	return -1;
+}
+
 struct hostapd_data *
 hostapd_get_non_repurposed_link_of_mld_extn(struct hostapd_data *hapd)
 {
