@@ -304,7 +304,7 @@ struct hostapd_config_extn {
 	/*
 	 * Primary channel list – restricts ACS, DFS channel hopping, and
 	 * scan operations to a user-configured subset of the regulatory
-	 * channel list (ChanSel-001..003).
+	 * channel list.
 	 * Stored as frequencies (MHz, u16 is sufficient for all bands).
 	 */
 	u16 primary_freq_list[MAX_NUM_CHANNELS];
@@ -956,6 +956,12 @@ hostapd_get_primary_chanlist(struct hostapd_iface *iface,
 	return -1;
 }
 
+static inline int
+hostapd_is_chan_in_primary_list(struct hostapd_iface *iface, u16 freq)
+{
+	return 1;
+}
+
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -1295,11 +1301,13 @@ int hostapd_drv_mark_vap_submode_extn(void *priv, unsigned int vendor_id,
 
 #define MGMT_MIN_FRAME_SIZE_REQUIRED_MLO_MBSSID 2000
 
-/* Primary channel list APIs (ChanSel-001..012) */
+/* Primary channel list APIs  */
 int hostapd_set_primary_chanlist(struct hostapd_iface *iface,
 				 const char *chan_str);
 int hostapd_get_primary_chanlist(struct hostapd_iface *iface,
 				 char *buf, size_t buflen);
 void hostapd_update_primary_chanlist_flags(struct hostapd_iface *iface);
+int hostapd_is_chan_in_primary_list(struct hostapd_iface *iface, u16 freq);
+
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
