@@ -12,7 +12,9 @@
 #include "drivers/driver_nl80211.h"
 #include "common/ieee802_11_common.h"
 #include "ap/hostapd.h"
+#include "ap/ieee802_11.h"
 #include "ap/beacon.h"
+#include "ap/hw_features.h"
 #include "common/wpa_ctrl.h"
 #include "cmn.h"
 #include "dcs.h"
@@ -1052,6 +1054,7 @@ int hostapd_dcs_channel_change(struct csa_settings *settings,
                                int new_centre_freq)
 {
 	int i, ret = 0;
+	u16 prev_punct_bitmap;
 
 	wpa_printf(MSG_DEBUG,
 		   "DCS: channel_change req freq=%d cf1=%d width=%d cur_freq=%d cur_cf1=%d cur_width=%d",
@@ -1120,6 +1123,10 @@ int hostapd_dcs_channel_change(struct csa_settings *settings,
 		}
 	}
 
+	prev_punct_bitmap = iface->conf->conf_extn.cur_chan_params.punct_bitmap;
+	iface->conf->conf_extn.cur_chan_params.punct_bitmap =
+		settings->freq_params.punct_bitmap;
+
 	for (i = 0; i < iface->num_bss; i++) {
 		hostapd_chan_switch_config(iface->bss[i],
 				&settings->freq_params);
@@ -1141,7 +1148,53 @@ int hostapd_dcs_channel_change(struct csa_settings *settings,
 		}
 	}
 
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: channel switch failed; restoring puncture bitmap 0x%x -> 0x%x",
+			   settings->freq_params.punct_bitmap, prev_punct_bitmap);
+		iface->conf->conf_extn.cur_chan_params.punct_bitmap =
+			prev_punct_bitmap;
+	}
+
 	return ret;
+}
+
+static u16 hostapd_dcs_find_legitimate_puncture_pattern(u16 pp, int freq,
+							int center_freq, u16 bw)
+{
+	const u16 *pp_arr;
+	u16 num_pp = 0;
+	u16 pp_mask = 0;
+	u16 pri_chan_pos = 0;
+	u16 max_subch;
+	u16 i;
+	int start_freq;
+
+	pp_arr = hostapd_get_valid_puncture_pattern_arr(bw, &num_pp, &pp_mask);
+	pp &= pp_mask;
+
+	if (!pp_arr || !num_pp)
+		return 0;
+
+	start_freq = (bw == 20) ? freq : center_freq - (bw / 2) + 10;
+	if (freq < start_freq)
+		return PUNCTURE_INVALID;
+
+	pri_chan_pos = (freq - start_freq) / 20;
+	max_subch = bw / 20;
+	if (!max_subch || pri_chan_pos >= max_subch)
+		return PUNCTURE_INVALID;
+
+	if (is_punct_bitmap_valid(bw, pri_chan_pos, pp))
+		return pp;
+
+	for (i = 0; i < num_pp; i++) {
+		if (pp_arr[i] == ((pp | pp_arr[i]) & pp_mask) &&
+		    is_punct_bitmap_valid(bw, pri_chan_pos, pp_arr[i]))
+			return pp_arr[i];
+	}
+
+	return PUNCTURE_INVALID;
 }
 
 void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
@@ -1206,8 +1259,14 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 		return;
 	}
 
-	if ((type == DCS_CW_INTF || type == DCS_WLAN_INTF ||
-	     type == DCS_OBSS_INTF) &&
+	if (type == DCS_OBSS_INTF &&
+	    hostapd_is_bh_sta_connecting_or_connected_extn(iface)) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: dropping OBSS event in repeater mode");
+		return;
+	}
+
+	if ((type == DCS_CW_INTF || type == DCS_WLAN_INTF) &&
 	    !(rand_chan_bitmap & type)) {
 		int acs_ret;
 
@@ -1238,7 +1297,9 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 
 		settings.freq_params.freq = new_freq;
 	} else {
-		u32 start_freq;
+		u16 obss_pp = 0;
+		u16 op_pp = 0;
+		u16 leg_pp;
 		intf_bitmap = dcs_intf_event->chan_bw_interference_bitmap;
 		settings.freq_params.freq = freq;
 		new_chan_width = ch_width;
@@ -1246,13 +1307,37 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 
 		bw = channel_width_to_int(new_chan_width);
 
-		start_freq = cf1-(bw/2);
+		obss_pp = intf_bitmap;
 
-		if (!is_punct_bitmap_valid(bw, (freq - start_freq)/20, intf_bitmap)) {
-			wpa_printf(MSG_ERROR, "Puncture Bitmap is invalid, dropping this event!!");
-			return;
+		leg_pp = hostapd_dcs_find_legitimate_puncture_pattern(
+					    obss_pp, freq, cf1, bw);
+		if (leg_pp == PUNCTURE_INVALID) {
+			wpa_printf(MSG_DEBUG,
+				   "DCS: OBSS bitmap 0x%x invalid, retry with intersection",
+				   obss_pp);
+			op_pp = iface->conf->conf_extn.cur_chan_params.punct_bitmap;
+			if (!op_pp)
+				op_pp = iface->conf->punct_bitmap;
+			obss_pp &= op_pp;
+			leg_pp = hostapd_dcs_find_legitimate_puncture_pattern(
+					    obss_pp, freq, cf1, bw);
+			if (leg_pp == PUNCTURE_INVALID) {
+				wpa_printf(MSG_ERROR,
+					   "Puncture bitmap is invalid, dropping this event");
+				return;
+			}
 		}
-		settings.freq_params.punct_bitmap = intf_bitmap;
+		if (leg_pp != obss_pp) {
+			wpa_printf(MSG_DEBUG,
+				   "DCS: adjusted puncture bitmap 0x%x -> 0x%x",
+				   obss_pp, leg_pp);
+		}
+		intf_bitmap = obss_pp;
+		wpa_printf(MSG_DEBUG,
+			   "DCS: OBSS final puncture bitmap 0x%x (obss=0x%x)",
+			   leg_pp, obss_pp);
+
+		settings.freq_params.punct_bitmap = leg_pp;
 	}
 
 	wpa_printf(MSG_ERROR, "type=%d, input freq=%d, ch_width=%d, cf1=%d cf2=%d intf_bitmap:0x%x", type, freq, ch_width, cf1, cf2, intf_bitmap);
@@ -1276,6 +1361,8 @@ void update_chan_params(struct hostapd_data *hapd, int cf1, int cf2, enum chan_w
 	hapd->iface->conf->conf_extn.cur_chan_params.cf1 = cf1;
         hapd->iface->conf->conf_extn.cur_chan_params.cf2 = cf2;
         hapd->iface->conf->conf_extn.cur_chan_params.chan_width = chwidth;
+	hapd->iface->conf->conf_extn.cur_chan_params.punct_bitmap =
+		hapd->iface->conf->punct_bitmap;
 }
 
 bool dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf,

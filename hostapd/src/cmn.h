@@ -171,6 +171,7 @@ struct chan_params {
 	u32 cf1;
 	u32 cf2;
 	enum chan_width chan_width;
+	u16 punct_bitmap;
 };
 
 union wpa_event_data_extn {
