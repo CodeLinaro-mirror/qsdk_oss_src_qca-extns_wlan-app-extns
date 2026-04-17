@@ -76,6 +76,12 @@ enum dfs_nol_ie_bw_mhz {
 	DFS_NOL_IE_BW_320_MHZ = 320,
 };
 
+enum dfs_channel_type_extn {
+	DFS_ANY_CHANNEL_EXTN,
+	DFS_AVAILABLE_EXTN,	/* non-radar or radar-available */
+	DFS_NO_CAC_YET_EXTN,	/* radar-not-yet-available */
+};
+
 int handle_action_extn(struct hostapd_data *hapd,
 		       const struct ieee80211_mgmt *mgmt, size_t len,
 		       unsigned int freq)
@@ -853,6 +859,91 @@ int dfs_get_nol_ie_from_iface(struct hostapd_iface *iface,
 
 	wpa_printf(MSG_INFO, "DFS NOL IE: Extracted %zu NOL channels",
 		   nol_list->count);
+
+	return 0;
+}
+
+
+int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
+{
+	struct hostapd_channel_data *channel;
+	struct hostapd_hw_modes *cmode = iface->current_mode;
+	struct hostapd_freq_params freq_params;
+	int secondary_channel;
+	int ieee80211_mode = IEEE80211_MODE_AP;
+	int err;
+	u8 oper_centr_freq_seg0_idx;
+	u8 oper_centr_freq_seg1_idx;
+	u8 current_vht_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	u8 new_vht_oper_chwidth;
+	int channel_type = DFS_AVAILABLE_EXTN;
+
+	wpa_printf(MSG_DEBUG,
+		   "%s called (CAC active: %s, CSA active: %s)",
+		   __func__, iface->cac_started ? "yes" : "no",
+		   hostapd_csa_in_progress(iface) ? "yes" : "no");
+
+	if (iface->cac_started)
+		return hostapd_dfs_start_channel_switch_cac_helper(iface);
+
+	if (iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI)
+		channel_type = DFS_ANY_CHANNEL_EXTN;
+
+	channel = dfs_get_valid_channel_helper(iface, &secondary_channel,
+					       &oper_centr_freq_seg0_idx,
+					       &oper_centr_freq_seg1_idx,
+					       channel_type);
+
+	if (!channel) {
+		channel_type = DFS_ANY_CHANNEL_EXTN;
+		channel = dfs_downgrade_bandwidth_helper(iface, &secondary_channel,
+							 &oper_centr_freq_seg0_idx,
+							 &oper_centr_freq_seg1_idx,
+							 &channel_type);
+		if (!channel) {
+			hostapd_disable_iface(iface);
+			hostapd_enable_iface(iface);
+			return 0;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "DFS restarting on a fresh channel %d without CSA",
+		   channel->chan);
+	new_vht_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	hostapd_set_oper_chwidth(iface->conf, current_vht_oper_chwidth);
+
+	os_memset(&freq_params, 0, sizeof(freq_params));
+	err = hostapd_set_freq_params(&freq_params,
+				      iface->conf->hw_mode,
+				      channel->freq, channel->chan,
+				      iface->conf->enable_edmg,
+				      iface->conf->edmg_channel,
+				      iface->conf->ieee80211n,
+				      iface->conf->ieee80211ac,
+				      iface->conf->ieee80211ax,
+				      iface->conf->ieee80211be,
+				      iface->conf->ieee80211bn,
+				      secondary_channel,
+				      new_vht_oper_chwidth,
+				      oper_centr_freq_seg0_idx,
+				      oper_centr_freq_seg1_idx,
+				      cmode->vht_capab,
+				      &cmode->he_capab[ieee80211_mode],
+				      &cmode->eht_capab[ieee80211_mode],
+				      &cmode->uhr_capab[ieee80211_mode],
+				      iface->radar_bit_pattern,
+				      iface->conf->he_6ghz_reg_pwr_type,
+				      iface->conf->bandwidth_device,
+				      iface->conf->center_freq_device);
+	if (err) {
+		wpa_printf(MSG_ERROR,
+			   "DFS failed to calculate restart freq params");
+	        hostapd_disable_iface(iface);
+	        return err;
+	}
+
+	hostapd_switch_channel_fallback(iface, &freq_params);
 
 	return 0;
 }

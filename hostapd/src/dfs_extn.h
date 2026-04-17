@@ -32,6 +32,7 @@ int dfs_decode_nol_ie(const u8 *ie, size_t ie_len,
 void dfs_free_nol_ie_list(struct dfs_nol_ie_list *nol_list);
 int dfs_encode_nol_ie(struct dfs_nol_ie_list *nol_list, u8 *buf,
 		      size_t buf_len);
+int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface);
 
 #endif /* CONFIG_QCN_EXTN */
 #endif /* DFS_EXTN_H */
