@@ -19,6 +19,7 @@
 #include "hostapd_rptr_extn.h"
 #include "cmn.h"
 #include "ap/ieee802_11.h"
+#include "ap/sta_info.h"
 
 #define DEF_VLP_NON_PRIOR_PENALTY	30
 #define DEF_OBSS_INTERVAL		300
@@ -1465,13 +1466,67 @@ int hostapd_set_he_mcs_12_13_peer_cap_extn(struct hostapd_data *hapd)
 	wpa_printf(MSG_INFO,
 		   "he_mcs_12_13 peer capability = 0x%04x set to driver successfully",
 		   iface_extn->he_mcs_12_13_peer_cap);
+
+	return 0;
+}
+
+static int hostapd_he_mcs_12_13_deauth_sta(struct hostapd_data *hapd,
+					   struct sta_info *sta, void *ctx)
+{
+	ap_sta_disconnect(hapd, sta, sta->addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
+
+	return 0;
+}
+
+int hostapd_set_he_mcs_12_13_cap_extn(struct hostapd_data *hapd)
+{
+	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
+	u16 radio_cap = 0;
+	u8 radio_idx;
+
+	if (hapd->iconf->conf_extn.he_mcs_12_13_enabled) {
+		if (hapd->iface->current_hw_info) {
+			radio_idx = hapd->iface->current_hw_info->hw_idx;
+		} else {
+			wpa_printf(MSG_ERROR, "HE MCS 12/13: current hw_info is not available to determine radio idx");
+			return -1;
+		}
+
+		if (nl80211_get_he_mcs_12_13_extn(hapd->drv_priv, radio_idx, &radio_cap))
+			return -1;
+	}
+
+	iface_extn->he_mcs_12_13_radio_cap = radio_cap;
+	wpa_printf(MSG_INFO,
+		   "he_mcs_12_13_supp set to %d radio_capabilities = 0x%04x",
+		   hapd->iconf->conf_extn.he_mcs_12_13_enabled,
+		   iface_extn->he_mcs_12_13_radio_cap);
+
+	return 0;
+}
+
+static int hostapd_he_mcs_12_13_supp_extn(struct hostapd_data *hapd, bool val)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+
+	conf_extn->he_mcs_12_13_enabled = val;
+	if (hostapd_set_he_mcs_12_13_cap_extn(hapd)) {
+		wpa_printf(MSG_ERROR, "Failed to set HE MCS 12 13 support");
+		return -1;
+	}
+
+	if (ieee802_11_update_beacons(hapd->iface) < 0)
+		wpa_printf(MSG_WARNING, "he_mcs_12_13_supp: beacon update failed");
+
+	ap_for_each_sta(hapd, hostapd_he_mcs_12_13_deauth_sta, NULL);
+
 	return 0;
 }
 
 int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *value)
 {
 	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
-	int val, ret;
+	int val, ret = -1;
 
 	if (os_strcasecmp(cmd, "rnr_member_ess_colocated_en") == 0) {
 		val = atoi(value);
@@ -1514,6 +1569,9 @@ int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *valu
 			return -1;
 		}
 		return ret;
+	} else if (os_strcasecmp(cmd, "he_mcs_12_13_supp") == 0) {
+		val = !!atoi(value);
+		return hostapd_he_mcs_12_13_supp_extn(hapd, val);
 	}
 
 	return 0;
@@ -1522,7 +1580,8 @@ int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *valu
 int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *cmd,
 				char *buf, size_t buflen)
 {
-	int res;
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	int res = -1;
 
 	if (os_strcasecmp(cmd, "nontx_profile_elem_size") == 0) {
 		res = os_snprintf(buf, buflen, "Optional elem size = %u\nVendor elem size = %u\n",
@@ -1530,10 +1589,14 @@ int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *cmd,
 				  hapd->conf->bss_extn.nontx_vendor_elem_size);
 		if (os_snprintf_error(buflen, res))
 			return -1;
-		return res;
+	} else if (os_strcasecmp(cmd, "he_mcs_12_13_supp") == 0) {
+		res = os_snprintf(buf, buflen, "he_mcs_12_13_supp = %u\n",
+				  conf_extn->he_mcs_12_13_enabled);
+		if (os_snprintf_error(buflen, res))
+			return -1;
 	}
 
-	return -1;
+	return res;
 }
 
 

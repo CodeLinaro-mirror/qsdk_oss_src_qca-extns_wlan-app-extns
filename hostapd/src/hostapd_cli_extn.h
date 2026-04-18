@@ -192,8 +192,11 @@ int hostapd_cli_cmd_get_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *ar
 	{ "get_disablecoexist", hostapd_cli_cmd_get_disablecoexist, NULL, \
 		"Get disable coexistence config" },
 
+#define HOSTAPD_CLI_CMD_FIELDS_EXTN \
+	"he_mcs_12_13_supp",
 #else
 #define HOSTAPD_CLI_CMDS_EXTN
+#define HOSTAPD_CLI_CMD_FIELDS_EXTN
 
 #endif /* CONFIG_QCN_EXTN */
 

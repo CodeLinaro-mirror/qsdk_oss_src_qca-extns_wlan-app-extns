@@ -53,3 +53,87 @@ int wpas_set_he_mcs_12_13_peer_cap_extn(struct wpa_supplicant *wpa_s, int freq)
 
 	return 0;
 }
+
+int wpas_set_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq)
+{
+	struct wpa_supplicant_extn *wpas_extn = &wpa_s->wpas_extn;
+	u16 radio_cap = 0;
+	u8 radio_idx;
+
+	if (wpa_s->conf->conf_extn.he_mcs_12_13_enabled) {
+		if (wpas_get_radio_idx_for_freq(wpa_s, freq, &radio_idx))
+			return -1;
+
+		if (nl80211_get_he_mcs_12_13_extn(wpa_s->drv_priv, radio_idx, &radio_cap))
+			return -1;
+	}
+
+	wpas_extn->he_mcs_12_13_radio_cap = radio_cap;
+	wpa_printf(MSG_INFO,
+		   "he_mcs_12_13_supp set to %d radio_capabilities = 0x%04x for freq %d MHz",
+		   wpa_s->conf->conf_extn.he_mcs_12_13_enabled,
+		   wpas_extn->he_mcs_12_13_radio_cap, freq);
+
+	return 0;
+}
+
+static int wpas_he_mcs_12_13_supp(struct wpa_supplicant *wpa_s, bool val)
+{
+	if (wpa_s->conf->conf_extn.he_mcs_12_13_enabled == val)
+		return 0;
+
+	wpa_s->conf->conf_extn.he_mcs_12_13_enabled = val;
+	if (wpas_set_he_mcs_12_13_cap_extn(wpa_s, wpa_s->assoc_freq)) {
+		wpa_printf(MSG_ERROR, "Failed to set HE MCS 12 13 support");
+		return -1;
+	}
+
+	if (wpa_s->wpa_state >= WPA_ASSOCIATED) {
+		wpa_s->reassociate = 1;
+		wpa_supplicant_deauthenticate(wpa_s,
+					      WLAN_REASON_DEAUTH_LEAVING);
+	}
+
+	return -1;
+}
+
+int wpas_ctrl_iface_set_extn(struct wpa_supplicant *wpa_s, const char *cmd,
+			     const char *value, bool *is_extn_cmd)
+{
+	int ret = -1;
+	bool val;
+
+	if (!is_extn_cmd)
+		return -1;
+
+	*is_extn_cmd = true;
+	if (os_strcasecmp(cmd, "he_mcs_12_13_supp") == 0) {
+		val = !!atoi(value);
+		ret = wpas_he_mcs_12_13_supp(wpa_s, val);
+	} else {
+		*is_extn_cmd = false;
+	}
+
+	return ret;
+}
+
+int wpas_ctrl_iface_get_extn(struct wpa_supplicant *wpa_s, const char *cmd,
+			     char *buf, size_t buflen, bool *is_extn_cmd)
+{
+	int ret = -1;
+
+	if (!is_extn_cmd)
+		return -1;
+
+	*is_extn_cmd = true;
+	if (os_strcasecmp(cmd, "he_mcs_12_13_supp") == 0) {
+		ret = os_snprintf(buf, buflen, "he_mcs_12_13_supp = %u\n",
+				  wpa_s->conf->conf_extn.he_mcs_12_13_enabled);
+		if (os_snprintf_error(buflen, ret))
+			return -1;
+	} else {
+		*is_extn_cmd = false;
+	}
+
+	return ret;
+}

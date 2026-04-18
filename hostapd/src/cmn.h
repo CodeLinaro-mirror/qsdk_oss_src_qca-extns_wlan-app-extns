@@ -19,6 +19,7 @@
 #include "repurpose.h"
 #include "../src/common/qca-vendor.h"
 #include "rropinfo.h"
+#include "wpa_config_extn.h"
 
 struct hostapd_config;
 struct sta_info;
@@ -54,6 +55,7 @@ struct wpa_driver_scan_params;
 struct dl_list;
 struct hostapd_hw_modes;
 struct wpa_scan_res;
+struct wpa_config;
 
 struct ieee80211_240mhz_vendor_oper_extn {
 	u8 ccfs1;
@@ -318,6 +320,11 @@ struct hostapd_config_extn {
 	int ind_rptr;    /* 1 - Independent Rep; 0 - Dependent */
 	bool qacs_enable;
 	bool uplink_csa;
+
+	/* Indicates whether HE MCS 12/13 support is enabled
+	 * (the support is enabled by default)
+	 */
+	bool he_mcs_12_13_enabled;
 	struct qacs_conf_extn qacs_conf;
 	struct chan_params cur_chan_params;
 	struct dcs_conf_extn dcs_conf;
@@ -436,6 +443,12 @@ struct hostapd_iface_extn {
 	u16 dcs_excess_trigger_enable_bitmap; /* Bitmap used while DCS is disabled due to excessive triggers*/
 	u16 dcs_excess_trigger_restore_bitmap; /* Bitmap restored after DCS is enabled back */
 	bool dcs_in_progress; /* DCS-triggered channel switch is in progress */
+
+	/* Radio capability for HE MCS 12/13 support */
+	u16 he_mcs_12_13_radio_cap;
+
+	/* Peer capability for HE MCS 12/13 support. */
+	u16 he_mcs_12_13_peer_cap;
 };
 
 struct hostapd_channel_data_extn {
@@ -454,6 +467,25 @@ enum hostapd_dcs_intf_type {
 	DCS_AWGN_INTF   = 0x0004,
 	DCS_AFC_INTF    = 0x0008,
 	DCS_OBSS_INTF   = 0x0010,
+};
+
+/**
+ * struct wpa_supplicant_extn - QCN extension struct for struct wpa_supplicant.
+ * @he_mcs_12_13_radio_cap: Self hardware capability for HE MCS 12/13 support.
+ * @he_mcs_12_13_peer_cap: Peer capability for HE MCS 12/13 support.
+ */
+struct wpa_supplicant_extn {
+	u16 he_mcs_12_13_radio_cap;
+	u16 he_mcs_12_13_peer_cap;
+};
+
+/**
+ * struct wpa_config_extn - QCN extension configuration parameters.
+ * @he_mcs_12_13_enabled: Indicates whether HE MCS 12/13 support is enabled.
+ *                        (enabled by default)
+ */
+struct wpa_config_extn {
+	bool he_mcs_12_13_enabled;
 };
 
 int get_centre_freq_6g(int chan_idx, int chan_width, int *centre_freq);
@@ -727,6 +759,22 @@ hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
 			       size_t buflen, size_t curr_len)
 {
 	return curr_len;
+}
+
+static inline int
+wpas_ctrl_iface_set_extn(struct wpa_supplicant *wpa_s, const char *cmd,
+			 const char *value, bool *is_extn_cmd)
+{
+	*is_extn_cmd = false;
+	return -EOPNOTSUPP;
+}
+
+static inline int
+wpas_ctrl_iface_get_extn(struct wpa_supplicant *wpa_s, const char *cmd,
+			 char *buf, size_t buflen, bool *is_extn_cmd)
+{
+	*is_extn_cmd = false;
+	return -EOPNOTSUPP;
 }
 
 static inline int
@@ -1102,6 +1150,24 @@ wpas_set_he_mcs_12_13_peer_cap_extn(struct wpa_supplicant *wpa_s, int freq)
 	return -1;
 }
 
+static inline int
+hostapd_set_he_mcs_12_13_cap_extn(struct hostapd_data *hapd)
+{
+	return -1;
+}
+
+static inline int
+wpas_set_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq)
+{
+	return -1;
+}
+
+static inline void
+wpa_config_alloc_empty_extn(struct wpa_config *config)
+{
+	return;
+}
+
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -1321,6 +1387,10 @@ int nl80211_get_he_mcs_12_13_extn(void *priv, u8 radio_idx, u16 *radio_cap);
  * Returns: 0 on success, negative on failure.
  */
 int nl80211_set_he_mcs_12_13_peer_cap_extn(void *priv, u8 radio_idx, u16 peer_cap);
+int wpas_ctrl_iface_set_extn(struct wpa_supplicant *wpa_s, const char *cmd,
+			     const char *value, bool *is_extn_cmd);
+int wpas_ctrl_iface_get_extn(struct wpa_supplicant *wpa_s, const char *cmd,
+			     char *buf, size_t buflen, bool *is_extn_cmd);
 int wpa_ctrl_get_freq_list_extn(struct wpa_supplicant *wpa_s,
 				char *reply, int reply_size);
 int wpa_ctrl_chan_sw_finished_notify_extn(struct wpa_supplicant *wpa_s,
@@ -1599,7 +1669,38 @@ int hostapd_drv_mark_vap_submode_extn(void *priv, unsigned int vendor_id,
 				      const char *ifname,
 				      u8 vap_submode);
 
+/**
+ * hostapd_set_he_mcs_12_13_cap_extn - Fetch and store the HE MCS 12/13
+ * hardware radio capability for the given BSS.
+ * @hapd: per-BSS hostapd context
+ *
+ * Queries the driver for the self HE MCS 12/13 NSS bitmap and stores it
+ * in iface_extn->he_mcs_12_13_radio_cap.
+ *
+ * Returns: 0 on success, -1 on failure.
+ */
+int hostapd_set_he_mcs_12_13_cap_extn(struct hostapd_data *hapd);
+
+/**
+ * wpas_set_he_mcs_12_13_cap_extn - Fetch and store the HE MCS 12/13
+ * hardware radio capability for the wpa_supplicant instance.
+ * @wpa_s: wpa_supplicant context
+ *
+ * Queries the driver for the self HE MCS 12/13 NSS bitmap and stores it
+ * in wpas_extn->he_mcs_12_13_radio_cap.
+ *
+ * Returns: 0 on success, -1 on failure.
+ */
+int wpas_set_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq);
+
+/**
+ * wpa_config_alloc_empty_extn - Set the default value for config parameters.
+ * @config: wpa_supplicant extensions configuration values
+ */
+void wpa_config_alloc_empty_extn(struct wpa_config *config);
+
 #define MGMT_MIN_FRAME_SIZE_REQUIRED_MLO_MBSSID 2000
+#define DEFAULT_HE_MCS_12_13_SUPPORT true
 
 /* Primary channel list APIs  */
 int hostapd_set_primary_chanlist(struct hostapd_data *hapd, const char *chan_str);
