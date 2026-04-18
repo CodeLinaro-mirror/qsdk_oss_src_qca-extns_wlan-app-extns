@@ -11,6 +11,7 @@
 #include "cmn.h"
 #include "common/ieee802_11_common.h"
 #include "common/wpa_ctrl.h"
+#include "ap/sta_info.h"
 
 /**
  * check_40mhz_2g4_bss_snr_below_threshold_extn - Check if a BSS should be
@@ -94,6 +95,40 @@ bool hostapd_2040_coex_action_snr_below_threshold_extn(
 		   "2040 coex: ignoring action frame snr=%d"
 		   " (obss_rx_snr_threshold=%d)",
 		   snr, threshold);
+	return true;
+}
+
+/**
+ * hostapd_ht40_intolerant_snr_below_threshold_extn - Check if a station's
+ * assoc frame SNR is too low to honour its HT 40 MHz Intolerant indication
+ * @hapd: Pointer to hostapd data (used to read obss_rx_snr_threshold)
+ * @sta: Station that set the HT_CAP_INFO_40MHZ_INTOLERANT bit
+ *
+ * Returns true if the station's assoc frame SNR is below the configured
+ * obss_rx_snr_threshold, meaning the ht40_intolerant_add() call should be
+ * skipped for this station.
+ *
+ * Return: true if ht40_intolerant_add() should be skipped, false otherwise.
+ */
+bool hostapd_ht40_intolerant_snr_below_threshold_extn(
+	struct hostapd_data *hapd, struct sta_info *sta)
+{
+	int threshold;
+
+	if (!hapd || !hapd->iconf || !sta)
+		return false;
+
+	threshold = hapd->iconf->conf_extn.obss_rx_snr_threshold;
+	if (!threshold)
+		return false;
+
+	if (sta->sta_extn.assoc_snr >= threshold)
+		return false;
+
+	wpa_printf(MSG_DEBUG,
+		   "HT: Skipping ht40_intolerant_add for STA " MACSTR
+		   " assoc_snr=%d (obss_rx_snr_threshold=%d)",
+		   MAC2STR(sta->addr), sta->sta_extn.assoc_snr, threshold);
 	return true;
 }
 

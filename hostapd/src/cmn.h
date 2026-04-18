@@ -155,6 +155,12 @@ struct sta_info_extn {
 	unsigned int mu_cap_war_mu_capable:1;
 	unsigned int mu_cap_war_su_join:1;
 #endif /* CONFIG_IEEE80211AC */
+	/*
+	 * SNR of the (Re)Association Request frame, computed as
+	 * ssi_signal - noise_floor. Used to filter HT 40 MHz intolerant
+	 * notifications from weak/distant stations.
+	 */
+	int assoc_snr;
 };
 
 /**
@@ -842,6 +848,13 @@ hostapd_rssi_to_snr_extn(struct hostapd_data *hapd, int ssi_signal)
 	return ssi_signal;
 }
 
+static inline bool
+hostapd_ht40_intolerant_snr_below_threshold_extn(
+	struct hostapd_data *hapd, struct sta_info *sta)
+{
+	return false;
+}
+
 static inline int
 acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			       struct hostapd_channel_data *chan,
@@ -1200,6 +1213,8 @@ bool check_40mhz_2g4_bss_snr_below_threshold_extn(
 bool hostapd_2040_coex_action_snr_below_threshold_extn(
 	struct hostapd_data *hapd, int rssi);
 int hostapd_rssi_to_snr_extn(struct hostapd_data *hapd, int ssi_signal);
+bool hostapd_ht40_intolerant_snr_below_threshold_extn(
+	struct hostapd_data *hapd, struct sta_info *sta);
 #ifdef HOSTAPD
 struct hostapd_data *
 switch_link_hapd(struct hostapd_data *hapd, int link_id);
