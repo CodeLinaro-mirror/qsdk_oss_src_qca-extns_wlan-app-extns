@@ -135,6 +135,10 @@ enum dcs_cmd_type {
 
 #define BASE_6G_FREQ 5950
 
+#ifndef DEFAULT_NOISE_FLOOR_2GHZ
+#define DEFAULT_NOISE_FLOOR_2GHZ (-89)
+#endif
+
 struct driver_dcs_sim {
 	u16 type;
 	u32 intf_bitmap;
@@ -328,6 +332,15 @@ struct hostapd_config_extn {
  */
 struct check_40mhz_2g4_extn_args {
 	u8 threshold; /* OBSS SNR threshold in dB */
+};
+
+/**
+ * struct handle_action_extn_args - Extension arguments for handle_action
+ * @rssi: Rssi (dB) of the received action frame. Used to filter weak frames
+ * against obss_rx_snr_threshold.
+ */
+struct handle_action_extn_args {
+	int rssi;
 };
 
 struct hostapd_bss_config_extn {
@@ -816,6 +829,19 @@ check_40mhz_2g4_bss_snr_below_threshold_extn(
 	return false;
 }
 
+static inline bool
+hostapd_2040_coex_action_snr_below_threshold_extn(
+	struct hostapd_data *hapd, int rssi)
+{
+	return false;
+}
+
+static inline int
+hostapd_rssi_to_snr_extn(struct hostapd_data *hapd, int ssi_signal)
+{
+	return ssi_signal;
+}
+
 static inline int
 acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			       struct hostapd_channel_data *chan,
@@ -1171,6 +1197,9 @@ bool hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface)
 bool check_40mhz_2g4_bss_snr_below_threshold_extn(
 	const struct wpa_scan_res *bss,
 	const struct check_40mhz_2g4_extn_args *extn_args);
+bool hostapd_2040_coex_action_snr_below_threshold_extn(
+	struct hostapd_data *hapd, int rssi);
+int hostapd_rssi_to_snr_extn(struct hostapd_data *hapd, int ssi_signal);
 #ifdef HOSTAPD
 struct hostapd_data *
 switch_link_hapd(struct hostapd_data *hapd, int link_id);
