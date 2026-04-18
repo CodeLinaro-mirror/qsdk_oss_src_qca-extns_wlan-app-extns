@@ -118,6 +118,10 @@ enum dcs_cmd_type {
 #define DCS_CSA_TBTT_MAX            30
 #define DCS_CSA_TBTT_MIN            1
 
+/* OBSS SNR threshold range */
+#define OBSS_SNR_MIN 0
+#define OBSS_SNR_MAX 127
+
 /* valid_mask bits for driver_dcs_config */
 #define DCS_VALID_INTR_DET_THR      BIT(0)
 #define DCS_VALID_PHYERR_PENALTY    BIT(1)
@@ -310,6 +314,9 @@ struct hostapd_config_extn {
 	u16 primary_freq_list[MAX_NUM_CHANNELS];
 	u8 num_primary_freq;
 
+	/* OBSS SNR thresholds */
+	u8 obss_snr_threshold;    /* OBSS SNR threshold */
+	u8 obss_rx_snr_threshold; /* OBSS RX SNR threshold */
 };
 
 struct hostapd_bss_config_extn {

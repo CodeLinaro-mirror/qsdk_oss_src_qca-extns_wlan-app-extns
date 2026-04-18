@@ -114,6 +114,58 @@ int hostapd_cli_cmd_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc,
 }
 #endif /* CONFIG_IEEE80211AC */
 
+int hostapd_cli_cmd_set_obss_snr_threshold_extn(struct wpa_ctrl *ctrl, int argc,
+						char *argv[])
+{
+	char buf[64] = {'\0'};
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: set_obss_snr_threshold <snr>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "SET_OBSS_SNR_THRESHOLD %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("Too long SET_OBSS_SNR_THRESHOLD command.\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_obss_snr_threshold_extn(struct wpa_ctrl *ctrl, int argc,
+						char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_OBSS_SNR_THRESHOLD");
+}
+
+int hostapd_cli_cmd_set_obss_rx_snr_threshold_extn(struct wpa_ctrl *ctrl, int argc,
+						   char *argv[])
+{
+	char buf[64] = {'\0'};
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: set_obss_rx_snr_threshold <snr>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "SET_OBSS_RX_SNR_THRESHOLD %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("Too long SET_OBSS_RX_SNR_THRESHOLD command.\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_obss_rx_snr_threshold_extn(struct wpa_ctrl *ctrl, int argc,
+						   char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_OBSS_RX_SNR_THRESHOLD");
+}
+
 int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	if (argc < 1) {

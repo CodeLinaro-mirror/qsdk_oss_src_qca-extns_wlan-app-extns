@@ -479,6 +479,114 @@ int hostapd_iface_rep_ap_enable_extn(struct hostapd_iface *iface, char *pos)
 	return 0;
 }
 
+static int
+hostapd_ctrl_iface_set_obss_snr_threshold_extn(struct hostapd_data *hapd,
+					       const char *cmd)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	char *end = NULL;
+	long val;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+	if (*cmd == '\0')
+		return -1;
+
+	errno = 0;
+	val = strtol(cmd, &end, 10);
+	if (errno != 0 || end == cmd)
+		return -1;
+
+	while (end && *end == ' ')
+		end++;
+	if (end && *end != '\0')
+		return -1;
+
+	if (val < OBSS_SNR_MIN || val > OBSS_SNR_MAX) {
+		wpa_printf(MSG_ERROR,
+			   "OBSS SNR threshold out of range (%d-%d): %ld",
+			   OBSS_SNR_MIN, OBSS_SNR_MAX, val);
+		return -1;
+	}
+
+	conf_extn->obss_snr_threshold = (u8)val;
+	wpa_printf(MSG_DEBUG, "OBSS SNR threshold set to %u dB",
+		   conf_extn->obss_snr_threshold);
+	return 0;
+}
+
+static int
+hostapd_ctrl_iface_get_obss_snr_threshold_extn(struct hostapd_data *hapd,
+					       char *reply, int reply_size)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	int ret;
+
+	ret = os_snprintf(reply, reply_size, "%u\n",
+			  conf_extn->obss_snr_threshold);
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int
+hostapd_ctrl_iface_set_obss_rx_snr_threshold_extn(struct hostapd_data *hapd,
+						   const char *cmd)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	char *end = NULL;
+	long val;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+	if (*cmd == '\0')
+		return -1;
+
+	errno = 0;
+	val = strtol(cmd, &end, 10);
+	if (errno != 0 || end == cmd)
+		return -1;
+
+	while (end && *end == ' ')
+		end++;
+	if (end && *end != '\0')
+		return -1;
+
+	if (val < OBSS_SNR_MIN || val > OBSS_SNR_MAX) {
+		wpa_printf(MSG_ERROR,
+			   "OBSS RX SNR threshold out of range (%d-%d): %ld",
+			   OBSS_SNR_MIN, OBSS_SNR_MAX, val);
+		return -1;
+	}
+
+	conf_extn->obss_rx_snr_threshold = (u8)val;
+	wpa_printf(MSG_DEBUG, "OBSS RX SNR threshold set to %u dB",
+		   conf_extn->obss_rx_snr_threshold);
+	return 0;
+}
+
+static int
+hostapd_ctrl_iface_get_obss_rx_snr_threshold_extn(struct hostapd_data *hapd,
+						   char *reply, int reply_size)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	int ret;
+
+	ret = os_snprintf(reply, reply_size, "%u\n",
+			  conf_extn->obss_rx_snr_threshold);
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
 #ifdef CONFIG_IEEE80211AC
 static int hostapd_ctrl_iface_mu_cap_war_extn(struct hostapd_data_extn *hapd_extn,
 					    const char *cmd)
@@ -576,6 +684,24 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 							      reply, reply_size);
 		if (reply_len_extn < 0)
 			reply_len_extn = -1;
+	} else if (os_strncmp(buf, "SET_OBSS_SNR_THRESHOLD ", 23) == 0) {
+		if (hostapd_ctrl_iface_set_obss_snr_threshold_extn(hapd,
+								   buf + 23))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_OBSS_SNR_THRESHOLD") == 0) {
+		reply_len_extn =
+			hostapd_ctrl_iface_get_obss_snr_threshold_extn(hapd,
+									reply,
+									reply_size);
+	} else if (os_strncmp(buf, "SET_OBSS_RX_SNR_THRESHOLD ", 26) == 0) {
+		if (hostapd_ctrl_iface_set_obss_rx_snr_threshold_extn(hapd,
+								      buf + 26))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_OBSS_RX_SNR_THRESHOLD") == 0) {
+		reply_len_extn =
+			hostapd_ctrl_iface_get_obss_rx_snr_threshold_extn(hapd,
+									   reply,
+									   reply_size);
         } else {
 		return -1;
 	}
