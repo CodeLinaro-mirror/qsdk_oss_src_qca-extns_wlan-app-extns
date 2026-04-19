@@ -6,6 +6,7 @@ endif
 
 OBJS += \
 	qcn_extns/240mhz.o \
+	qcn_extns/cmn_extn.o \
 	qcn_extns/driver_nl80211_extn.o \
 	qcn_extns/ap_config_extn.o \
 	qcn_extns/ctrl_iface_extn.o \
@@ -15,6 +16,7 @@ OBJS += \
 	qcn_extns/esp.o \
 	qcn_extns/rnr.o \
 	qcn_extns/macaddr.o \
+	qcn_extns/reg_extn.o \
 	qcn_extns/repurpose.o \
 	qcn_extns/dfs_extn.o \
 	qcn_extns/ucode_extn.o \

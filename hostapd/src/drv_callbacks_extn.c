@@ -10,6 +10,7 @@
 #include "esp.h"
 #include "dcs.h"
 #include "dfs_extn.h"
+#include "reg_extn.h"
 
 
 struct hostapd_freq_params;
@@ -19,8 +20,8 @@ int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 {
 	struct hostapd_data *hapd = ctx;
 
-	if (hapd == NULL)
-                return -EINVAL;
+	if (hapd == NULL || !data)
+		return -EINVAL;
 
 	switch (event) {
 	case EVENT_ESP_UPDATE:
@@ -28,6 +29,10 @@ int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 		break;
 	case EVENT_DCS_INTF:
 		hostapd_dcs_intf_event_extn(hapd, data);
+		break;
+	case EVENT_HW_BLOCKED_CHANS_NOTIFY:
+		hostapd_event_hw_blocklist_notify_extn(hapd,
+			&data->event_data_extn.hw_blocklist_info);
 		break;
 	default:
 		return -EINVAL;
