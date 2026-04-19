@@ -12,6 +12,8 @@ void hostapd_iface_init_extn(struct hostapd_iface *iface)
 {
 	if (!iface)
 		return;
+
+	iface->iface_extn.check_hw_blocklist = true;
 }
 
 void hostapd_iface_deinit_extn(struct hostapd_iface *iface)
@@ -23,4 +25,5 @@ void hostapd_iface_deinit_extn(struct hostapd_iface *iface)
 					    iface->iface_extn.num_hw_blocklist);
 	iface->iface_extn.hw_blocklist_info = NULL;
 	iface->iface_extn.num_hw_blocklist = 0;
+	iface->iface_extn.check_hw_blocklist = false;
 }
