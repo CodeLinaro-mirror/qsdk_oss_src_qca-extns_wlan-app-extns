@@ -8,10 +8,6 @@
 
 #include "cmn.h"
 
-/* QCN Vendor Specific IE for 5G 320MHz (240MHz) support */
-#define QCN_IE_VENDOR_TYPE                      0x8cfdf001
-#define QCN_OUI_TYPE                            0x01
-
 void wpa_bss_check_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
 					    struct wpa_bss *bss);
 

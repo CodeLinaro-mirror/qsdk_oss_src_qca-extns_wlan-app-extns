@@ -17,10 +17,4 @@
 #define EXTENSION_320_CHANNELS			5500
 #define PUNCTURING_PATTERN_5G_320MHZ		0XF000
 
-#define OUI_QCN					0x8cfdf0
-#define QCN_ATTRIB_HE_240_MHZ_SUPP		0X0B
-#define QCN_HE_240_MHZ_MAX_ELEM_LEN		9
-
-#define EXT_INVALID				(-1)
-
 #endif /* _240MHZ_H */
