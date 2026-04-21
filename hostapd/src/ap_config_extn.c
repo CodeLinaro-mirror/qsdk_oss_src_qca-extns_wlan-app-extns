@@ -164,6 +164,26 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		bss->bss_extn.repurpose_mode = (u8) mode;
+	} else if (os_strcmp(buf, "repurpose_he_width") == 0) {
+		u16 val = (u16) atoi(pos);
+
+		if (val != 20 && val != 40 && val != 80 && val != 160) {
+			wpa_printf(MSG_ERROR,
+				   "Repurpose: invalid repurpose he width configured");
+			return -1;
+		}
+		conf_extn->repurpose_he_width = val;
+		return 0;
+	} else if (os_strcmp(buf, "repurpose_vht_width") == 0) {
+		u16 val = (u16) atoi(pos);
+
+		if (val != 20 && val != 40 && val != 80 && val != 160) {
+			wpa_printf(MSG_ERROR,
+				   "Repurpose: invalid repurpose vht width configured");
+			return -1;
+		}
+		conf_extn->repurpose_vht_width = val;
+		return 0;
 	} else if (os_strcmp(buf, "acs_wradar") == 0) {
 		conf_extn->qacs_conf.wradar = atoi(pos);
 	} else if (os_strcmp(buf, "acs_txpwr_opt") == 0) {

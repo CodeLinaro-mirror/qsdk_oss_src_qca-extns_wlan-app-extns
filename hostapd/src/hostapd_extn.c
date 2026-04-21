@@ -132,6 +132,59 @@ bool hostapd_ht40_intolerant_snr_below_threshold_extn(
 	return true;
 }
 
+enum oper_chan_width hostapd_get_oper_chwidth_from_width_extn(u16 width)
+{
+	enum oper_chan_width oper_chwidth;
+
+	switch (width) {
+	case 320:
+		oper_chwidth = CONF_OPER_CHWIDTH_320MHZ;
+		break;
+	case 160:
+		oper_chwidth = CONF_OPER_CHWIDTH_160MHZ;
+		break;
+	case 80:
+		oper_chwidth = CONF_OPER_CHWIDTH_80MHZ;
+		break;
+	case 40:
+	case 20:
+		oper_chwidth = CONF_OPER_CHWIDTH_USE_HT;
+		break;
+	default:
+		oper_chwidth = CONF_OPER_CHWIDTH_USE_HT;
+	}
+
+	return oper_chwidth;
+}
+
+u16 hostapd_get_width_from_oper_chwidth_extn(enum oper_chan_width oper_chwidth,
+					     int secondary_channel)
+{
+	u16 width;
+
+	switch (oper_chwidth) {
+	case CONF_OPER_CHWIDTH_320MHZ:
+		width = 320;
+		break;
+	case CONF_OPER_CHWIDTH_160MHZ:
+		width = 160;
+		break;
+	case CONF_OPER_CHWIDTH_80MHZ:
+		width = 80;
+		break;
+	case CONF_OPER_CHWIDTH_USE_HT:
+		if (secondary_channel)
+			width = 40;
+		else
+			width = 20;
+		break;
+	default:
+		width = 20;
+	}
+
+	return width;
+}
+
 int hostapd_validate_mbssid_group_size_extn(struct hostapd_data *hapd)
 {
 	if (hapd->conf->mld_ap &&
