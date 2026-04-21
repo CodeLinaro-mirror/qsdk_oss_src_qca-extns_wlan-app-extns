@@ -9,6 +9,7 @@
 #include "ap/ap_config.h"
 #include "ap/hw_features.h"
 #include "common/hw_features_common.h"
+#include "dcs.h"
 #include "cmn.h"
 
 /**
@@ -24,16 +25,20 @@
  * Return: 0 on success, -1 on parse error, invalid channel, or if the
  *         hardware channel table is not yet available.
  */
-int hostapd_set_primary_chanlist(struct hostapd_iface *iface,
-				 const char *chan_str)
+int hostapd_set_primary_chanlist(struct hostapd_data *hapd, const char *chan_str)
 {
 	struct hostapd_config_extn *conf_extn;
+	struct hostapd_iface *iface;
 	const char *p;
 	char *endp;
 	int n = 0, freq;
 	long ch;
 
-	if (!iface || !iface->conf)
+	if (!hapd)
+		return -1;
+
+        iface = hapd->iface;
+        if (!hapd->iface)
 		return -1;
 
 	if (!iface->current_mode) {
@@ -90,7 +95,7 @@ int hostapd_set_primary_chanlist(struct hostapd_iface *iface,
 	}
 
 	conf_extn->num_primary_freq = (u8)n;
-	hostapd_update_primary_chanlist_flags(iface);
+	hostapd_update_primary_chanlist_flags(hapd);
 
 	if (n > 0)
 		wpa_printf(MSG_INFO,
@@ -114,7 +119,7 @@ int hostapd_set_primary_chanlist(struct hostapd_iface *iface,
  * Return: Number of bytes written (excluding NUL terminator) on success,
  *         or -1 on error.
  */
-int hostapd_get_primary_chanlist(struct hostapd_iface *iface,
+int hostapd_get_primary_chanlist( struct hostapd_iface *iface,
 				 char *buf, size_t buflen)
 {
 	struct hostapd_config_extn *conf_extn;
@@ -161,6 +166,11 @@ int hostapd_get_primary_chanlist(struct hostapd_iface *iface,
 	return (int)pos;
 }
 
+bool chan_pri_allowed_extn(const struct hostapd_channel_data *chan)
+{
+      return !chan->extn.is_non_primary;
+}
+
 int hostapd_is_chan_in_primary_list(struct hostapd_iface *iface, u16 freq)
 {
 	struct hostapd_config_extn *conf_extn;
@@ -184,12 +194,18 @@ int hostapd_is_chan_in_primary_list(struct hostapd_iface *iface, u16 freq)
 }
 
 void
-hostapd_update_primary_chanlist_flags(struct hostapd_iface *iface)
+hostapd_update_primary_chanlist_flags(struct hostapd_data *hapd)
 {
 	struct hostapd_config_extn *conf_extn;
 	struct hostapd_hw_modes *mode;
+	struct hostapd_iface *iface;
 	int i, j;
+	int acs_ret;
 
+        if (!hapd)
+            return;
+
+        iface = hapd->iface;
 	if (!iface || !iface->conf || !iface->current_mode)
 		return;
 
@@ -211,17 +227,24 @@ hostapd_update_primary_chanlist_flags(struct hostapd_iface *iface)
 		}
 	}
 
+        wpa_printf(MSG_DEBUG,
+                "PRIMARY_CHAN: updated flags on %d channel(s) in hw table",
+                mode->num_channels);
+
 	if (conf_extn->num_primary_freq) {
 		if (!hostapd_is_chan_in_primary_list(iface, (u16)iface->freq)) {
 			wpa_printf(MSG_ERROR,
 				   "PRIMARY_CHAN: current channel not in primary freq list");
+
+                        acs_ret = hostapd_trigger_dynamic_acs(hapd,
+                                CHANNEL_CHANGE_CSA);
+                        if (acs_ret < 0) {
+                            wpa_printf(MSG_INFO,"Error ACS is not triggered(%d)",acs_ret);
+                        }
 		} else {
 			wpa_printf(MSG_INFO,
 				   "PRIMARY_CHAN: primary channel list updated");
 		}
 	}
 
-	wpa_printf(MSG_DEBUG,
-		   "PRIMARY_CHAN: updated flags on %d channel(s) in hw table",
-		   mode->num_channels);
 }
