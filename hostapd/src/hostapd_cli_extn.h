@@ -25,6 +25,10 @@ int hostapd_cli_cmd_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc, char *argv[
 int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_dcs_wlan_intr_params(struct wpa_ctrl *ctrl, int argc,
 					    char *argv[]);
+int hostapd_cli_cmd_set_primary_chans(struct wpa_ctrl *ctrl, int argc,
+				      char *argv[]);
+int hostapd_cli_cmd_get_primary_chans(struct wpa_ctrl *ctrl, int argc,
+				      char *argv[]);
 #ifdef CONFIG_QCN_EXTN
 int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
 		    int min_args, int argc, char *argv[]);
@@ -83,7 +87,13 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 		"set_dcs_enable_timer	: <sec> = set DCS re-enable time\n" \
 		"get_dcs_enable_timer	: get DCS re-enable time\n" \
 		"sim            : simulate DCS interference\n" \
-	},
+	}, \
+	{ "set_primary_chans", hostapd_cli_cmd_set_primary_chans, NULL, \
+	  "[<ch1> <ch2> ...]\n" \
+	  "  = set primary channel list (space-separated channel numbers);" \
+	  " no args clears list" }, \
+	{ "get_primary_chans", hostapd_cli_cmd_get_primary_chans, NULL, \
+	  "= get current primary channel list" },
 #else
 #define HOSTAPD_CLI_CMDS_EXTN
 

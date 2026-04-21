@@ -162,3 +162,36 @@ int hostapd_cli_cmd_set_dcs_wlan_intr_params(struct wpa_ctrl *ctrl, int argc,
 	return hostapd_cli_send_dcs_param_values(ctrl, "DCS_PARAMS", argc,
 						 argv);
 }
+
+int hostapd_cli_cmd_set_primary_chans(struct wpa_ctrl *ctrl,
+				      int argc, char *argv[])
+{
+	char cmd[512];
+	int res, i, pos;
+
+	if (argc == 0) {
+		/* No channels → clear the primary channel list */
+		return wpa_ctrl_command(ctrl, "SET_PRIMARY_CHANS");
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_PRIMARY_CHANS");
+	if (res < 0 || res >= (int)sizeof(cmd))
+		return -1;
+	pos = res;
+
+	for (i = 0; i < argc; i++) {
+		res = os_snprintf(cmd + pos, sizeof(cmd) - pos, " %s", argv[i]);
+		if (res < 0 || res >= (int)(sizeof(cmd) - pos))
+			return -1;
+		pos += res;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+int hostapd_cli_cmd_get_primary_chans(struct wpa_ctrl *ctrl,
+				      int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_PRIMARY_CHANS");
+}
+
