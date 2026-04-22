@@ -579,10 +579,10 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		if (hostapd_ctrl_iface_sync_iface_freq_extn(hapd))
 			reply_len_extn = -1;
 #endif /* CONFIG_TESTING_OPTIONS */
-	} else if (os_strncmp(buf, "SET_VLP_NON_PRIOR_PENALTY ", 22) == 0) {
-		if (hostapd_ctrl_iface_set_non_prior_penalty_extn(hapd, buf + 22))
+	} else if (os_strncmp(buf, "SET_VLP_NON_PRIOR_PENALTY ", 26) == 0) {
+		if (hostapd_ctrl_iface_set_non_prior_penalty_extn(hapd, buf + 26))
 			reply_len_extn = -1;
-	} else if (os_strncmp(buf, "GET_VLP_NON_PRIOR_PENALTY", 21) == 0) {
+	} else if (os_strcmp(buf, "GET_VLP_NON_PRIOR_PENALTY") == 0) {
 		reply_len_extn =
 			hostapd_ctrl_iface_get_non_prior_penalty_extn(hapd, reply,
 								      reply_size);
