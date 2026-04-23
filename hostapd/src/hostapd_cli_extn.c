@@ -124,6 +124,12 @@ int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
 	return hostapd_cli_cmd(ctrl, "DCS", 1, argc, argv);
 }
 
+int hostapd_cli_cmd_sync_iface_freq_extn(struct wpa_ctrl *ctrl, int argc,
+					 char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SYNC_IFACE_FREQ");
+}
+
 static int hostapd_cli_send_dcs_param_values(struct wpa_ctrl *ctrl,
 					     const char *base,
 					     int argc, char *argv[])
