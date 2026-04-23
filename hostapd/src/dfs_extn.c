@@ -189,10 +189,8 @@ void hostapd_uplink_cancel_disconnect_timeout_extn(struct hostapd_iface *iface)
 	if (!iface)
 		return;
 
-	if (hostapd_uplink_csa_bh_enabled(iface)) {
-		wpa_printf(MSG_INFO, "chanswitch: cancel radar handling timer");
-		eloop_cancel_timeout(hostapd_trigger_backhaul_sta_disconnect, iface, NULL);
-	}
+	wpa_printf(MSG_INFO, "chanswitch: cancel radar handling timer");
+	eloop_cancel_timeout(hostapd_trigger_backhaul_sta_disconnect, iface, NULL);
 }
 
 static void hostapd_notify_uplink_csa(struct hostapd_iface *iface, u8 channel, int freq,
