@@ -687,3 +687,71 @@ void wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx)
 		wpa_supplicant_req_scan(wpa_s, 0, 0);
 	}
 }
+
+/**
+ * wpa_config_process_cswopts_extn - Parse and apply CSwOpts from config file
+ * @config: Pointer to wpa_config structure
+ * @line: Line number in the configuration file (for error messages)
+ * @pos: String value to parse (decimal or hex with 0x prefix)
+ *
+ * Validate and store the Channel Switch Options bitmap from the configuration
+ * file into wpa_config::cswopts.
+ *
+ * Return: 0 on success, -1 on invalid value.
+ */
+int wpa_config_process_cswopts_extn(struct wpa_config *config, int line,
+				    const char *pos)
+{
+	long int val = strtol(pos, NULL, 0);
+
+	if (!cswopts_validate(val)) {
+		wpa_printf(MSG_ERROR,
+			   "Line %d: Invalid CSwOpts value 0x%lx: valid mask is 0x%x",
+			   line, val, CSH_OPT_VALID_MASK);
+		return -1;
+	}
+
+	config->cswopts = (unsigned int)val;
+	wpa_printf(MSG_INFO, "CSwOpts set to 0x%x", config->cswopts);
+	if (IS_CSH_APRIORI_NEXT_CHANNEL_ENABLED(config->cswopts))
+		wpa_printf(MSG_INFO,
+			   "CSwOpts: Apriori next channel (0x40) - Apriori channel selection feature is not yet supported");
+
+	return 0;
+}
+
+/**
+ * wpa_supplicant_ctrl_iface_set_cswopts_extn - Handle SET CSwOpts command
+ * @wpa_s: Pointer to wpa_supplicant interface
+ * @value: String value to parse (decimal or hex with 0x prefix)
+ *
+ * Validate and apply the Channel Switch Options bitmap from the SET control
+ * interface command. A value of 0 clears all bits; non-zero values are OR'd
+ * into the existing bitmap.
+ *
+ * Return: 0 on success, -1 on invalid value.
+ */
+int wpa_supplicant_ctrl_iface_set_cswopts_extn(struct wpa_supplicant *wpa_s,
+					       const char *value)
+{
+	long int val = strtol(value, NULL, 0);
+
+	if (!cswopts_validate(val)) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid CSwOpts value 0x%lx: valid mask is 0x%x",
+			   val, CSH_OPT_VALID_MASK);
+		return -1;
+	}
+
+	if (val == 0)
+		wpa_s->conf->cswopts = 0;
+	else
+		wpa_s->conf->cswopts |= (unsigned int)val;
+
+	wpa_printf(MSG_INFO, "Updated CSwOpts to 0x%x", wpa_s->conf->cswopts);
+	if (IS_CSH_APRIORI_NEXT_CHANNEL_ENABLED(wpa_s->conf->cswopts))
+		wpa_printf(MSG_INFO,
+			   "CSwOpts: Apriori next channel (0x40) - Apriori channel selection feature is not yet supported");
+
+	return 0;
+}
