@@ -53,6 +53,7 @@ struct ieee80211_mgmt;
 struct wpa_driver_scan_params;
 struct dl_list;
 struct hostapd_hw_modes;
+struct wpa_scan_res;
 
 struct ieee80211_240mhz_vendor_oper_extn {
 	u8 ccfs1;
@@ -317,6 +318,16 @@ struct hostapd_config_extn {
 	/* OBSS SNR thresholds */
 	u8 obss_snr_threshold;    /* OBSS SNR threshold */
 	u8 obss_rx_snr_threshold; /* OBSS RX SNR threshold */
+};
+
+/**
+ * struct check_40mhz_2g4_extn_args - Extension arguments for check_40mhz_2g4
+ * @threshold: Minimum SNR (dB) a BSS entry must have to be considered in the
+ *             40 MHz coexistence check. BSS entries with bss->snr below this
+ *             value are silently ignored. Default 0 passes all normal signals.
+ */
+struct check_40mhz_2g4_extn_args {
+	u8 threshold; /* OBSS SNR threshold in dB */
 };
 
 struct hostapd_bss_config_extn {
@@ -797,6 +808,14 @@ wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx)
 	return;
 }
 
+static inline bool
+check_40mhz_2g4_bss_snr_below_threshold_extn(
+	const struct wpa_scan_res *bss,
+	const struct check_40mhz_2g4_extn_args *extn_args)
+{
+	return false;
+}
+
 static inline int
 acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			       struct hostapd_channel_data *chan,
@@ -1149,6 +1168,9 @@ int acs_get_bw_center_chan(int freq, enum bw_type bw);
 void hostapd_ml_acs_check_and_notify(struct hostapd_iface *iface, bool status);
 void wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx);
 bool hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface);
+bool check_40mhz_2g4_bss_snr_below_threshold_extn(
+	const struct wpa_scan_res *bss,
+	const struct check_40mhz_2g4_extn_args *extn_args);
 #ifdef HOSTAPD
 struct hostapd_data *
 switch_link_hapd(struct hostapd_data *hapd, int link_id);
