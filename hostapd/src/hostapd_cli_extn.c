@@ -537,3 +537,27 @@ int hostapd_cli_cmd_get_puren(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "GET_PUREN");
 }
+
+int hostapd_cli_cmd_set_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char buf[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: set_disablecoexist <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "SET_DISABLECOEXIST %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("set_disablecoexist cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_DISABLECOEXIST");
+}

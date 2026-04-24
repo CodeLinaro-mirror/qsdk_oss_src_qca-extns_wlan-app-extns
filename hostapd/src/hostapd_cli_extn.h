@@ -69,6 +69,9 @@ int hostapd_cli_cmd_set_pureg(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_pureg(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_puren(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_puren(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_set_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+
 #define HOSTAPD_CLI_CMDS_EXTN \
 	{ "set_esp", hostapd_cli_cmd_set_esp_extn, NULL, \
 		"<param> <value> = set ESP param (esp_airtime 0-255, " \
@@ -179,7 +182,11 @@ int hostapd_cli_cmd_get_puren(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 	{ "set_puren", hostapd_cli_cmd_set_puren, NULL, \
 		"<value 0|1> :Enable/disable puren mode" }, \
 	{ "get_puren", hostapd_cli_cmd_get_puren, NULL, \
-		"Get puren mode config" },
+		"Get puren mode config" }, \
+	{ "set_disablecoexist", hostapd_cli_cmd_set_disablecoexist, NULL, \
+		"<value 0|1> :1-disable coexistence, 0-enable coexistence" }, \
+	{ "get_disablecoexist", hostapd_cli_cmd_get_disablecoexist, NULL, \
+		"Get disable coexistence config" },
 
 #else
 #define HOSTAPD_CLI_CMDS_EXTN
