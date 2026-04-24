@@ -31,6 +31,14 @@ int hostapd_cli_cmd_set_primary_chans(struct wpa_ctrl *ctrl, int argc,
 				      char *argv[]);
 int hostapd_cli_cmd_get_primary_chans(struct wpa_ctrl *ctrl, int argc,
 				      char *argv[]);
+int hostapd_cli_cmd_set_obss_snr_threshold_extn(struct wpa_ctrl *ctrl, int argc,
+						char *argv[]);
+int hostapd_cli_cmd_get_obss_snr_threshold_extn(struct wpa_ctrl *ctrl, int argc,
+						char *argv[]);
+int hostapd_cli_cmd_set_obss_rx_snr_threshold_extn(struct wpa_ctrl *ctrl, int argc,
+						   char *argv[]);
+int hostapd_cli_cmd_get_obss_rx_snr_threshold_extn(struct wpa_ctrl *ctrl, int argc,
+						   char *argv[]);
 #ifdef CONFIG_QCN_EXTN
 int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
 		    int min_args, int argc, char *argv[]);
@@ -79,6 +87,14 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 		"= sync runtime interface frequency from current config" }, \
 	{ "get_mu_cap_war", hostapd_cli_cmd_get_mu_cap_war_extn, NULL, \
 		"get MU_CAP_WAR status" }, \
+	{ "set_obss_snr_threshold", hostapd_cli_cmd_set_obss_snr_threshold_extn, NULL, \
+		"<snr> = set OBSS SNR threshold in dB (per-radio)" }, \
+	{ "get_obss_snr_threshold", hostapd_cli_cmd_get_obss_snr_threshold_extn, NULL, \
+		"= get current OBSS SNR threshold in dB" }, \
+	{ "set_obss_rx_snr_threshold", hostapd_cli_cmd_set_obss_rx_snr_threshold_extn, NULL, \
+		"<snr> = set OBSS RX SNR threshold in dB (per-radio)" }, \
+	{ "get_obss_rx_snr_threshold", hostapd_cli_cmd_get_obss_rx_snr_threshold_extn, NULL, \
+		"= get current OBSS RX SNR threshold in dB" }, \
 	{ "dcs", hostapd_cli_cmd_dcs_extn, NULL, \
 		"enable		: enable DCS configuration\n" \
 		"bw_reduction_ctrl	: <mask> = set DCS bw reduction control\n" \

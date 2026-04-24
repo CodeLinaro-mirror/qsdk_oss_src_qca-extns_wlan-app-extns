@@ -64,6 +64,10 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	 * setting the bitmap to 0.
 	 */
 	conf_extn->dcs_conf.dcs_random_chan_bitmap = DCS_AWGN_INTF;
+
+	/* OBSS SNR threshold defaults */
+	conf_extn->obss_snr_threshold = 0;
+	conf_extn->obss_rx_snr_threshold = 0;
 }
 
 void
@@ -311,6 +315,24 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			   "DCS: dcs_random_chan_bitmap set to 0x%04x (%u)",
 			   conf_extn->dcs_conf.dcs_random_chan_bitmap,
 			   conf_extn->dcs_conf.dcs_random_chan_bitmap);
+	} else if (os_strcmp(buf, "obss_snr_threshold") == 0) {
+		val = atoi(pos);
+		if (val < OBSS_SNR_MIN || val > OBSS_SNR_MAX) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: obss_snr_threshold out of range (%d-%d): %d",
+				   line, OBSS_SNR_MIN, OBSS_SNR_MAX, val);
+			return -1;
+		}
+		conf_extn->obss_snr_threshold = (u8)val;
+	} else if (os_strcmp(buf, "obss_rx_snr_threshold") == 0) {
+		val = atoi(pos);
+		if (val < OBSS_SNR_MIN || val > OBSS_SNR_MAX) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: obss_rx_snr_threshold out of range (%d-%d): %d",
+				   line, OBSS_SNR_MIN, OBSS_SNR_MAX, val);
+			return -1;
+		}
+		conf_extn->obss_rx_snr_threshold = (u8)val;
 	} else if (os_strcmp(buf, "vap_submode") == 0) {
 		u8 val = atoi(pos);
 		if (val > QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MAX) {
