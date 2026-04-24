@@ -490,3 +490,26 @@ int hostapd_cli_cmd_get_tpe_punct_channel_tx_pwr(struct wpa_ctrl *ctrl,
 	return wpa_ctrl_command(ctrl, "GET_TPE_PUNCT_CHANNEL_TX_PWR");
 }
 
+int hostapd_cli_cmd_set_pureg(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char buf[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: set_pureg <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "SET_PUREG %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("set_pureg cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_pureg(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_PUREG");
+}

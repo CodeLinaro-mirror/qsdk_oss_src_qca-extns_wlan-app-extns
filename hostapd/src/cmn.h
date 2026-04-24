@@ -374,6 +374,14 @@ struct hostapd_bss_config_extn {
 	bool tpe_punct_channel_tx_pwr;
 	/* Config to set user defined opclass in ECSA IE */
 	u8 ecsa_opclass;
+	/*
+	 * When set to true, the BSS operates in pure IEEE 802.11g mode.
+	 *
+	 * By default, an IEEE 802.11g BSS supports association from both
+	 * IEEE 802.11b and IEEE 802.11g STAs. When pureg_bss is enabled,
+	 * the BSS shall not allow association from any IEEE 802.11b STA.
+	 */
+	bool pureg_bss;
 };
 
 struct esp_extn {
