@@ -60,6 +60,40 @@ struct {
 
 static struct hostapd_external_app_object test_plugin;
 
+struct hostapd_if_action_policy_entry {
+	enum hostapd_if_action_frame_type action_type;
+	const char *conf_name;
+};
+
+static const struct hostapd_if_action_policy_entry hostapd_if_action_policy_map[] = {
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_RADIO,
+	  "external_plugin_action_policy_radio" },
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_RADIO_NEIGHBOUR_REQ,
+	  "external_plugin_action_policy_radio_neighbour_req" },
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_WNM,
+	  "external_plugin_action_policy_wnm" },
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_BTM_QUERY,
+	  "external_plugin_action_policy_wnm_btm_query" },
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_BTM_RESP,
+	  "external_plugin_action_policy_wnm_btm_resp" },
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_WMM_ADDTS_REQ,
+	  "external_plugin_action_policy_wmm_addts_req" },
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_WMM_DELTS,
+	  "external_plugin_action_policy_wmm_delts" },
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_DMS_REQ,
+	  "external_plugin_action_policy_wnm_dms_req" },
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_DMS_RESP,
+	  "external_plugin_action_policy_wnm_dms_resp" },
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_FT,
+	  "external_plugin_action_policy_ft" },
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_FT_REQ,
+	  "external_plugin_action_policy_ft_req" },
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_FT_RESP,
+	  "external_plugin_action_policy_ft_resp" },
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_VENDOR,
+	  "external_plugin_action_policy_vendor" },
+};
+
 /* Defining the deque structure */
 struct deque {
     struct invoke_plugin_datablock *datablocks[MAX_SIZE];
@@ -393,8 +427,25 @@ static void notify_assoc(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 	}
 }
 
+static void notify_action(char *ifname, const uint8_t *sta_mac, const uint8_t *frame,
+			  uint16_t frame_len, int link_id, struct hostapd_if_frame_ctx *ctx)
+{
+
+	wpa_printf(MSG_DEBUG,
+		   "Notified Action for STA " MACSTR " on link_id=%d, frame_len=%u\n",
+		   MAC2STR(sta_mac), link_id, frame_len);
+}
+
+static void offload_action(char *ifname, const uint8_t *sta_mac, const uint8_t *frame,
+			   uint16_t frame_len, uint8_t link_id, struct hostapd_if_frame_ctx *ctx)
+{
+	wpa_printf(MSG_DEBUG,
+		   "Offload Action for STA " MACSTR " on link_id=%d, frame_len=%u\n",
+		   MAC2STR(sta_mac), link_id, frame_len);
+}
+
 static void notify_auth(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
-		uint16_t frame_len, struct hostapd_if_frame_ctx *ctx)
+			uint16_t frame_len, struct hostapd_if_frame_ctx *ctx)
 {
 	uint16_t auth_alg;
 	uint16_t auth_transaction;
@@ -473,10 +524,12 @@ static void notify_disassoc(char *ifname, uint8_t *sta_mac, const void *frame,
 static void interface_create(char *ifname, void *ctx)
 {
 
+	size_t i;
 	struct hostapd_data *hapd;
 	struct hostapd_if_frame_category cat;
 	enum hostapd_if_frame_policy auth_policy, deauth_policy,
-				     disassoc_policy, assoc_policy;
+				     disassoc_policy, assoc_policy,
+				     action_policy;
 
 	if (!ifname)
 		return;
@@ -533,6 +586,31 @@ static void interface_create(char *ifname, void *ctx)
 		test_plugin.register_frame(ctx, &cat, disassoc_policy);
 		wpa_printf(MSG_DEBUG, "registered DISASSOC policy %d\n",
 			   disassoc_policy);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(hostapd_if_action_policy_map); i++) {
+
+		action_policy = hapd->conf->plugin.external_plugin_action_policy[
+				hostapd_if_action_policy_map[i].action_type];
+		if (action_policy > HOSTAPD_IF_FRAME_OFFLOAD ||
+		    action_policy == HOSTAPD_IF_FRAME_INVOKE) {
+			wpa_printf(MSG_ERROR, "%s: invalid action policy %d "
+				   "(allowed: DO_NOTHING, NOTIFY, OFFLOAD)",
+				    hostapd_if_action_policy_map[i].conf_name,
+				    action_policy);
+			continue;
+		}
+
+		if (action_policy == HOSTAPD_IF_FRAME_DO_NOTHING)
+			continue;
+
+		memset(&cat, 0, sizeof(cat));
+		cat.type = HOSTAPD_IF_FRAME_TYPE_ACTION;
+		cat.u.action_type = hostapd_if_action_policy_map[i].action_type;
+		test_plugin.register_frame(ctx, &cat, action_policy);
+		wpa_printf(MSG_DEBUG, "registered ACTION %s policy %d\n",
+			   hostapd_if_action_policy_map[i].conf_name,
+			   action_policy);
 	}
 
 	test_plugin.register_event(ctx, HOSTAPD_IF_EVENT_AUTH_TX_COMPLETE,
@@ -844,6 +922,8 @@ enum hostapd_if_eloop_type hostapd_if_plugin_init(void *arg)
 	test_plugin.notify_auth          = notify_auth,
 	test_plugin.notify_disassoc      = notify_disassoc,
 	test_plugin.notify_deauth        = notify_deauth,
+	test_plugin.notify_action        = notify_action,
+	test_plugin.offload_action       = offload_action,
 	test_plugin.notify_event         = notify_event,
 	test_plugin.interface_create     = interface_create,
 
@@ -1044,6 +1124,64 @@ static int hostapd_ctrl_iface_set_auth_ies(struct hostapd_data *hapd,
 
 	os_free(buf);
 	return ret;
+}
+
+static int hostapd_ctrl_iface_send_frame(struct hostapd_data *hapd,
+					 const char *cmd)
+{
+	const char *hex = cmd;
+	u8 *buf = NULL;
+	u8 link_id = 0xff;
+	size_t hex_len, len;
+
+	wpa_printf(MSG_DEBUG, "CTRL_IFACE SEND_FRAME %s", cmd);
+
+	if (!hex)
+		return -1;
+
+	if (!test_plugin.send_frame) {
+		wpa_printf(MSG_ERROR, "SEND_FRAME: send_frame callback not registered");
+		return -1;
+	}
+
+	while (*hex && isspace((unsigned char)*hex))
+		hex++;
+
+	if (*hex == '\0') {
+		wpa_printf(MSG_ERROR, "SEND_FRAME: Missing frame data");
+		return -1;
+	}
+
+	hex_len = os_strlen(hex);
+	if (hex_len & 1) {
+		wpa_printf(MSG_ERROR, "SEND_FRAME: Invalid hex string length");
+		return -1;
+	}
+
+	len = hex_len / 2;
+	if (!len || len > 0xffff) {
+		wpa_printf(MSG_ERROR,
+			   "SEND_FRAME: Invalid frame length %u",
+			   (unsigned int) len);
+		return -1;
+	}
+
+	buf = os_malloc(len);
+	if (!buf)
+		return -1;
+
+	if (hexstr2bin(hex, buf, len) < 0) {
+		wpa_printf(MSG_ERROR, "SEND_FRAME: Invalid hex string");
+		goto fail;
+	}
+
+	test_plugin.send_frame((char *)hapd->conf->iface, link_id, buf,
+			       (uint16_t) len);
+	return 0;
+
+fail:
+	os_free(buf);
+	return -1;
 }
 
 static int hostapd_ctrl_iface_start_sa_query_plugin(struct hostapd_data *hapd,
@@ -1537,6 +1675,8 @@ int hostapd_ctrl_iface_configure_plugin(struct hostapd_data *hapd,
 		return hostapd_ctrl_iface_set_assoc_ies(hapd, pos + 14);
 	} else if (os_strncmp(pos, "SET_AUTH_IES ", 13) == 0) {
 		return hostapd_ctrl_iface_set_auth_ies(hapd, pos + 13);
+	} else if (os_strncmp(pos, "SEND_FRAME ",11) == 0) {
+		return hostapd_ctrl_iface_send_frame(hapd, pos + 11);
 	} else {
 		wpa_printf(MSG_ERROR,
 			   "CONFIGURE-PLUGIN: Unknown subcommand '%s'", pos);
@@ -1547,6 +1687,8 @@ int hostapd_ctrl_iface_configure_plugin(struct hostapd_data *hapd,
 int hostapd_config_fill_plugin(struct hostapd_bss_config *bss, const char *buf,
 			       char *pos)
 {
+	size_t i;
+
 	if (os_strcmp(buf, "external_plugin_auth_policy") == 0) {
 		bss->plugin.external_plugin_auth_policy = atoi(pos);
 	} else if (os_strcmp(buf, "external_plugin_assoc_policy") == 0) {
@@ -1556,10 +1698,17 @@ int hostapd_config_fill_plugin(struct hostapd_bss_config *bss, const char *buf,
 	} else if (os_strcmp(buf, "external_plugin_disassoc_policy") == 0) {
 		bss->plugin.external_plugin_disassoc_policy = atoi(pos);
 	} else {
+		for (i = 0; i < ARRAY_SIZE(hostapd_if_action_policy_map); i++) {
+			if (os_strcmp(buf,
+				      hostapd_if_action_policy_map[i].conf_name) != 0)
+				continue;
+
+			bss->plugin.external_plugin_action_policy[
+				hostapd_if_action_policy_map[i].action_type] = atoi(pos);
+			return 0;
+		}
+
 		return -1;
 	}
-
 	return 0;
 }
-
-

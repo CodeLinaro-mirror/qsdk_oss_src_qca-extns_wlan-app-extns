@@ -22,6 +22,7 @@ struct hostapd_config_plugin
 	int external_plugin_assoc_policy;
 	int external_plugin_deauth_policy;
 	int external_plugin_disassoc_policy;
+	int external_plugin_action_policy[HOSTAPD_IF_FRAME_TYPE_ACTION_MAX];
 };
 
 /* Main dispatcher function for all plugin commands */
