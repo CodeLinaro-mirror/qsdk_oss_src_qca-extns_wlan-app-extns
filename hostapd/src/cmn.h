@@ -1529,6 +1529,11 @@ hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
 
 #else
 
+int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
+			   int chan_width, int channel_no,
+			   bool is_offloaded_cac);
+int dfs_get_used_n_chans(struct hostapd_iface *iface, int *seg1,
+			 int chan_width);
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
 					   u8 *oper_centr_freq_seg0_idx,
 					   u8 *oper_centr_freq_seg1_idx,

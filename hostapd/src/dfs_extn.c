@@ -328,6 +328,74 @@ u8 *add_ml_link_info_ie(u8 *buf, size_t buf_len,
 	return pos;
 }
 
+unsigned int dfs_get_ch_flags_extn(unsigned int cswopts)
+{
+	unsigned int ch_flags = DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH;
+
+	if (IS_CSH_NONDFS_RANDOM_ENABLED(cswopts) ||
+	    IS_CSH_IGNORE_CSA_DFS_ENABLED(cswopts)) {
+		wpa_printf(MSG_DEBUG, "DFS: Setting DFS_RANDOM_CH_FLAG_NO_DFS_CH flag");
+		ch_flags |= DFS_RANDOM_CH_FLAG_NO_DFS_CH;
+	}
+
+	return ch_flags;
+}
+
+bool dfs_chan_skip_by_flags_extn(struct hostapd_iface *iface,
+				 struct hostapd_channel_data *chan,
+				 unsigned int flags)
+{
+	/* Skip current operating channel and all its bonding sub-channels */
+	if (flags & DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH) {
+		struct hostapd_hw_modes *mode;
+		int start_chan_idx, start_chan_idx1;
+		int n_chans, n_chans1;
+		int cur_chan_width;
+		int i;
+
+		if (!iface || !iface->conf || !iface->current_mode)
+			goto skip_curr_ch_check;
+
+		mode = iface->current_mode;
+		cur_chan_width = hostapd_get_oper_chwidth(iface->conf);
+
+		start_chan_idx = dfs_get_start_chan_idx(iface, &start_chan_idx1,
+						       cur_chan_width,
+						       iface->conf->channel,
+						       false);
+		n_chans = dfs_get_used_n_chans(iface, &n_chans1, cur_chan_width);
+
+		if (start_chan_idx < 0)
+			goto skip_curr_ch_check;
+
+		for (i = 0; i < n_chans; i++) {
+			struct hostapd_channel_data *cur_chan;
+
+			if (start_chan_idx + i >= mode->num_channels)
+				break;
+			cur_chan = &mode->channels[start_chan_idx + i];
+			if (chan->chan == cur_chan->chan) {
+				wpa_printf(MSG_DEBUG,
+					   "DFS: skipping current operating channel %d (%d)",
+					   chan->freq, chan->chan);
+				return true;
+			}
+		}
+	}
+skip_curr_ch_check:
+
+	/* Skip DFS/radar channels */
+	if ((flags & DFS_RANDOM_CH_FLAG_NO_DFS_CH) &&
+	    (chan->flag & HOSTAPD_CHAN_RADAR)) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: skipping DFS channel %d (%d)",
+			   chan->freq, chan->chan);
+		return true;
+	}
+
+	return false;
+}
+
 int handle_action_extn(struct hostapd_data *hapd,
 		       const struct ieee80211_mgmt *mgmt, size_t len,
 		       unsigned int freq)

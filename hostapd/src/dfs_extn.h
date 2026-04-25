@@ -48,5 +48,41 @@ void hostapd_trigger_rcsa_tx(void *eloop_data, void *user_data);
 bool hostapd_rcsa_tx_bh_enabled(struct hostapd_iface *iface);
 void hostapd_rcsa_handle_csa_timeout(struct hostapd_iface *iface);
 void hostapd_set_rcsa_inprogress(struct hostapd_iface *iface, bool value);
+
+/**
+ * dfs_get_ch_flags_extn - Compute DFS random channel selection flags
+ * @cswopts: Channel Switch Options bitmap from hostapd/wpa_supplicant config
+ *
+ * Always sets DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH.
+ * Sets DFS_RANDOM_CH_FLAG_NO_DFS_CH when CSwOpts requests it.
+ *
+ * Returns the ch_flags bitmask to pass to dfs_get_valid_channel().
+ */
+unsigned int dfs_get_ch_flags_extn(unsigned int cswopts);
+
+/**
+ * dfs_chan_skip_by_flags_extn - Check whether a channel should be skipped
+ * during random DFS channel selection
+ * @iface: Pointer to hostapd_iface
+ * @chan: Candidate channel to evaluate
+ * @flags: DFS_RANDOM_CH_FLAG_* bitmask from dfs_get_ch_flags_extn()
+ *
+ * Evaluates the two flag-driven skip conditions introduced by the enhanced
+ * random channel selection algorithm:
+ *
+ *   DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH: skip @chan if it is one of the 20 MHz
+ *     sub-channels that make up the current operating channel.  The set of
+ *     sub-channels is determined by calling dfs_get_start_chan_idx() and
+ *     dfs_get_used_n_chans() and then iterating over
+ *     mode->channels[start_chan_idx + i].
+ *
+ *   DFS_RANDOM_CH_FLAG_NO_DFS_CH: skip @chan if it is a DFS/radar channel.
+ *
+ * Returns: true if @chan should be skipped, false otherwise.
+ */
+bool dfs_chan_skip_by_flags_extn(struct hostapd_iface *iface,
+				 struct hostapd_channel_data *chan,
+				 unsigned int flags);
+
 #endif /* CONFIG_QCN_EXTN */
 #endif /* DFS_EXTN_H */
