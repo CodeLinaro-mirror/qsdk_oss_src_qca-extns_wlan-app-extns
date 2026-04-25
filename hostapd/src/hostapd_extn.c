@@ -46,6 +46,57 @@ bool check_40mhz_2g4_bss_snr_below_threshold_extn(
 	return true;
 }
 
+/**
+ * hostapd_rssi_to_snr_extn - Convert a received frame's RSSI to SNR
+ * @hapd: Pointer to hostapd data (used to read the lowest observed noise floor)
+ * @ssi_signal: Signal level (dBm) of the received frame
+ *
+ * Computes SNR as ssi_signal - lowest_nf. If no noise floor measurement is
+ * available (lowest_nf == 0), ssi_signal is returned directly as a proxy.
+ *
+ * Return: SNR in dB, or ssi_signal if noise floor is unavailable.
+ */
+int hostapd_rssi_to_snr_extn(struct hostapd_data *hapd, int ssi_signal)
+{
+	if (!hapd || !hapd->iface)
+		return ssi_signal;
+
+	return ssi_signal - DEFAULT_NOISE_FLOOR_2GHZ;
+}
+
+/**
+ * hostapd_2040_coex_action_snr_below_threshold_extn - Check if a 20/40 MHz
+ * coexistence action frame should be ignored due to low signal level
+ * @hapd: Pointer to hostapd data (used to read obss_rx_snr_threshold)
+ * @ssi_signal: Signal level (dBm) of the received action frame
+ *
+ * Returns true if the action frame's signal level is below the configured
+ * obss_rx_snr_threshold and the frame should be silently discarded.
+ *
+ * Return: true if the action frame should be ignored, false otherwise.
+ */
+bool hostapd_2040_coex_action_snr_below_threshold_extn(
+	struct hostapd_data *hapd, int rssi)
+{
+	u8 threshold;
+	int snr;
+
+	if (!hapd || !hapd->iconf)
+		return false;
+
+	threshold = hapd->iconf->conf_extn.obss_rx_snr_threshold;
+        snr = hostapd_rssi_to_snr_extn(hapd, rssi);
+
+        if ((u8)snr >= threshold)
+		return false;
+
+	wpa_printf(MSG_DEBUG,
+		   "2040 coex: ignoring action frame snr=%d"
+		   " (obss_rx_snr_threshold=%d)",
+		   snr, threshold);
+	return true;
+}
+
 int hostapd_validate_mbssid_group_size_extn(struct hostapd_data *hapd)
 {
 	if (hapd->conf->mld_ap &&
