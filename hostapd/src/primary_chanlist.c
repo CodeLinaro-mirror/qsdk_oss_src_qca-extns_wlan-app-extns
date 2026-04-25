@@ -161,6 +161,28 @@ int hostapd_get_primary_chanlist(struct hostapd_iface *iface,
 	return (int)pos;
 }
 
+int hostapd_is_chan_in_primary_list(struct hostapd_iface *iface, u16 freq)
+{
+	struct hostapd_config_extn *conf_extn;
+	int i;
+
+	if (!iface || !iface->conf)
+		return -1;
+
+	conf_extn = &iface->conf->conf_extn;
+
+	if (!conf_extn->num_primary_freq) {
+		return 1;
+	}
+
+	for (i = 0; i < conf_extn->num_primary_freq; i++) {
+		if (conf_extn->primary_freq_list[i] == freq)
+			return 1;
+	}
+
+	return 0;
+}
+
 void
 hostapd_update_primary_chanlist_flags(struct hostapd_iface *iface)
 {
@@ -186,6 +208,16 @@ hostapd_update_primary_chanlist_flags(struct hostapd_iface *iface)
 			}
 		} else {
 			mode->channels[i].extn.is_non_primary = false;
+		}
+	}
+
+	if (conf_extn->num_primary_freq) {
+		if (!hostapd_is_chan_in_primary_list(iface, (u16)iface->freq)) {
+			wpa_printf(MSG_ERROR,
+				   "PRIMARY_CHAN: current channel not in primary freq list");
+		} else {
+			wpa_printf(MSG_INFO,
+				   "PRIMARY_CHAN: primary channel list updated");
 		}
 	}
 
