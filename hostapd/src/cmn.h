@@ -962,6 +962,13 @@ dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap)
 }
 
 static inline bool
+hostapd_handle_csa_target_unavailable_extn(struct hostapd_data *hapd,
+					   int freq, int finished)
+{
+	return false;
+}
+
+static inline bool
 hostapd_5ghz_eht_320_channel_bw_extn(struct hostapd_hw_modes *mode,
 				     int channel_idx)
 {
@@ -1321,6 +1328,41 @@ hostapd_5ghz_eht_320_channel_bw_extn(struct hostapd_hw_modes *mode,
 }
 #endif /* HOSTAPD */
 
+/**
+ * hostapd_handle_csa_target_unavailable_extn() - Recover from stale CSA target
+ * @hapd: BSS instance handling the channel switch event
+ * @freq: Frequency reported by the channel switch completion event
+ * @finished: Non-zero when the driver reports channel switch completion
+ *
+ * Handle the case where a CSA completes for the originally requested target,
+ * but that target has already become DFS-unavailable/NOL due to a DFS
+ * violation during restart/start. In this situation, hostapd can otherwise
+ * treat the stale CH_SWITCH event as a successful move to the requested
+ * target and continue normal post-switch processing.
+ *
+ * This helper verifies that the event corresponds to the in-progress CSA
+ * target and that the target chandef now contains unavailable DFS subchannels.
+ * When that condition is met, it clears the old CSA state and triggers fresh
+ * channel selection through the DFS recovery path instead of allowing normal
+ * channel switch completion handling to continue.
+ *
+ * Return: true if the stale CSA target was handled and normal caller
+ * processing should stop; false otherwise.
+ */
+bool hostapd_handle_csa_target_unavailable_extn(struct hostapd_data *hapd,
+						int freq, int finished);
+struct hostapd_channel_data *
+dfs_downgrade_bandwidth_helper(struct hostapd_iface *iface, int *secondary_channel,
+						u8 *oper_centr_freq_seg0_idx,
+						u8 *oper_centr_freq_seg1_idx,
+						int *channel_type);
+struct hostapd_channel_data *
+dfs_get_valid_channel_helper(struct hostapd_iface *iface,
+					 int *secondary_channel,
+					 u8 *oper_centr_freq_seg0_idx,
+					 u8 *oper_centr_freq_seg1_idx,
+					 int type);
+int hostapd_dfs_start_channel_switch_cac_helper(struct hostapd_iface *iface);
 int hostapd_drv_mark_vap_submode(struct hostapd_data *hapd,
 				 enum qca_wlan_vendor_vap_submode_type submode);
 int hostapd_drv_mark_vap_submode_extn(void *priv, unsigned int vendor_id,
