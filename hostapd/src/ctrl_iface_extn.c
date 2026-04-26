@@ -701,7 +701,7 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		 * An empty argument list clears the restriction and reverts
 		 * to the full regulatory channel set (ChanSel-001..003,011).
 		 */
-		if (hostapd_set_primary_chanlist(hapd->iface, buf + 18) < 0)
+		if (hostapd_set_primary_chanlist(hapd, buf + 18) < 0)
 			reply_len_extn = -1;
 	} else if (os_strcmp(buf, "GET_PRIMARY_CHANS") == 0) {
 		/*
