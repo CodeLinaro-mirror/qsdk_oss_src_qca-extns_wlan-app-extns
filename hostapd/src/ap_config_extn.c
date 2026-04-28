@@ -36,6 +36,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->cswopts = 0;
 	conf_extn->same_ssid = 0;
 	conf_extn->repeater = 0;
+	conf_extn->disable_iface_during_cac = false; /* Boot-up CAC is enabled by default */
 
 	/*configure qacs_default here*/
 	conf_extn->qacs_enable = 1;                 /* QACS enabled */
@@ -171,8 +172,12 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		return 0;
 	} else if (os_strcmp(buf, "rpt_max_phy") == 0) {
 		conf_extn->rpt_max_phy = atoi(pos);
+		return 0;
 	} else if (os_strcmp(buf, "rptr_allow_chan_sw") == 0) {
 		conf_extn->rptr_allow_chan_sw = atoi(pos);
+		return 0;
+	} else if (os_strcmp(buf, "disable_iface_during_cac") == 0) {
+		conf_extn->disable_iface_during_cac = !!atoi(pos);
 		return 0;
 	} else if (os_strcmp(buf, "qacs_enable") == 0) {
 		conf_extn->qacs_enable = atoi(pos);
