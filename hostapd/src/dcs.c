@@ -473,13 +473,14 @@ static int hostapd_ctrl_iface_set_dcs_bw_reduction_ctrl(struct hostapd_data *hap
 			   cmd);
 		return -1;
 	}
-	if (val_ul > 0xFFFF) {
+
+	val = (u16) val_ul;
+	if (val & ~0x001Fu) {
 		wpa_printf(MSG_ERROR,
-			   "DCS_BW_REDUCTION: value out of range '%s'", cmd);
+			   "DCS_BW_REDUCTION: only bits 0-4 allowed 0x%04x", val);
 		return -1;
 	}
 
-	val = (u16) val_ul;
 	wpa_printf(MSG_DEBUG,
 		   "DCS_BW_REDUCTION: bw_reduction_ctrl=%u (0x%04x)", val, val);
 	config_extn->dcs_conf.bw_reduction_ctrl = val;

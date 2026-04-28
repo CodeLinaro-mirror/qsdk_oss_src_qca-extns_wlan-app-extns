@@ -68,6 +68,9 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	/* OBSS SNR threshold defaults */
 	conf_extn->obss_snr_threshold = 0;
 	conf_extn->obss_rx_snr_threshold = 0;
+
+	/* DCS BW reduction control default */
+	conf_extn->dcs_conf.bw_reduction_ctrl = 0;
 }
 
 void
@@ -333,6 +336,41 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		conf_extn->obss_rx_snr_threshold = (u8)val;
+	} else if (os_strcmp(buf, "dcs_bw_reduction_ctrl") == 0) {
+		/* Parse and set DCS BW reduction control mask from hostapd.conf.
+		 * Accept decimal or hex (e.g., 0x3). Validate 16-bit range to
+		 * align with CLI handling
+		 */
+		unsigned long tmp;
+		u16 bw_ctrl_val;
+		char *endptr = NULL;
+		errno = 0;
+
+		tmp = strtoul(pos, &endptr, 0);
+		if (errno != 0 || endptr == pos) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid value for dcs_bw_reduction_ctrl '%s'",
+				   line, pos);
+			return -1;
+		}
+		while (endptr && *endptr == ' ')
+			endptr++;
+		if (endptr && *endptr != '\0') {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: trailing characters in dcs_bw_reduction_ctrl '%s'",
+				   line, pos);
+			return -1;
+		}
+		bw_ctrl_val = (u16) tmp;
+		if (bw_ctrl_val & ~0x001Fu) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid dcs_bw_reduction_ctrl 0x%04x",
+				   line, bw_ctrl_val);
+			return -1;
+		}
+		conf_extn->dcs_conf.bw_reduction_ctrl = bw_ctrl_val;
+		wpa_printf(MSG_DEBUG, "DCS: bw_reduction_ctrl set to 0x%04x",
+			   conf_extn->dcs_conf.bw_reduction_ctrl);
 	} else if (os_strcmp(buf, "vap_submode") == 0) {
 		u8 val = atoi(pos);
 		if (val > QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MAX) {
