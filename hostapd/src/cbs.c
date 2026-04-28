@@ -1,0 +1,288 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ */
+
+#include "includes.h"
+#include "utils/common.h"
+#include "ap/hostapd.h"
+#include "utils/os.h"
+#include "common/ieee802_11_defs.h"
+#include "ap/ap_config.h"
+#include "common/hw_features_common.h"
+#include "common/wpa_ctrl.h"
+#include "drivers/driver.h"
+#include "ap/ap_drv_ops.h"
+#include "ap/hw_features.h"
+#include "utils/eloop.h"
+
+static int
+cbs_print_usage_extn(char *reply, int reply_size)
+{
+	int ret;
+
+	ret = os_snprintf(
+		reply, reply_size,
+		"cbs commands:\n"
+		"  enable <0|1|2>       : enable/disable cbs scan (0:disable | 1:enable CBS scan once | 2:enable cbs scan to run continuously)\n"
+		"  g_enable             : get continuous background scan enable state\n"
+		"  resttime <ms>        : set rest time in milliseconds\n"
+		"  g_resttime           : get rest time in milliseconds\n"
+		"  dwellrest <ms>       : set dwell rest time in milliseconds\n"
+		"  g_dwellrest          : get dwell rest time in milliseconds\n"
+		"  waittime <ms>        : set wait time in milliseconds\n"
+		"  g_waittime           : get wait time in milliseconds\n"
+		"  dwellsplit <value>   : set dwell split value\n"
+		"  g_dwellsplit         : get dwell split value\n"
+		"  totaldwell <value>   : set total dwell value\n"
+		"  g_totaldwell         : get total dwell value\n"
+		"  csa <1|0>            : enable/disable CSA for CBS\n"
+		"  g_csa                : get CSA state for CBS\n"
+                );
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_cbs_get_enable(struct hostapd_config_extn *conf_extn,
+					const char *pos,
+					char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "CBS enable: %d\n",
+			      conf_extn->cbs_params.cbs_enable);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_cbs_set_enable(struct hostapd_config_extn *conf_extn,
+				    const char *pos, char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val == 0 || val == 1) {
+		conf_extn->cbs_params.cbs_enable = val;
+		return 0;
+	}
+
+	return -1;
+}
+
+static int hostapd_cbs_set_resttime(struct hostapd_config_extn *conf_extn,
+				    const char *pos, char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val >= 0) {
+		conf_extn->cbs_params.resttime = val;
+		return 0;
+	}
+
+	return -1;
+}
+
+static int hostapd_cbs_get_resttime(struct hostapd_config_extn *conf_extn,
+				    const char *pos, char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "CBS resttime: %d\n",
+			      conf_extn->cbs_params.resttime);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_cbs_set_dwellrest(struct hostapd_config_extn *conf_extn,
+				     const char *pos, char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val >= 0) {
+		conf_extn->cbs_params.dwellrest = val;
+		return 0;
+	}
+
+	return -1;
+}
+
+static int hostapd_cbs_get_dwellrest(struct hostapd_config_extn *conf_extn,
+				     const char *pos, char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "CBS dwellrest: %d\n",
+			      conf_extn->cbs_params.dwellrest);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_cbs_set_waittime(struct hostapd_config_extn *conf_extn,
+				    const char *pos, char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val >= 0) {
+		conf_extn->cbs_params.waittime = val;
+		return 0;
+	}
+
+	return -1;
+}
+
+static int hostapd_cbs_get_waittime(struct hostapd_config_extn *conf_extn,
+				    const char *pos, char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "CBS waittime: %d\n",
+			      conf_extn->cbs_params.waittime);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_cbs_set_dwellsplit(struct hostapd_config_extn *conf_extn,
+				   const char *pos, char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val >= 0) {
+		conf_extn->cbs_params.dwellsplit = val;
+		return 0;
+	}
+
+	return -1;
+}
+
+static int hostapd_cbs_get_dwellsplit(struct hostapd_config_extn *conf_extn,
+				   const char *pos, char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "CBS dwellsplit: %d\n",
+			      conf_extn->cbs_params.dwellsplit);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_cbs_set_totaldwell(struct hostapd_config_extn *conf_extn,
+				      const char *pos, char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val >= 0) {
+		conf_extn->cbs_params.totaldwell = val;
+		return 0;
+	}
+
+	return -1;
+}
+
+static int hostapd_cbs_get_totaldwell(struct hostapd_config_extn *conf_extn,
+				      const char *pos, char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "CBS totaldwell: %d\n",
+			      conf_extn->cbs_params.totaldwell);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_cbs_set_csa(struct hostapd_config_extn *conf_extn,
+			       const char *pos, char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val == 0 || val == 1) {
+		conf_extn->cbs_params.csa_enable = val;
+		return 0;
+	}
+
+	return -1;
+}
+
+static int hostapd_cbs_get_csa(struct hostapd_config_extn *conf_extn,
+			       const char *pos, char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "CBS csa: %d\n",
+			      conf_extn->cbs_params.csa_enable);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+int hostapd_handle_cli_cbs_extn(struct hostapd_data *hapd,
+				char *pos, char *buf,
+				size_t buflen)
+{
+	struct hostapd_config_extn *conf_extn;
+
+	if (!hapd->iface || !hapd->iface->conf)
+		return -1;
+
+	conf_extn  = &hapd->iface->conf->conf_extn;
+
+	if (os_strncmp(pos, "g_enable", 8) == 0) {
+		return hostapd_cbs_get_enable(conf_extn, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "enable ", 7) == 0) {
+		return hostapd_cbs_set_enable(conf_extn, pos + 7, buf, buflen);
+
+	} else if (os_strncmp(pos, "g_resttime", 10) == 0) {
+		return hostapd_cbs_get_resttime(conf_extn, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "resttime ", 9) == 0) {
+		return hostapd_cbs_set_resttime(conf_extn, pos + 9, buf, buflen);
+
+	} else if (os_strncmp(pos, "g_dwellrest", 11) == 0) {
+		return hostapd_cbs_get_dwellrest(conf_extn, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "dwellrest ", 10) == 0) {
+		return hostapd_cbs_set_dwellrest(conf_extn, pos + 10, buf, buflen);
+
+	} else if (os_strncmp(pos, "g_waittime", 10) == 0) {
+		return hostapd_cbs_get_waittime(conf_extn, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "waittime ", 9) == 0) {
+		return hostapd_cbs_set_waittime(conf_extn, pos + 9, buf, buflen);
+
+	} else if (os_strncmp(pos, "g_dwellsplit", 12) == 0) {
+		return hostapd_cbs_get_dwellsplit(conf_extn, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "dwellsplit ", 11) == 0) {
+		return hostapd_cbs_set_dwellsplit(conf_extn, pos + 11, buf, buflen);
+
+	} else if (os_strncmp(pos, "g_totaldwell", 12) == 0) {
+		return hostapd_cbs_get_totaldwell(conf_extn, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "totaldwell ", 11) == 0) {
+		return hostapd_cbs_set_totaldwell(conf_extn, pos + 11, buf, buflen);
+
+	} else if (os_strncmp(pos, "g_csa", 5) == 0) {
+		return hostapd_cbs_get_csa(conf_extn, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "csa ", 4) == 0) {
+		return hostapd_cbs_set_csa(conf_extn, pos + 4, buf, buflen);
+
+	} else {
+		return cbs_print_usage_extn(buf, buflen);
+	}
+}

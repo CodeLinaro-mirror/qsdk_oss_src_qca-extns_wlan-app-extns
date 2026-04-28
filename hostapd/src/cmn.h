@@ -18,6 +18,7 @@
 #include "common/ieee802_11_defs.h"
 #include "repurpose.h"
 #include "../src/common/qca-vendor.h"
+#include "cbs.h"
 #include "rropinfo.h"
 #include "wpa_config_extn.h"
 
@@ -350,6 +351,9 @@ struct hostapd_config_extn {
 
 	/* Auto-recovery after NOL VAP down */
 	bool autorecovery_after_nol_vapdown;
+
+	/* CBS (Continuous Background Scan) params */
+	struct cbs_params_extn cbs_params;
 };
 
 /**

@@ -73,6 +73,15 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	/* DCS BW reduction control default */
 	conf_extn->dcs_conf.bw_reduction_ctrl = 0;
 
+	/* Configure CBS defaults here */
+	conf_extn->cbs_params.cbs_enable = 0;
+	conf_extn->cbs_params.resttime = 0;
+	conf_extn->cbs_params.dwellrest = 0;
+	conf_extn->cbs_params.waittime = 0;
+	conf_extn->cbs_params.dwellsplit = 50;
+	conf_extn->cbs_params.totaldwell = 100;
+	conf_extn->cbs_params.csa_enable = 0;
+
 	conf_extn->eht_config_ccfs0 = false;
 
 	/* No primary frequencies configured */
@@ -387,6 +396,22 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		conf_extn->dcs_conf.bw_reduction_ctrl = bw_ctrl_val;
 		wpa_printf(MSG_DEBUG, "DCS: bw_reduction_ctrl set to 0x%04x",
 			   conf_extn->dcs_conf.bw_reduction_ctrl);
+
+	} else if (os_strcmp(buf, "cbs_enable") == 0) {
+		conf_extn->cbs_params.cbs_enable = atoi(pos);
+	} else if (os_strcmp(buf, "cbs_resttime") == 0) {
+		conf_extn->cbs_params.resttime = atoi(pos);
+	} else if (os_strcmp(buf, "cbs_dwellrest") == 0) {
+		conf_extn->cbs_params.dwellrest = atoi(pos);
+	} else if (os_strcmp(buf, "cbs_waittime") == 0) {
+		conf_extn->cbs_params.waittime = atoi(pos);
+	} else if (os_strcmp(buf, "cbs_dwellsplit") == 0) {
+		conf_extn->cbs_params.dwellsplit = atoi(pos);
+	} else if (os_strcmp(buf, "cbs_totaldwell") == 0) {
+		conf_extn->cbs_params.totaldwell = atoi(pos);
+	} else if (os_strcmp(buf, "cbs_csa_enable") == 0) {
+		conf_extn->cbs_params.csa_enable = atoi(pos);
+
 	} else if (os_strcmp(buf, "vap_submode") == 0) {
 		u8 val = atoi(pos);
 		if (val > QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MAX) {

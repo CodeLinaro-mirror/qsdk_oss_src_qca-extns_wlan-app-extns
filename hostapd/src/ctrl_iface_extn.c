@@ -18,6 +18,7 @@
 #include "ap/ap_drv_ops.h"
 #include "hostapd_rptr_extn.h"
 #include "cmn.h"
+#include "cbs.h"
 #include "ap/ieee802_11.h"
 #include "ap/sta_info.h"
 
@@ -1290,6 +1291,9 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn =
 			hostapd_ctrl_iface_get_non_prior_penalty_extn(hapd, reply,
 								      reply_size);
+	} else if (os_strncmp(buf, "CBS ", 4) == 0) {
+		reply_len_extn = hostapd_handle_cli_cbs_extn(hapd, buf + 4,
+							     reply, reply_size);
 	} else if (os_strncmp(buf, "SET_PRIMARY_CHANS ", 18) == 0) {
 		/*
 		 * SET_PRIMARY_CHANS <ch1> [<ch2> ...]

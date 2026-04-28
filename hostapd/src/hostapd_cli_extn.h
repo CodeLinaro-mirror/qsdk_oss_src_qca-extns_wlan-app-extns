@@ -57,6 +57,7 @@ int wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd);
 int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_ht40intol(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_ht40intol(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cbs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 
 int hostapd_cli_cmd_set_eht_config_ccfs0(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_eht_config_ccfs0(struct wpa_ctrl *ctrl, int argc, char *argv[]);
@@ -113,6 +114,22 @@ int hostapd_cli_cmd_get_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *ar
 		"6g_only_psc <1|0>    : restrict 6 GHz to PSC channels only\n" \
 		"get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n" \
 		"acs invoke <0|1>     : invoke ACS (0=dynamicACS+CSA)|(1=DynamicACS)\n"}, \
+	{ "cbs", hostapd_cli_cbs_extn, NULL, \
+		"enable <0|1|2>       : enable/disable cbs scan (0:disable | 1:enable CBS scan once | 2:enable cbs scan to run continuously)\n" \
+		"g_enable             : get continuous background scan enable state\n" \
+		"resttime <ms>        : set rest time in milliseconds\n" \
+		"g_resttime           : get rest time in milliseconds\n" \
+		"dwellrest <ms>       : set dwell rest time in milliseconds\n" \
+		"g_dwellrest          : get dwell rest time in milliseconds\n" \
+		"waittime <ms>        : set wait time in milliseconds\n" \
+		"g_waittime           : get wait time in milliseconds\n" \
+		"dwellsplit <value>   : set dwell split value\n" \
+		"g_dwellsplit         : get dwell split value\n" \
+		"totaldwell <value>   : set total dwell value\n" \
+		"g_totaldwell         : get total dwell value\n" \
+		"csa <1|0>            : enable/disable CSA for CBS\n" \
+		"g_csa                : get CSA state for CBS\n" \
+	}, \
 	{ "mu_cap_war", hostapd_cli_cmd_mu_cap_war_extn, NULL, \
 		"enable/disable VHT MU-MIMO capability for MU_CAP_WAR clients" }, \
 	{ "sync_iface_freq", hostapd_cli_cmd_sync_iface_freq_extn, NULL, \
