@@ -34,6 +34,9 @@ int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 		hostapd_event_hw_blocklist_notify_extn(hapd,
 			&data->event_data_extn.hw_blocklist_info);
 		break;
+	case EVENT_SCAN_RESULTS_EXTN:
+		hostapd_cbs_handle_scan_complete(hapd, data);
+		break;
 	default:
 		return -EINVAL;
 	}

@@ -703,6 +703,66 @@ static int qca_nl80211_handle_hw_blocked_chans_events_extn(struct i802_bss *bss,
 	return 0;
 }
 
+int qca_nl80211_scan_done_event_extn(struct i802_bss *bss, u8 *data, size_t len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_SCAN_MAX + 1] = {0};
+	union wpa_event_data event = {};
+	struct cbs_event *cbs_evt;
+	struct nlattr *nl;
+	int rem;
+
+	cbs_evt = &event.event_data_extn.scan_results_event.cbs_event;
+	cbs_evt->scan_complete_freq = 0;
+	cbs_evt->status = 0;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR, "nl80211: bss is NULL!");
+		return -EINVAL;
+	}
+
+	if (!(data && len)) {
+		wpa_printf(MSG_ERROR, "nl80211: Invalid data for scan done event");
+		return -EINVAL;
+	}
+
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_SCAN_MAX,
+		      (struct nlattr *) data, len, NULL)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to parse scan done attributes");
+		return -EINVAL;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SCAN_FREQUENCIES]) {
+		nla_for_each_nested(nl,
+				    tb[QCA_WLAN_VENDOR_ATTR_SCAN_FREQUENCIES],
+				    rem) {
+			if (nla_len(nl) >= (int) sizeof(u32)) {
+				cbs_evt->scan_complete_freq
+					= nla_get_u32(nl);
+				break;
+			}
+		}
+	}
+
+	if (!cbs_evt->scan_complete_freq) {
+		wpa_printf(MSG_DEBUG, "nl80211: CBS scan complete freq is not set");
+		return -EINVAL;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SCAN_STATUS]) {
+			cbs_evt->status = (enum scan_status)
+				nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SCAN_STATUS]);
+	}
+
+	wpa_printf(MSG_INFO,
+		   "nl80211: scan done event: scan_complete_freq=%u status=%u",
+		   cbs_evt->scan_complete_freq,
+		   cbs_evt->status);
+
+	wpa_supplicant_event(bss->ctx, EVENT_SCAN_RESULTS_EXTN, &event);
+	return 0;
+}
+
 static int hw_blocked_chans_process_event_extn(struct nl_msg *msg, void *arg)
 {
 	struct nlattr *tb[NL80211_ATTR_MAX + 1];
@@ -753,6 +813,11 @@ int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 		qca_nl80211_handle_hw_blocked_chans_events_extn(bss, data, len,
 								true);
 		break;
+#ifndef CONFIG_DRIVER_NL80211_QCA
+	case QCA_NL80211_VENDOR_SUBCMD_SCAN_DONE:
+		qca_nl80211_scan_done_event_extn(bss, data, len);
+		break;
+#endif
 	default:
 		return -EINVAL;
 	}

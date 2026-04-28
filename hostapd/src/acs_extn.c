@@ -349,6 +349,9 @@ int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd, enum dynamic_acs_acti
         struct hostapd_iface *iface = hapd->iface;
         int status;
 
+        if (!hapd->iface->current_mode)
+            return -1;
+
 
         if (iface->iface_extn.dynamic_acs_action) {
                 wpa_printf(MSG_ERROR, "Dynamic ACS is already in progress");
@@ -356,6 +359,7 @@ int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd, enum dynamic_acs_acti
         }
 
         iface->iface_extn.dynamic_acs_action = acs_action;
+        qacs_reset_scan_stats(iface, hapd->iface->current_mode);
 
         status = acs_init(iface);
         if (status != HOSTAPD_CHAN_ACS) {
