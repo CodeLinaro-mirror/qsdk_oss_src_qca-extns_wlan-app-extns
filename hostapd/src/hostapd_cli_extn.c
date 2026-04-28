@@ -166,6 +166,37 @@ int hostapd_cli_cmd_get_obss_rx_snr_threshold_extn(struct wpa_ctrl *ctrl, int ar
 	return wpa_ctrl_command(ctrl, "GET_OBSS_RX_SNR_THRESHOLD");
 }
 
+int hostapd_cli_cmd_dfs_no_wradar_extn(struct wpa_ctrl *ctrl, int argc,
+				       char *argv[])
+{
+	char buf[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid dfs_no_wradar command: needs one argument (0|1)\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "DFS_NO_WRADAR %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("Too long DFS_NO_WRADAR command.\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_dfs_no_wradar_extn(struct wpa_ctrl *ctrl, int argc,
+					   char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid get_dfs_no_wradar command: no arguments expected\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "GET_DFS_NO_WRADAR");
+}
+
 int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	if (argc < 1) {
