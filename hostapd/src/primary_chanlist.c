@@ -201,50 +201,51 @@ hostapd_update_primary_chanlist_flags(struct hostapd_data *hapd)
 	struct hostapd_iface *iface;
 	int i, j;
 	int acs_ret;
+	int k;
 
-        if (!hapd)
-            return;
+	if (!hapd)
+		return;
 
-        iface = hapd->iface;
-	if (!iface || !iface->conf || !iface->current_mode)
+	iface = hapd->iface;
+	if (!iface || !iface->conf)
 		return;
 
 	conf_extn = &iface->conf->conf_extn;
-	mode = iface->current_mode;
 
-	for (i = 0; i < mode->num_channels; i++) {
-		if (conf_extn->num_primary_freq) {
-			mode->channels[i].extn.is_non_primary = true;
-			for (j = 0; j < conf_extn->num_primary_freq; j++) {
-				if (mode->channels[i].freq ==
-						conf_extn->primary_freq_list[j]) {
-					mode->channels[i].extn.is_non_primary = false;
-					break;
+	for (k = 0; k < iface->num_hw_features; k++) {
+		mode = &iface->hw_features[k];
+		if (hostapd_hw_skip_mode(iface, mode))
+			continue;
+
+		for (i = 0; i < mode->num_channels; i++) {
+			if (conf_extn->num_primary_freq) {
+				mode->channels[i].extn.is_non_primary = true;
+
+				for (j = 0; j < conf_extn->num_primary_freq; j++) {
+					if (mode->channels[i].freq ==
+							conf_extn->primary_freq_list[j]) {
+						mode->channels[i].extn.is_non_primary = false;
+						break;
+					}
 				}
+			} else {
+				mode->channels[i].extn.is_non_primary = false;
 			}
-		} else {
-			mode->channels[i].extn.is_non_primary = false;
 		}
 	}
-
-        wpa_printf(MSG_DEBUG,
-                "PRIMARY_CHAN: updated flags on %d channel(s) in hw table",
-                mode->num_channels);
-
 	if (conf_extn->num_primary_freq) {
 		if (!hostapd_is_chan_in_primary_list(iface, (u16)iface->freq)) {
 			wpa_printf(MSG_ERROR,
 				   "PRIMARY_CHAN: current channel not in primary freq list");
 
-                        acs_ret = hostapd_trigger_dynamic_acs(hapd,
-                                CHANNEL_CHANGE_CSA);
-                        if (acs_ret < 0) {
-                            wpa_printf(MSG_INFO,"Error ACS is not triggered(%d)",acs_ret);
-                        }
+			acs_ret = hostapd_trigger_dynamic_acs(hapd,
+							      CHANNEL_CHANGE_CSA);
+			if (acs_ret < 0) {
+			 wpa_printf(MSG_INFO,"Error ACS is not triggered(%d)",acs_ret);
+			}
 		} else {
 			wpa_printf(MSG_INFO,
 				   "PRIMARY_CHAN: primary channel list updated");
 		}
 	}
-
 }
