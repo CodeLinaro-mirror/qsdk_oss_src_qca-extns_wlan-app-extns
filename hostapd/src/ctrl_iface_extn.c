@@ -741,6 +741,46 @@ hostapd_ctrl_iface_get_obss_rx_snr_threshold_extn(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int
+hostapd_ctrl_iface_set_autorecovery_after_nol_vapdown_extn(struct hostapd_data *hapd,
+							   const char *cmd)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
+	char *end = NULL;
+	long val;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+	if (*cmd == '\0')
+		return -1;
+
+	errno = 0;
+	val = strtol(cmd, &end, 10);
+	if (errno != 0 || end == cmd)
+		return -1;
+
+	while (end && *end == ' ')
+		end++;
+	if (end && *end != '\0')
+		return -1;
+
+	if (val < 0 || val > 1) {
+		wpa_printf(MSG_ERROR,
+			   "SET_AUTORECOVERY_AFTER_NOL_VAPDOWN: invalid value %d",
+			   (int)val);
+		return -1;
+	}
+
+	conf_extn->autorecovery_after_nol_vapdown = (int)val;
+	wpa_printf(MSG_INFO,
+		   "SET_AUTORECOVERY_AFTER_NOL_VAPDOWN: set to %d",
+		   (int)val);
+	return 0;
+}
+
 #ifdef CONFIG_IEEE80211AC
 static int hostapd_ctrl_iface_mu_cap_war_extn(struct hostapd_data_extn *hapd_extn,
 					    const char *cmd)
@@ -937,7 +977,11 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn = hostapd_ctrl_iface_get_tpe_common_psd_extn(hapd,
 									    reply,
 									    reply_size);
-        } else {
+	} else if (os_strncmp(buf, "SET_AUTORECOVERY_AFTER_NOL_VAPDOWN ", 35) == 0) {
+		if (hostapd_ctrl_iface_set_autorecovery_after_nol_vapdown_extn(hapd,
+									       buf + 35))
+			reply_len_extn = -1;
+	} else {
 		return -1;
 	}
 

@@ -41,6 +41,8 @@ int hostapd_cli_cmd_set_obss_rx_snr_threshold_extn(struct wpa_ctrl *ctrl, int ar
 						   char *argv[]);
 int hostapd_cli_cmd_get_obss_rx_snr_threshold_extn(struct wpa_ctrl *ctrl, int argc,
 						   char *argv[]);
+int hostapd_cli_cmd_set_autorecovery_after_nol_vapdown(struct wpa_ctrl *ctrl,
+						       int argc, char *argv[]);
 #ifdef CONFIG_QCN_EXTN
 int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
 		    int min_args, int argc, char *argv[]);
@@ -138,7 +140,10 @@ int hostapd_cli_cmd_get_tpe_common_psd(struct wpa_ctrl *ctrl, int argc, char *ar
 	{ "set_tpe_common_psd", hostapd_cli_cmd_set_tpe_common_psd, NULL, \
 		"<value 0|1> :Set config for common psd power in TPE IE" }, \
 	{ "get_tpe_common_psd", hostapd_cli_cmd_get_tpe_common_psd, NULL, \
-		"Get config for common psd power in TPE IE"},
+		"Get config for common psd power in TPE IE"}, \
+	{ "set_autorecovery_after_nol_vapdown", \
+	  hostapd_cli_cmd_set_autorecovery_after_nol_vapdown, NULL, \
+	  "<1|0> = enable/disable VAP auto-recovery after NOL expiry" },
 #else
 #define HOSTAPD_CLI_CMDS_EXTN
 
