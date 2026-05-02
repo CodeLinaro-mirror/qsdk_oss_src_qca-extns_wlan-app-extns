@@ -70,6 +70,29 @@
 #define MAX_GTK_LEN 32
 #endif
 
+/*
+ * match WPA_PMK_NAME_LEN from src/common/wpa_common.h
+ */
+#ifndef PMK_R1_NAME_LEN
+#define PMK_R1_NAME_LEN 16
+#endif
+
+/*
+ * Maximum EAP/RADIUS identity length; matches the check in
+ * hostapd/radius.c (identity_len > 512).
+ */
+#ifndef MAX_IDENTITY_LEN
+#define MAX_IDENTITY_LEN 512
+#endif
+
+/*
+ * Maximum RADIUS Chargeable-User-Identity (CUI) attribute length;
+ * bounded by the maximum RADIUS attribute value size (RFC 2865).
+ */
+#ifndef MAX_RADIUS_CUI_LEN
+#define MAX_RADIUS_CUI_LEN 253
+#endif
+
 enum hostapd_if_frame_policy {
 	HOSTAPD_IF_FRAME_DO_NOTHING,
 	HOSTAPD_IF_FRAME_NOTIFY,
@@ -97,6 +120,29 @@ struct hostapd_if_frame_category {
 	} u;
 };
 
+/*
+ * PMK-R1 container
+ *
+ * All variable-length fields are stored as fixed-size arrays so that
+ * the structure can be copied by value and no individual members need
+ * to be freed by the receiver.
+ */
+struct hostapd_if_pmk_r1 {
+	uint8_t pmk_r1[PMK_LEN_MAX];
+	uint8_t pmk_r1_len;
+	uint8_t pmk_r1_name[PMK_R1_NAME_LEN];
+	int pairwise;
+
+	int expires_in;
+	int session_timeout;
+
+	uint8_t identity[MAX_IDENTITY_LEN];
+	uint8_t identity_len;
+
+	uint8_t radius_cui[MAX_RADIUS_CUI_LEN];
+	uint16_t radius_cui_len;
+};
+
 struct hostapd_if_frame_ctx {
 	int rx_link_id;
 	int status_code;
@@ -122,6 +168,7 @@ struct hostapd_if_frame_ctx {
 			uint16_t auth_transaction;
 			uint16_t auth_alg;
 			uint8_t sta_assoc_link_mac[6];
+			struct hostapd_if_pmk_r1 *pmk_r1;
 
 			/*
 			 * status code is outside
@@ -221,23 +268,6 @@ struct hostapd_if_event {
 	} data;
 };
 
-#if 0
-/*
- * PMK-R1 container (currently not used)
- */
-struct hostapd_if_pmk_r1 {
-	uint8_t *pmk_r1;
-	uint8_t pmk_r1_len;
-	uint8_t *pmk_r1_name;
-	uint8_t *pmk_r1_name_len;
-	int expires_in;
-	int session_timeout;
-	uint8_t *identity;
-	uint8_t identity_len;
-	uint8_t *radius_cui;
-	uint16_t radius_cui_len;
-};
-#endif
 
 struct hostapd_external_app_object {
 	/*
