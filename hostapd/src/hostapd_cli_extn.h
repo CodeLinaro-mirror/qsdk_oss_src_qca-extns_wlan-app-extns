@@ -47,6 +47,8 @@ int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
 
 int wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd);
 int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_set_ht40intol(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_ht40intol(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 
 #define HOSTAPD_CLI_CMDS_EXTN \
 	{ "set_esp", hostapd_cli_cmd_set_esp_extn, NULL, \
@@ -119,7 +121,11 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 	  "  = set primary channel list (space-separated channel numbers);" \
 	  " no args clears list" }, \
 	{ "get_primary_chans", hostapd_cli_cmd_get_primary_chans, NULL, \
-	  "= get current primary channel list" },
+	  "= get current primary channel list" }, \
+	{ "set_ht40intol", hostapd_cli_cmd_set_ht40intol, NULL, \
+		"<value 0|1> = set ht40 intolerant bit" }, \
+	{ "get_ht40intol", hostapd_cli_cmd_get_ht40intol, NULL, \
+		" = get current ht40 intolerant bit value" },
 #else
 #define HOSTAPD_CLI_CMDS_EXTN
 
