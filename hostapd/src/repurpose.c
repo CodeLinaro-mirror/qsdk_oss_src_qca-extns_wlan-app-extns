@@ -6,6 +6,7 @@
 #include "utils/includes.h"
 #include "utils/common.h"
 #include "common/ieee802_11_defs.h"
+#include "common/wpa_ctrl.h"
 #include "ap/hostapd.h"
 #include "cmn.h"
 #include "ap/beacon.h"
@@ -147,7 +148,7 @@ hostapd_link_remove_repurposed_bss_extn(struct hostapd_data *hapd,
 	unsigned int i;
 
 	if (removal_type == HAPD_LINK_DISABLE) {
-		hostapd_disable_bss(hapd, 0);
+		hostapd_disable_bss(hapd, 0, AP_EVENT_DISABLED);
 		goto refresh_beacon;
 	}
 
