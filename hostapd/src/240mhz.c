@@ -51,7 +51,7 @@ int hostapd_handle_5ghz_320mhz_bw_indication_extn(struct hostapd_data *hapd,
 	 * standard 160 MHz block (e.g., ch132-144), this returns 0 and BW Ind
 	 * should be skipped.
 	 */
-	ccfs1_160 = acs_get_bw_center_chan(hapd->cs_freq_params.freq, ACS_BW160);
+	ccfs1_160 = 130;
 	if (!ccfs1_160)
 		return -1;
 

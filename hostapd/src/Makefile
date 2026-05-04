@@ -19,11 +19,14 @@ OBJS+= \
 	qcn_extns/dfs_extn.o \
 	qcn_extns/ucode_extn.o \
 	qcn_extns/wpa_supplicant_extn.o \
-	qcn_extns/acs_extn.o \
 	qcn_extns/mucapwar.o \
 	qcn_extns/dcs.o \
 	qcn_extns/afc.o \
 	qcn_extns/hostapd_extn.o
+
+ifdef CONFIG_ACS
+	OBJS += qcn_extns/acs_extn.o
+endif
 
 ifdef CONFIG_EXTERNAL_PLUGIN
 CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN
