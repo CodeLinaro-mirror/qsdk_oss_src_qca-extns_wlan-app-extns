@@ -16,6 +16,7 @@
 #include "ap/hw_features.h"
 #include "utils/eloop.h"
 #include "cbs.h"
+#include "dcs.h"
 
 static int
 cbs_print_usage_extn(char *reply, int reply_size)
@@ -330,6 +331,23 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 	}
 
 	return 0;
+}
+
+int hostapd_cbs_trigger_csa(struct hostapd_data *hapd)
+{
+	struct hostapd_config_extn *conf_extn = &hapd->iface->conf->conf_extn;
+	struct hostapd_channel_data *cbs_chan =
+		conf_extn->cbs_params.best_chan;
+
+	if (!cbs_chan) {
+		wpa_printf(MSG_DEBUG, "CBS CSA attempt failed. CBS chan: %p",
+			   cbs_chan);
+		return -1;
+	}
+
+	wpa_printf(MSG_INFO, "CBS attempting CSA for freq: %d", cbs_chan->freq);
+
+	return hostapd_trigger_channel_switch_extn(hapd->iface, cbs_chan);
 }
 
 

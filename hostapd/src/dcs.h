@@ -49,4 +49,8 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 				 union wpa_event_data *data);
 int hostapd_drv_dcs_sim_trigger(struct hostapd_data *hapd, u8 link_id,
                                 struct driver_dcs_sim *params);
+int
+hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
+				    struct hostapd_channel_data *chan);
+
 #endif
