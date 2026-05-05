@@ -85,6 +85,8 @@ hostapd_config_defaults_bss_extn(struct hostapd_bss_config *bss)
 		MBSSID_NON_TX_DEF_OPTIONAL_ELEM_SIZE;
 	bss_extn->nontx_vendor_elem_size =
 		MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE;
+
+	bss_extn->tpe_common_psd = true;
 }
 
 int

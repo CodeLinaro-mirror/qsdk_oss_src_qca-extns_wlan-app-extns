@@ -53,6 +53,8 @@ int hostapd_cli_cmd_get_ht40intol(struct wpa_ctrl *ctrl, int argc, char *argv[])
 int hostapd_cli_cmd_set_eht_config_ccfs0(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_eht_config_ccfs0(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 
+int hostapd_cli_cmd_set_tpe_common_psd(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_tpe_common_psd(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 #define HOSTAPD_CLI_CMDS_EXTN \
 	{ "set_esp", hostapd_cli_cmd_set_esp_extn, NULL, \
 		"<param> <value> = set ESP param (esp_airtime 0-255, " \
@@ -132,7 +134,11 @@ int hostapd_cli_cmd_get_eht_config_ccfs0(struct wpa_ctrl *ctrl, int argc, char *
 	{ "set_eht_config_ccfs0", hostapd_cli_cmd_set_eht_config_ccfs0, NULL, \
 		"<value 0|1> :Set EHT OP ccfs0 field config" }, \
 	{ "get_eht_config_ccfs0", hostapd_cli_cmd_get_eht_config_ccfs0, NULL, \
-		"Get EHT OP ccfs0 field config" },
+		"Get EHT OP ccfs0 field config" }, \
+	{ "set_tpe_common_psd", hostapd_cli_cmd_set_tpe_common_psd, NULL, \
+		"<value 0|1> :Set config for common psd power in TPE IE" }, \
+	{ "get_tpe_common_psd", hostapd_cli_cmd_get_tpe_common_psd, NULL, \
+		"Get config for common psd power in TPE IE"},
 #else
 #define HOSTAPD_CLI_CMDS_EXTN
 

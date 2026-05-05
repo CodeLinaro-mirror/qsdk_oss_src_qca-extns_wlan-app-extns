@@ -358,6 +358,8 @@ struct hostapd_bss_config_extn {
 	u8 nontx_optional_elem_size;
 	enum repurpose_mode repurpose_mode;
 	enum qca_wlan_vendor_vap_submode_type vap_submode;
+	/* Config to control adding single common PSD to TPE IE */
+	bool tpe_common_psd;
 };
 
 struct esp_extn {
