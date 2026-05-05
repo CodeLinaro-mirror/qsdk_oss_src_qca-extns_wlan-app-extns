@@ -96,6 +96,52 @@ static int hostapd_ctrl_iface_get_ht40intol_extn(struct hostapd_data *hapd, char
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_eht_config_ccfs0_extn(struct hostapd_data *hapd,
+							char *pos)
+{
+	char *end;
+	long user_input;
+	bool eht_config_ccfs0;
+
+	if (!hapd || !hapd->iconf)
+		return -1;
+
+	if (!hostapd_is_eht_enabled(hapd)) {
+		wpa_printf(MSG_ERROR, "EHT CONFIG CCFS0 is not allowed in current mode");
+		return -1;
+	}
+
+	user_input = strtol(pos, &end, 10);
+	if (pos == end || *end != '\0' || user_input < 0 || user_input > 1) {
+		wpa_printf(MSG_ERROR, "Invalid input for set_eht_config_ccfs0\n");
+		return -1;
+	}
+
+	eht_config_ccfs0 = (user_input == 1);
+	hapd->iconf->conf_extn.eht_config_ccfs0 = eht_config_ccfs0;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_eht_config_ccfs0_extn(struct hostapd_data *hapd,
+							char *buf, size_t buflen)
+{
+	int ret = -1;
+
+	if (!hapd || !hapd->iconf || !buf)
+		return ret;
+
+	if (!hostapd_is_eht_enabled(hapd)) {
+		wpa_printf(MSG_ERROR, "Not supported in current mode");
+		return -1;
+	}
+
+	ret = os_snprintf(buf, buflen, "eht_config_ccfs0 %d\n",
+			  hapd->iconf->conf_extn.eht_config_ccfs0);
+
+	return ret;
+}
+
 static int hostapd_ctrl_iface_set_esp_extn(struct hostapd_data *hapd, char *cmd)
 {
 	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
@@ -841,6 +887,13 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strcmp(buf, "GET_HT40INTOL") == 0) {
 		reply_len_extn = hostapd_ctrl_iface_get_ht40intol_extn(hapd, reply,
 								       reply_size);
+	} else if (os_strncmp(buf, "SET_EHT_CONFIG_CCFS0 ", 21) == 0) {
+		if (hostapd_ctrl_iface_set_eht_config_ccfs0_extn(hapd, buf + 20))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_EHT_CONFIG_CCFS0") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_eht_config_ccfs0_extn(hapd,
+									      reply,
+									      reply_size);
         } else {
 		return -1;
 	}

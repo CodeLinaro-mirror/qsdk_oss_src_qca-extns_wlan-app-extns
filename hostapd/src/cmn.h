@@ -328,6 +328,9 @@ struct hostapd_config_extn {
 	/* OBSS SNR thresholds */
 	u8 obss_snr_threshold;    /* OBSS SNR threshold */
 	u8 obss_rx_snr_threshold; /* OBSS RX SNR threshold */
+
+	/* Config to set EHT operation CCFS0 to 0*/
+	bool eht_config_ccfs0;
 };
 
 /**

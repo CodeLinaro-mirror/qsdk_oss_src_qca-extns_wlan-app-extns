@@ -50,6 +50,9 @@ int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_ht40intol(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_ht40intol(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 
+int hostapd_cli_cmd_set_eht_config_ccfs0(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_eht_config_ccfs0(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+
 #define HOSTAPD_CLI_CMDS_EXTN \
 	{ "set_esp", hostapd_cli_cmd_set_esp_extn, NULL, \
 		"<param> <value> = set ESP param (esp_airtime 0-255, " \
@@ -125,7 +128,11 @@ int hostapd_cli_cmd_get_ht40intol(struct wpa_ctrl *ctrl, int argc, char *argv[])
 	{ "set_ht40intol", hostapd_cli_cmd_set_ht40intol, NULL, \
 		"<value 0|1> = set ht40 intolerant bit" }, \
 	{ "get_ht40intol", hostapd_cli_cmd_get_ht40intol, NULL, \
-		" = get current ht40 intolerant bit value" },
+		" = get current ht40 intolerant bit value" }, \
+	{ "set_eht_config_ccfs0", hostapd_cli_cmd_set_eht_config_ccfs0, NULL, \
+		"<value 0|1> :Set EHT OP ccfs0 field config" }, \
+	{ "get_eht_config_ccfs0", hostapd_cli_cmd_get_eht_config_ccfs0, NULL, \
+		"Get EHT OP ccfs0 field config" },
 #else
 #define HOSTAPD_CLI_CMDS_EXTN
 
