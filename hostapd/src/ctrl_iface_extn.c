@@ -55,6 +55,11 @@ static int hostapd_ctrl_iface_set_esp_extn(struct hostapd_data *hapd, char *cmd)
 	if (!iface_extn)
 		return -1;
 
+	if (!hapd->started || hapd->disabled) {
+		wpa_printf(MSG_ERROR, "ESP: BSS is disabled");
+		return -1;
+	}
+
 	param = strsep(&cmd, "=");
 	if (!param || !cmd)
 		return -1;
@@ -123,6 +128,11 @@ static int hostapd_ctrl_iface_get_esp_extn(struct hostapd_data *hapd,
 
 	if (!iface_extn)
 		return -1;
+
+	if (!hapd->started || hapd->disabled) {
+		wpa_printf(MSG_ERROR, "ESP: BSS is disabled");
+		return -1;
+	}
 
 	if (iface_extn->esp.enable) {
 		if (iface_extn->esp.airtime)

@@ -122,7 +122,7 @@ int hostapd_drv_set_esp_param_extn(struct hostapd_data *hapd, const char *param,
 	for (i = 0; i < hapd->iface->num_bss; i++) {
 		struct hostapd_data *bss = hapd->iface->bss[i];
 
-		if (!bss)
+		if (!bss || !bss->started || bss->disabled)
 			continue;
 		ieee802_11_set_beacon_per_bss_only(bss);
 #ifdef CONFIG_IEEE80211BE
