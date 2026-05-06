@@ -714,3 +714,112 @@ int hostapd_validate_current_6ghz_hw_blocklist_extn(
 	return hostapd_validate_hw_blocklist_for_freq_params_extn(
 		iface, &freq_params, pwr_mode_id, op_name);
 }
+
+/**
+ * wpas_get_6ghz_bss_pwr_mode_extn - Extract 6 GHz regulatory power mode from BSS
+ * @bss: BSS scan result entry
+ *
+ * Parses the HE Operation IE to extract the AP's regulatory power mode
+ * (LPI/SP/VLP) for 6 GHz operation.
+ *
+ * Return: NL80211_REG_AP_LPI/SP/VLP on success, NL80211_REG_NUM_POWER_MODES
+ *         if the IE is absent or power mode cannot be determined.
+ */
+static u8 wpas_get_6ghz_bss_pwr_mode_extn(const struct wpa_bss *bss)
+{
+	const u8 *ie;
+	struct ieee80211_he_operation *heop;
+	struct ieee80211_he_6ghz_oper_info *he_oper_6g;
+	u8 pos = 9;
+	u8 he_reg_info;
+
+	ie = get_ie_ext(bss->ies, bss->ie_len, WLAN_EID_EXT_HE_OPERATION);
+	if (!ie || ie[1] < 6)
+		return NL80211_REG_NUM_POWER_MODES;
+
+	heop = (struct ieee80211_he_operation *)(&ie[3]);
+	if (!(heop->he_oper_params & HE_OPERATION_6GHZ_OPER_INFO))
+		return NL80211_REG_NUM_POWER_MODES;
+
+	if (heop->he_oper_params & HE_OPERATION_VHT_OPER_INFO)
+		pos += 3;
+	if (heop->he_oper_params & HE_OPERATION_COHOSTED_BSS)
+		pos += 1;
+
+	he_oper_6g = (struct ieee80211_he_6ghz_oper_info *)(ie + pos);
+	he_reg_info = (he_oper_6g->control &
+		       HE_6GHZ_OPER_INFO_CTRL_REG_INFO_MASK) >>
+		       HE_6GHZ_OPER_INFO_CTRL_REG_INFO_SHIFT;
+
+	if (he_reg_info == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP)
+		he_reg_info = HE_REG_INFO_6GHZ_AP_TYPE_SP;
+
+	return he_reg_info;
+}
+
+/**
+ * wpas_is_6ghz_hwbl_link_ok_extn - Check if a 6 GHz BSS is HW blocklisted
+ * @wpa_s: wpa_supplicant context
+ * @bss: BSS scan result to validate
+ *
+ * Validates the 6 GHz BSS channel/bandwidth/power-mode combination against
+ * the HW blocklist. Called alongside wpa_is_6ghz_power_mode_match() during
+ * scan result processing to skip blacklisted links and downgrade to a
+ * reduced number of links during connection.
+ *
+ * Return: true if the BSS is valid (not blocked), false if blocklisted.
+ */
+bool wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
+				     const struct wpa_bss *bss)
+{
+	struct wpa_supplicant_extn *wpas_extn;
+	u16 center_freq, bw;
+	u8 pwr_mode;
+
+	if (!wpa_s || !bss || !is_6ghz_freq(bss->freq))
+		return true;
+
+	wpas_extn = &wpa_s->wpas_extn;
+	if (!wpas_extn->check_hw_blocklist ||
+	    !wpas_extn->hw_blocklist_info ||
+	    !wpas_extn->num_hw_blocklist)
+		return true;
+
+	pwr_mode = wpas_get_6ghz_bss_pwr_mode_extn(bss);
+	if (pwr_mode >= NL80211_REG_NUM_POWER_MODES)
+		return true;
+
+	bw = channel_width_to_int(bss->max_cw);
+	if (!bw)
+		bw = 20;
+
+	/*
+	 * Compute center frequency. Use ccfs0 from the Operation IE when
+	 * available (center_freq1_idx != 0). For 320 MHz, ccfs0 unambiguously
+	 * identifies the segment. When center_freq1_idx is zero (IE not
+	 * parsed), fall back to hostapd_get_bonded_chan_center_freq() which
+	 * uses the bonded channel table; for 320 MHz it returns the first
+	 * matching segment's center — good enough for a conservative check.
+	 */
+	if (bss->center_freq1_idx == 2)
+		center_freq = 5935;
+	else if (bss->center_freq1_idx)
+		center_freq = 5950 + bss->center_freq1_idx * 5;
+	else
+		center_freq = hostapd_get_bonded_chan_center_freq(
+			(u16)bss->freq, bw, 0, 0);
+
+	if (hw_features_is_channel_in_hw_blocklist_for_hw_idx_extn(
+		    wpas_extn->hw_blocklist_info,
+		    wpas_extn->num_hw_blocklist,
+		    NL80211_WIPHY_RADIO_ID_MAX,
+		    (u16)bss->freq, center_freq, bw,
+		    pwr_mode, bss->punc_bitmap)) {
+		wpa_printf(MSG_DEBUG,
+			   "HWBL: 6 GHz BSS freq=%d bw=%u center=%u pwr=%u blocked",
+			   bss->freq, bw, center_freq, pwr_mode);
+		return false;
+	}
+
+	return true;
+}
