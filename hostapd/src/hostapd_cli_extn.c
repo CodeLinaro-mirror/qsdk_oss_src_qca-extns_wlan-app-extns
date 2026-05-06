@@ -76,6 +76,39 @@ int hostapd_cli_cmd_get_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl,
 	return wpa_ctrl_command(ctrl, "GET_RNR_6GHZ_COLOCATED");
 }
 
+int hostapd_cli_cmd_countryie_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[32];
+	int ret;
+
+	if (argc != 1) {
+		printf("Invalid 'countryie' (0-disable or 1-enable) is needed\n");
+		return -1;
+	}
+
+	if (os_strcmp(argv[0], "0") != 0 && os_strcmp(argv[0], "1") != 0) {
+		printf("Invalid 'countryie' value '%s' - valid values are 0 or 1\n",
+		       argv[0]);
+		return -1;
+	}
+
+	ret = os_snprintf(cmd, sizeof(cmd), "COUNTRY_IE %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), ret))
+		return -1;
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+int hostapd_cli_cmd_get_countryie_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid 'get_countryie' command - no argument needed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "GET_COUNTRY_IE");
+}
+
 int hostapd_cli_acs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	if (argc < 1) {
