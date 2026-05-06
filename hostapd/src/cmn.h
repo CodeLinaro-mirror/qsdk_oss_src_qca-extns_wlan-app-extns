@@ -1446,6 +1446,32 @@ hostapd_5ghz_eht_320_channel_bw_extn(struct hostapd_hw_modes *mode,
 #endif /* HOSTAPD */
 
 /**
+ * hostapd_ttlm_restore_default_mapping_for_5g_cac() - Restore default
+ * TID-to-link mapping when a DFS CSA triggers CAC on the 5 GHz link.
+ * @hapd: Pointer to the hostapd BSS instance
+ * @settings: CSA channel parameters
+ *
+ * When a DFS Channel Switch Announcement (CSA) is triggered and the new channel
+ * requires a Channel Availability Check (CAC), the 5 GHz link becomes
+ * temporarily unavailable. If any TIDs are exclusively mapped to that 5 GHz
+ * link — either through an Advertised TTLM or a Peer-to-Peer (P2P) negotiated
+ * TTLM — those TIDs would be rendered unusable for the duration of the CAC.
+ * To prevent traffic disruption, this function restores the default TID-to-link
+ * mapping by issuing an Advertised TTLM that maps all TIDs back to the full set
+ * of available MLD links.
+ *
+ * For the BSS, if TTLM is enabled (ttlm_enable) and the BSS is part of a
+ * multi-link device (MLD) with more than one affiliated link,
+ * hostapd_ttlm_handle_5g_only_tid_map_for_cac() is called to evaluate the
+ * current TID mapping state and apply the appropriate Advertised TTLM update.
+ *
+ * Return: None
+ */
+void
+hostapd_ttlm_restore_default_mapping_for_5g_cac(struct hostapd_data *hapd,
+						struct csa_settings *settings);
+
+/**
  * hostapd_handle_csa_target_unavailable_extn() - Recover from stale CSA target
  * @hapd: BSS instance handling the channel switch event
  * @freq: Frequency reported by the channel switch completion event
