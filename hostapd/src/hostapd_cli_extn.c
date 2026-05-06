@@ -341,6 +341,28 @@ int hostapd_cli_cmd_get_ht40intol(struct wpa_ctrl *ctrl, int argc, char *argv[])
 	return wpa_ctrl_command(ctrl, "GET_HT40INTOL");
 }
 
+int hostapd_cli_cmd_set_autorecovery_after_nol_vapdown(struct wpa_ctrl *ctrl,
+						       int argc, char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid set_autorecovery_after_nol_vapdown command\n"
+		       "usage: set_autorecovery_after_nol_vapdown <0|1>\n"
+		       "  0: Disable VAP auto-recovery after NOL expiry\n"
+		       "  1: Enable VAP auto-recovery after NOL expiry (default)\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd),
+			  "SET_AUTORECOVERY_AFTER_NOL_VAPDOWN %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
 int hostapd_cli_cmd_set_eht_config_ccfs0(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	char buf[64];

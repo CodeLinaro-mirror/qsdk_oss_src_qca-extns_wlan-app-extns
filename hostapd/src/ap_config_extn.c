@@ -73,6 +73,12 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->dcs_conf.bw_reduction_ctrl = 0;
 
 	conf_extn->eht_config_ccfs0 = false;
+
+	/* No primary frequencies configured */
+	conf_extn->num_primary_freq = 0;
+
+	/* Auto-recovery after NOL VAP down */
+	conf_extn->autorecovery_after_nol_vapdown = 1;
 }
 
 void

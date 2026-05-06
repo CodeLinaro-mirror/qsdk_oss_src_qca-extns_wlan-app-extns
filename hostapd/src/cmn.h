@@ -331,6 +331,9 @@ struct hostapd_config_extn {
 
 	/* Config to set EHT operation CCFS0 to 0*/
 	bool eht_config_ccfs0;
+
+	/* Auto-recovery after NOL VAP down */
+	bool autorecovery_after_nol_vapdown;
 };
 
 /**
