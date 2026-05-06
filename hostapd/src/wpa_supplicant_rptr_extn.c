@@ -22,6 +22,7 @@
 #include "../wpa_supplicant/scan.h"
 #include "wpa_supplicant_rptr_extn.h"
 #include "240mhz.h"
+#include "qcn_ie_extn.h"
 
 #define SME_PRE_CONNECT_TIMEOUT 5
 

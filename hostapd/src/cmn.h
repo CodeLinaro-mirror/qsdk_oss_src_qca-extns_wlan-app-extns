@@ -477,13 +477,6 @@ static inline void hostapd_dcs_restore_extn(struct hostapd_iface *iface,
 	return;
 }
 
-static inline void
-hostapd_modify_buflen_for_240mhz_extn(size_t *buflen,
-				      struct hostapd_data *hapd)
-{
-	return;
-}
-
 static inline int
 hostapd_get_n_chans_and_frequency_extn(enum oper_chan_width oper_chwidth,
 				       int cf1,
@@ -524,9 +517,15 @@ hostapd_get_bw_and_startchan_for_240mhz_extn(enum oper_chan_width
 	return -1;
 }
 
+static inline size_t
+hostapd_modify_buflen_for_qcn_ie_extn(struct hostapd_data *hapd)
+{
+	return 0;
+}
+
 static inline u8 *
-hostapd_eid_vendor_240mhz_extn(struct hostapd_data *hapd, u8 *eid,
-			       int opmode)
+hostapd_eid_qcn_vendor_ie_extn(struct hostapd_data *hapd, u8 *eid,
+				int opmode)
 {
 	return eid;
 }
@@ -1076,8 +1075,52 @@ int
 hostapd_modify_supported_op_class_for_240mhz_extn(int freq,
 						  enum oper_chan_width ch_width,
 						  u8 *op_class);
-void hostapd_modify_buflen_for_240mhz_extn(size_t *buflen,
-					   struct hostapd_data *hapd);
+
+/**
+ * hostapd_modify_buflen_for_qcn_ie_extn - Compute QCN Vendor IE byte count
+ * @hapd: per-BSS hostapd context
+ *
+ * Computes the total number of bytes required for the QCN Vendor IE.
+ * The caller should add the returned value to its buffer-length accumulator
+ * before allocating the frame buffer.
+ *
+ * Returns: number of bytes needed for the QCN Vendor IE, or 0 if not needed
+ */
+size_t hostapd_modify_buflen_for_qcn_ie_extn(struct hostapd_data *hapd);
+
+/**
+ * hostapd_eid_qcn_vendor_ie_extn - Encode the QCN Vendor IE
+ * @hapd: per-BSS hostapd context
+ * @eid: write cursor pointing to the next free byte in the IE buffer
+ * @opmode: IEEE 802.11 operating mode
+ *
+ * Returns: updated write cursor (pos advanced past the completed IE) on
+ *          success, or the original @eid value if no attribute is active or
+ *          @eid is NULL.
+ */
+u8 * hostapd_eid_qcn_vendor_ie_extn(struct hostapd_data *hapd, u8 *eid,
+				    enum ieee80211_op_mode opmode);
+
+/**
+ * hostapd_qcn_buflen_add_240mhz_attr - Compute 240 MHz QCN IE attribute byte count
+ * @hapd: per-BSS hostapd context
+ *
+ * Returns: number of bytes needed for the 240 MHz attribute, or 0 if not needed
+ */
+size_t hostapd_qcn_buflen_add_240mhz_attr(struct hostapd_data *hapd);
+
+/**
+ * hostapd_qcn_eid_add_240mhz_attr - Encode the 240 MHz vendor attribute into a QCN IE
+ * @hapd: per-BSS hostapd context
+ * @pos: write cursor pointing to the next free byte in the IE buffer;
+ * @opmode: IEEE 802.11 operating mode
+ *
+ * Returns: updated write cursor (pos advanced past the written TLV) on
+ *          success, or the original @pos value when the attribute is skipped.
+ */
+u8 * hostapd_qcn_eid_add_240mhz_attr(struct hostapd_data *hapd, u8 *pos,
+				     enum ieee80211_op_mode opmode);
+
 int hostapd_dfs_get_start_chan_idx_extn(struct hostapd_iface *iface);
 int hostapd_get_n_chans_and_frequency_extn(enum oper_chan_width oper_chwidth,
 					   int cf1,

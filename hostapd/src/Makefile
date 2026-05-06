@@ -4,7 +4,7 @@ ifdef CONFIG_QCA_LAB_TEST_FEATURES
 CFLAGS += -DCONFIG_QCA_LAB_TEST_FEATURES
 endif
 
-OBJS+= \
+OBJS += \
 	qcn_extns/240mhz.o \
 	qcn_extns/driver_nl80211_extn.o \
 	qcn_extns/ap_config_extn.o \
@@ -22,7 +22,8 @@ OBJS+= \
 	qcn_extns/mucapwar.o \
 	qcn_extns/dcs.o \
 	qcn_extns/afc.o \
-	qcn_extns/hostapd_extn.o
+	qcn_extns/hostapd_extn.o \
+	qcn_extns/qcn_ie_extn.o \
 
 ifdef CONFIG_ACS
 	OBJS += qcn_extns/acs_extn.o

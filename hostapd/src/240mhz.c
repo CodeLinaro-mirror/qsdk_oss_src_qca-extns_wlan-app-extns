@@ -22,6 +22,7 @@
 #include "ap/sta_info.h"
 #include "cmn.h"
 #include "240mhz.h"
+#include "qcn_ie_extn.h"
 #include "ap/ieee802_11.h"
 
 
@@ -173,12 +174,78 @@ void hostapd_modify_supported_op_class_for_320mhz_extn(int freq, u8 *op_class)
 	*op_class = is_5ghz_freq(freq) ? 129 : 134;
 }
 
-void hostapd_modify_buflen_for_240mhz_extn(size_t *buflen,
-					   struct hostapd_data *hapd)
+static bool hostapd_is_240mhz_attr_required(struct hostapd_data *hapd)
 {
-	if (is_5ghz_freq(hapd->iface->freq))
-		*buflen += (6 + 2 + 4 +
-			   sizeof(struct ieee80211_240mhz_vendor_oper_extn));
+	if (!is_5ghz_freq(hapd->iface->freq) ||
+	    is_6ghz_op_class(hapd->iconf->op_class) ||
+	    hapd->iconf->eht_oper_chwidth != CONF_OPER_CHWIDTH_320MHZ ||
+	    !hostapd_is_eht_enabled(hapd))
+		return false;
+	return true;
+}
+
+size_t hostapd_qcn_buflen_add_240mhz_attr(struct hostapd_data *hapd)
+{
+	if (!hostapd_is_240mhz_attr_required(hapd))
+		return 0;
+
+	return QCN_ATTRIB_HDR_LEN +
+	       sizeof(struct ieee80211_240mhz_vendor_oper_extn);
+}
+
+u8 * hostapd_qcn_eid_add_240mhz_attr(struct hostapd_data *hapd, u8 *pos,
+				     enum ieee80211_op_mode opmode)
+{
+	struct hostapd_hw_modes *mode;
+	struct eht_capabilities *eht_cap;
+	struct ieee80211_240mhz_vendor_oper_extn *eht_240_cap;
+	u8 ccfs0, ccfs1;
+
+	if (!pos)
+		return pos;
+
+	if (!hostapd_is_240mhz_attr_required(hapd))
+		return pos;
+
+	mode = hapd->iface->current_mode;
+	eht_cap = mode ? &mode->eht_capab[opmode] : NULL;
+	if (!eht_cap || !eht_cap->eht_supported)
+		return pos;
+
+	ccfs0 = hostapd_get_oper_centr_freq_seg0_idx(hapd->iconf);
+	ccfs1 = ccfs0 - 16;
+
+	*pos++ = QCN_ATTRIB_HE_240_MHZ_SUPP;
+	*pos++ = sizeof(struct ieee80211_240mhz_vendor_oper_extn);
+
+	eht_240_cap = (struct ieee80211_240mhz_vendor_oper_extn *)pos;
+	os_memset(eht_240_cap, 0, sizeof(struct ieee80211_240mhz_vendor_oper_extn));
+
+	eht_240_cap->ccfs1 = ccfs1;
+	eht_240_cap->ccfs0 = ccfs0;
+	eht_240_cap->punct_bitmap = hapd->iconf->punct_bitmap;
+	eht_240_cap->is5ghz240mhz =
+		(eht_cap->phy_cap[EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_IDX] &
+		 EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_MASK) >> 1;
+	eht_240_cap->bfmess320mhz =
+		(eht_cap->phy_cap[EHT_PHYCAP_BEAMFORMEE_SS_320MHZ_IDX] &
+		 EHT_PHYCAP_BEAMFORMEE_SS_320MHZ_MASK) >> 5;
+	eht_240_cap->numsound320mhz =
+		((eht_cap->phy_cap[EHT_PHYCAP_NUM_SOUND_DIM_320MHZ_IDX] &
+		  EHT_PHYCAP_NUM_SOUND_DIM_320MHZ_MASK) >> 6) |
+		((eht_cap->phy_cap[EHT_PHYCAP_NUM_SOUND_DIM_320MHZ_IDX_1] &
+		  EHT_PHYCAP_NUM_SOUND_DIM_320MHZ_MASK_1) << 2);
+	eht_240_cap->nonofdmaulmumimo320mhz =
+		(eht_cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &
+		 EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ) >> 3;
+	eht_240_cap->mubfmr320mhz =
+		(eht_cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &
+		 EHT_PHYCAP_MU_BEAMFORMER_MASK) >> 6;
+	memcpy(&eht_240_cap->mcs_map_320mhz, &eht_cap->mcs,
+	       EHT_PHYCAP_MCS_NSS_LEN_160MHZ);
+	pos += sizeof(struct ieee80211_240mhz_vendor_oper_extn);
+
+	return pos;
 }
 
 int hostapd_dfs_get_start_chan_idx_extn(struct hostapd_iface *iface)
@@ -317,81 +384,6 @@ hostapd_get_bw_and_startchan_for_240mhz_extn(enum oper_chan_width
 	}
 
 	return status;
-}
-
-u8 * hostapd_eid_vendor_240mhz_extn(struct hostapd_data *hapd, u8 *eid,
-				    enum ieee80211_op_mode opmode)
-{
-	struct hostapd_hw_modes *mode;
-	u8 *pos = eid;
-	struct eht_capabilities *eht_cap;
-	struct ieee80211_240mhz_vendor_oper_extn *eht_240_cap;
-	u8 ccfs0,ccfs1;
-
-	mode = hapd->iface->current_mode;
-	if (!mode || is_6ghz_op_class(hapd->iconf->op_class) ||
-	    hapd->iconf->eht_oper_chwidth != CONF_OPER_CHWIDTH_320MHZ)
-		return eid;
-
-	eht_cap = &mode->eht_capab[opmode];
-
-	if (!eht_cap->eht_supported)
-		return eid;
-
-	ccfs0 = hostapd_get_oper_centr_freq_seg0_idx(hapd->iconf);
-	ccfs1 = ccfs0 - 16;
-
-	*pos++ = WLAN_EID_VENDOR_SPECIFIC;
-	*pos++ = 6 + /* Element ID, Length, OUI, OUI Type */
-		4 + /* QCN version Attribute size */
-		sizeof(struct ieee80211_240mhz_vendor_oper_extn);
-	WPA_PUT_BE24(pos, OUI_QCN);
-	pos += 3;
-	*pos++ = 1; /* QCN_OUI_TYPE */
-
-	/* QCN Version Attribute*/
-	*pos++ = 1; /* QCN_ATTRIB_VERSION */
-	*pos++ = 2; /* Length */
-	*pos++ = 1; /* QCN_VER_ATTR_VER */
-	*pos++ = 0; /* QCN_VER_ATTR_SUBVERSION */
-
-	/* QCN Attirbute */
-	*pos++ = QCN_ATTRIB_HE_240_MHZ_SUPP; /*QCN_ATTRIB_HE_240_MHZ_SUPP*/
-	*pos++ = sizeof(struct ieee80211_240mhz_vendor_oper_extn);
-
-	/* 240Mhz fields */
-	eht_240_cap = (struct ieee80211_240mhz_vendor_oper_extn*)pos;
-	os_memset(eht_240_cap, 0,
-		  sizeof(struct ieee80211_240mhz_vendor_oper_extn));
-
-	eht_240_cap->ccfs1 = ccfs1;
-	eht_240_cap->ccfs0 = hostapd_get_oper_centr_freq_seg0_idx(hapd->iconf);
-	eht_240_cap->punct_bitmap = hapd->iconf->punct_bitmap;
-
-	eht_240_cap->is5ghz240mhz =
-		(eht_cap->phy_cap[EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_IDX] &
-		EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_MASK) >> 1;
-	eht_240_cap->bfmess320mhz =
-		(eht_cap->phy_cap[EHT_PHYCAP_BEAMFORMEE_SS_320MHZ_IDX] &
-		EHT_PHYCAP_BEAMFORMEE_SS_320MHZ_MASK) >> 5;
-
-	eht_240_cap->numsound320mhz =
-		((eht_cap->phy_cap[EHT_PHYCAP_NUM_SOUND_DIM_320MHZ_IDX] &
-		EHT_PHYCAP_NUM_SOUND_DIM_320MHZ_MASK) >> 6) |
-		((eht_cap->phy_cap[EHT_PHYCAP_NUM_SOUND_DIM_320MHZ_IDX_1] &
-		EHT_PHYCAP_NUM_SOUND_DIM_320MHZ_MASK_1) << 2);
-	eht_240_cap->nonofdmaulmumimo320mhz =
-		(eht_cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &
-		EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ) >> 3;
-	eht_240_cap->mubfmr320mhz =
-		(eht_cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &
-		EHT_PHYCAP_MU_BEAMFORMER_MASK) >> 6;
-
-	memcpy(&eht_240_cap->mcs_map_320mhz, &eht_cap->mcs,
-	       EHT_PHYCAP_MCS_NSS_LEN_160MHZ);
-	pos += sizeof(struct ieee80211_240mhz_vendor_oper_extn);
-
-	return pos;
 }
 
 u16 hostapd_copy_sta_eht_240mhz_cap_extn(struct hostapd_data *hapd,
@@ -548,19 +540,6 @@ ieee802_11_parse_vendor_specific_eht_240mhz_cap_extn(struct ieee802_11_elems
 	}
 
 	return 0;
-}
-
-int ieee802_11_parse_vendor_specific_elems_extn(struct ieee802_11_elems *elems,
-						unsigned int oui_flag,
-						const u8 *pos, size_t elen)
-{
-	switch (oui_flag) {
-	case OUI_QCN:
-		return ieee802_11_parse_vendor_specific_eht_240mhz_cap_extn(
-				elems, oui_flag, pos, elen);
-	default:
-		return EXT_INVALID;
-	}
 }
 
 void hostapd_copy_sta_add_params_extn(struct hostapd_sta_add_params_extn
