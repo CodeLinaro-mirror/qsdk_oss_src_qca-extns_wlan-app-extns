@@ -397,18 +397,18 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 
 	freq = hostapd_hw_get_freq(hapd, new_chan);
 
-	if (ch_width == 0) {
+	/* Width 0 in the WB IE covers HT operation; use seg0 to detect HT40. */
+	if (!wb_cs_ie) {
 		sec_chan = 0;
+	} else if (cf0 < new_chan) {
+		sec_chan = -1;
+	} else if (cf0 > new_chan) {
+		sec_chan = 1;
 	} else {
-		if (cf0 < new_chan)
-			sec_chan = -1;
-		else if (cf0 > new_chan)
-			sec_chan = 1;
-		else
-			sec_chan = 0;
+		sec_chan = 0;
 	}
 
-	wpa_printf(MSG_DEBUG, "uplink_csa: chanel change prams: cf0 %u cf1 %u sec %u chwidth %u",
+	wpa_printf(MSG_DEBUG, "uplink_csa: chanel change prams: cf0 %u cf1 %u sec %d chwidth %u",
 		   cf0, cf1, sec_chan, ch_width);
 
 	if (!wb_cs_ie) {
