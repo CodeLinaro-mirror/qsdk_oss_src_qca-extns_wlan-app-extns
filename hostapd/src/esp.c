@@ -52,6 +52,10 @@ int hostapd_drv_set_esp_param_extn(struct hostapd_data *hapd, const char *param,
 		return -1;
 	}
 	drv = bss->drv;
+	if (!drv || !drv->global || !drv->global->nl) {
+		wpa_printf(MSG_ERROR, "ESP: Driver netlink context is not available");
+		return -ENODEV;
+	}
 
 	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
 	if (!msg ||
