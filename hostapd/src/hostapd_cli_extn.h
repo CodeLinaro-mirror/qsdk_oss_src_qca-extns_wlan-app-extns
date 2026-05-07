@@ -69,6 +69,8 @@ int hostapd_cli_cmd_set_tpe_tx_pwr_interp(struct wpa_ctrl *ctrl, int argc, char 
 int hostapd_cli_cmd_get_tpe_tx_pwr_interp(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_pureg(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_pureg(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_set_puren(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_puren(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 #define HOSTAPD_CLI_CMDS_EXTN \
 	{ "set_esp", hostapd_cli_cmd_set_esp_extn, NULL, \
 		"<param> <value> = set ESP param (esp_airtime 0-255, " \
@@ -177,7 +179,11 @@ int hostapd_cli_cmd_get_pureg(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 	{ "set_pureg", hostapd_cli_cmd_set_pureg, NULL, \
 		"<value 0|1> :Enable/disable pureg" }, \
 	{ "get_pureg", hostapd_cli_cmd_get_pureg, NULL, \
-		"Get pureg config" },
+		"Get pureg config" }, \
+	{ "set_puren", hostapd_cli_cmd_set_puren, NULL, \
+		"<value 0|1> :Enable/disable puren mode" }, \
+	{ "get_puren", hostapd_cli_cmd_get_puren, NULL, \
+		"Get puren mode config" },
 
 #else
 #define HOSTAPD_CLI_CMDS_EXTN

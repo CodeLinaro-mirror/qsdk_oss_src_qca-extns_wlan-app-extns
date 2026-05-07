@@ -289,6 +289,39 @@ static int hostapd_ctrl_iface_get_pureg_extn(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_puren_extn(struct hostapd_data *hapd, char *pos)
+{
+	char *end;
+	long user_input;
+
+	if (!hapd || !hapd->iconf || !pos)
+		return -1;
+
+	user_input = strtol(pos, &end, 10);
+	if (pos == end || *end != '\0' || user_input < 0 || user_input > 1) {
+		wpa_printf(MSG_ERROR, "Invalid input for set_puren.\n");
+		return -1;
+	}
+
+	hapd->iconf->require_ht = (int)user_input;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_puren_extn(struct hostapd_data *hapd,
+					     char *buf, size_t buflen)
+{
+	int ret = -1;
+
+	if (!hapd || !hapd->iconf || !buf)
+		return ret;
+
+	ret = os_snprintf(buf, buflen, "puren %d\n",
+			  hapd->iconf->require_ht);
+
+	return ret;
+}
+
 static int hostapd_ctrl_iface_set_esp_extn(struct hostapd_data *hapd, char *cmd)
 {
 	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
@@ -1292,6 +1325,12 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 			reply_len_extn = -1;
 	} else if (os_strcmp(buf, "GET_PUREG") == 0) {
 		reply_len_extn = hostapd_ctrl_iface_get_pureg_extn(hapd, reply,
+								   reply_size);
+	} else if (os_strncmp(buf, "SET_PUREN ", 10) == 0) {
+		if (hostapd_ctrl_iface_set_puren_extn(hapd, buf + 10))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_PUREN") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_puren_extn(hapd, reply,
 								   reply_size);
 	} else {
 		return -1;
