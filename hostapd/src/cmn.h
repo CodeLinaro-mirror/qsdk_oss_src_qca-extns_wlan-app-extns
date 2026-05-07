@@ -1379,7 +1379,8 @@ qacs_find_ideal_chan(struct hostapd_iface *iface);
 int acs_process_hostapd_scan_data(struct hostapd_iface *iface);
 #endif /*CONFIG_QCN_APP_EXTN */
 
-int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_bss_config *conf,
+int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_data *hapd,
+						     struct hostapd_bss_config *conf,
 						     char *value);
 
 void acs_request_scan_add_freqs_extn(struct hostapd_channel_data *chan,
