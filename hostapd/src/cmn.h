@@ -494,6 +494,21 @@ struct wpa_config_extn {
 int get_centre_freq_6g(int chan_idx, int chan_width, int *centre_freq);
 int get_next_max_width(int chan_width);
 
+#define IEEE80211_MS_TO_TU(x) (((x) * 1000) / 1024)
+#define IEEE80211_TU_TO_MS(x) (((x) * 1024) / 1000)
+#define HOSTAPD_NON_CAC_SWITCH_TIME_TU_EXTN(beacon_int) \
+	(IEEE80211_MS_TO_TU(250) + (2 * (beacon_int)))
+#define HOSTAPD_NON_CAC_SWITCH_TIME_MSEC_EXTN(beacon_int) \
+	IEEE80211_TU_TO_MS(HOSTAPD_NON_CAC_SWITCH_TIME_TU_EXTN(beacon_int))
+
+static inline bool hostapd_mcst_allows_skip_cac_extn(u32 mcst,
+						     u16 beacon_int,
+						     bool is_dfs)
+{
+	return (is_dfs && mcst &&
+		(mcst <= HOSTAPD_NON_CAC_SWITCH_TIME_TU_EXTN(beacon_int)));
+}
+
 #ifndef CONFIG_QCN_EXTN
 
 static inline void
@@ -1211,6 +1226,13 @@ wpa_config_alloc_empty_extn(struct wpa_config *config)
 	return;
 }
 
+static inline enum chan_width
+hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
+				       int sec_channel_offset)
+{
+	return CHAN_WIDTH_20;
+}
+
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -1824,5 +1846,9 @@ void hostapd_update_primary_chanlist_flags(struct hostapd_data *hapd);
 int hostapd_is_chan_in_primary_list(struct hostapd_iface *iface, u16 freq);
 
 bool chan_pri_allowed_extn(const struct hostapd_channel_data *chan);
+
+enum chan_width
+hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
+				       int sec_channel_offset);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
