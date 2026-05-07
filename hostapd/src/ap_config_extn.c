@@ -44,6 +44,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->qacs_conf.dwelltime = 200;   /* msec */
         conf_extn->qacs_conf.dbg_module_bitmap = 0x00; /* bitmap of QACS debug modules id */
 	conf_extn->qacs_conf.dbg_level = 0; /* QACS debug level */
+	conf_extn->block_chan_list.n_chan = 0;
 
 	/* DCS defaults: initialize values; valid_mask reflects only user overrides */
 	os_memset(&conf_extn->dcs_conf, 0, sizeof(conf_extn->dcs_conf));

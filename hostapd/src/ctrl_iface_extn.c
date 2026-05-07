@@ -17,6 +17,7 @@
 #include "ap/hw_features.h"
 #include "ap/ap_drv_ops.h"
 #include "hostapd_rptr_extn.h"
+#include "block_channel.h"
 #include "cmn.h"
 #include "ap/ieee802_11.h"
 
@@ -1030,7 +1031,7 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "RNR_6GHZ_COLOCATED ", 19) == 0) {
 		if (hostapd_ctrl_set_rnr_6ghz_colocated_extn(hapd, buf + 19))
 			reply_len_extn = -1;
-        } else if (os_strncmp(buf, "GET_RNR_6GHZ_COLOCATED", 22) == 0) {
+	} else if (os_strncmp(buf, "GET_RNR_6GHZ_COLOCATED", 22) == 0) {
 		reply_len_extn = hostapd_ctrl_get_rnr_6ghz_colocated_extn(hapd, buf + 22, reply,
 									  reply_size);
 	} else if (os_strcmp(buf, "GET_HW_INFO") == 0) {

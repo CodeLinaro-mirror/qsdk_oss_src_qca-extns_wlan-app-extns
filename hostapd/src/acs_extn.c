@@ -20,6 +20,7 @@
 #include "ap/dfs.h"
 #include "utils/eloop.h"
 #include "cmn.h"
+#include "block_channel.h"
 
 static int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
 					struct hostapd_channel_data *chan,
@@ -149,6 +150,9 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n"
 		"  acs invoke <0|1>         : invoke ACS (0=dynamicACS+CSA)|(1=DynamicACS)\n"
 		"  acs show_report          : print last ACS report\n"
+		"  acs set_block_chan_list  : set the channels to blocked state\n"
+		"  acs get_block_chan_list  : get the blocked channels\n"
+		"  acs clear_block_chan_list: clear the blocked channels \n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -681,6 +685,25 @@ static int hostapd_acs_get_6g_only_psc_extn(struct hostapd_config *conf,
 	return ret;
 }
 
+
+static int hostapd_acs_set_block_chanlist(struct hostapd_data *hapd,
+		const char *cmd)
+{
+	return hostapd_set_block_chanlist(hapd->iface, cmd);
+}
+
+static int hostapd_acs_clear_block_chanlist(struct hostapd_data *hapd,
+		const char *cmd)
+{
+	return hostapd_clear_block_chanlist(hapd->iface, cmd);
+}
+
+static int hostapd_acs_get_block_chanlist(struct hostapd_data *hapd,
+		char *reply, size_t reply_size)
+{
+	return hostapd_get_block_chanlist(hapd->iface, reply, reply_size);
+}
+
 int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 				char *pos, char *buf,
 				size_t buflen)
@@ -771,6 +794,15 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 
 	} else if (os_strncmp(pos, "show_report", 11) == 0) {
 		return hostapd_acs_show_report_extn(hapd, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "set_block_chan_list", 19) == 0) {
+		return hostapd_acs_set_block_chanlist(hapd, pos + 19);
+
+	} else if (os_strncmp(pos, "clear_block_chan_list", 21) == 0) {
+		return hostapd_acs_clear_block_chanlist(hapd, pos + 21);
+
+	} else if (os_strcmp(pos, "get_block_chan_list") == 0) {
+		return hostapd_acs_get_block_chanlist(hapd, buf, buflen);
 
 	} else {
 		return acs_print_usage_extn(buf, buflen);
