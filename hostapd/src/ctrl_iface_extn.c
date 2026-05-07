@@ -21,6 +21,7 @@
 #include "ap/ieee802_11.h"
 
 #define DEF_VLP_NON_PRIOR_PENALTY	30
+#define DEF_OBSS_INTERVAL		300
 
 /**
  * hostapd_ctrl_get_hw_info_extn - Return current hardware info
@@ -318,6 +319,56 @@ static int hostapd_ctrl_iface_get_puren_extn(struct hostapd_data *hapd,
 
 	ret = os_snprintf(buf, buflen, "puren %d\n",
 			  hapd->iconf->require_ht);
+
+	return ret;
+}
+
+static int hostapd_ctrl_iface_set_disablecoexist_extn(struct hostapd_data *hapd,
+						      char *pos)
+{
+	int ret = -1;
+	char *end;
+	long user_input;
+	int obss_interval, no_ht_coex;
+
+	if (!hapd || !hapd->iconf || !pos)
+		return ret;
+
+	user_input = strtol(pos, &end, 10);
+	if (pos == end || *end != '\0' || user_input < 0 || user_input > 1) {
+		wpa_printf(MSG_ERROR, "Invalid input for set_disablecoexist.\n");
+		return ret;
+	}
+
+	no_ht_coex = user_input;
+	obss_interval = user_input ? 0 :
+	   (hapd->iconf->obss_interval ? hapd->iconf->obss_interval : DEF_OBSS_INTERVAL);
+
+	if (hapd->iconf->no_ht_coex == no_ht_coex &&
+	    hapd->iconf->obss_interval == obss_interval)
+		return 0;
+
+	hapd->iconf->no_ht_coex = no_ht_coex;
+	hapd->iconf->obss_interval = obss_interval;
+
+	ret = ieee802_11_update_beacons(hapd->iface);
+	if (ret)
+		wpa_printf(MSG_ERROR, "Failed to update beacons.\n");
+
+	return ret;
+}
+
+static int hostapd_ctrl_iface_get_disablecoexist_extn(struct hostapd_data *hapd,
+						      char *buf, size_t buflen)
+{
+	int ret = -1;
+
+	if (!hapd || !hapd->iconf || !buf)
+		return ret;
+
+	ret = os_snprintf(buf, buflen, "disablecoexist %d\n",
+			  !!(hapd->iconf->no_ht_coex ||
+			     !hapd->iconf->obss_interval));
 
 	return ret;
 }
@@ -1332,6 +1383,13 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strcmp(buf, "GET_PUREN") == 0) {
 		reply_len_extn = hostapd_ctrl_iface_get_puren_extn(hapd, reply,
 								   reply_size);
+	} else if (os_strncmp(buf, "SET_DISABLECOEXIST ", 19) == 0) {
+		if (hostapd_ctrl_iface_set_disablecoexist_extn(hapd, buf + 19))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_DISABLECOEXIST") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_disablecoexist_extn(hapd,
+									    reply,
+									    reply_size);
 	} else {
 		return -1;
 	}
