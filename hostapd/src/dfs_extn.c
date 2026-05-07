@@ -11,6 +11,7 @@
 #include "common/qca-vendor.h"
 #include "cmn.h"
 #include <ap/hostapd.h>
+#include <ap/beacon.h>
 #include <ap/dfs.h>
 #include <ap/hw_features.h>
 #include "utils/wpa_debug.h"
@@ -123,6 +124,170 @@ bool hostapd_dfs_skip_wradar_chan_extn(struct hostapd_iface *iface,
 
 	return false;
 }
+
+#ifdef CONFIG_QCA_LAB_TEST_FEATURES
+static bool hostapd_ignorecac_enabled_extn(struct hostapd_iface *iface)
+{
+	return iface && iface->iface_extn.ignorecac &&
+		hostapd_is_dfs_required(iface) > 0;
+}
+
+void hostapd_ignorecac_init_iface_extn(struct hostapd_iface *iface)
+{
+	if (!iface || !iface->conf)
+		return;
+
+	iface->iface_extn.ignorecac = iface->conf->conf_extn.ignorecac;
+}
+
+bool hostapd_ignorecac_should_skip_cac_extn(struct hostapd_iface *iface)
+{
+	return false;
+}
+
+void
+hostapd_ignorecac_update_freq_params_extn(struct hostapd_iface *iface,
+					  struct hostapd_freq_params *freq_params)
+{
+}
+
+bool hostapd_ignorecac_handle_dfs_extn(struct hostapd_iface *iface,
+				       int start_idx, int n_chans)
+{
+	int i;
+	struct hostapd_hw_modes *mode;
+
+	if (!hostapd_ignorecac_enabled_extn(iface))
+		return false;
+
+	mode = iface->current_mode;
+	wpa_printf(MSG_INFO,
+		   "DFS: IGNORECAC is set - skipping CAC on %d MHz",
+		   iface->freq);
+
+	if (!mode)
+		return true;
+
+	/*
+	 * Mark the configured DFS channels as available so subsequent DFS
+	 * checks do not immediately re-trigger CAC.
+	 */
+	for (i = 0; i < n_chans && start_idx + i < mode->num_channels;
+	     i++) {
+		set_dfs_state_freq(iface,
+				   mode->channels[start_idx + i].freq,
+				   HOSTAPD_CHAN_DFS_AVAILABLE);
+	}
+
+	return true;
+}
+
+void hostapd_ignorecac_switch_channel_extn(struct hostapd_data *hapd,
+					   struct csa_settings *settings)
+{
+	struct hostapd_channel_data *chan;
+
+	if (!hapd || !settings || !hapd->iface || !hapd->iface->conf ||
+	    !hapd->iface->iface_extn.ignorecac)
+		return;
+
+	chan = hapd->iface->current_mode ?
+		hw_get_channel_freq(hapd->iface->current_mode->mode,
+				    settings->freq_params.freq, NULL,
+				    hapd->iface->hw_features,
+				    hapd->iface->num_hw_features) : NULL;
+	if (chan && (chan->flag & HOSTAPD_CHAN_RADAR)) {
+		settings->freq_params.skip_cac = 1;
+		wpa_printf(MSG_DEBUG,
+			   "CSA: IGNORECAC is set - requesting driver skip CAC for freq=%d",
+			   settings->freq_params.freq);
+	}
+}
+
+bool hostapd_ignorecac_chan_switch_complete_extn(struct hostapd_data *hapd,
+						 u8 power_mode_6ghz,
+						 int width, int width_device,
+						 int is_dfs)
+{
+	int freq;
+	int dfs_width;
+	int center_freq1;
+	bool device_params_present;
+
+	if (!hapd || !hapd->iface || !hapd->iface->conf || !hapd->iconf ||
+	    !hapd->iface->iface_extn.ignorecac)
+		return false;
+
+	freq = hapd->iface->freq;
+	device_params_present = hapd->iconf->center_freq_device &&
+		width_device &&
+		width_device != width &&
+		hapd->iconf->center_freq_device !=
+		hapd->cs_freq_params.center_freq1;
+	dfs_width = width;
+	center_freq1 = hapd->cs_freq_params.center_freq1;
+
+	wpa_printf(MSG_INFO,
+		   "DFS: IGNORECAC is set - skipping CAC after CSA on freq=%d",
+		   freq);
+
+	if (device_params_present) {
+		dfs_width = width_device;
+		center_freq1 = hapd->iconf->center_freq_device;
+	}
+
+	set_dfs_state(hapd->iface, freq,
+		      hapd->cs_freq_params.ht_enabled,
+		      hapd->cs_freq_params.sec_channel_offset,
+		      dfs_width,
+		      center_freq1,
+		      hapd->cs_freq_params.center_freq2,
+		      HOSTAPD_CHAN_DFS_AVAILABLE, 0);
+
+	hostapd_cleanup_cs_params(hapd);
+	hapd->disable_cu = 1;
+	ieee802_11_set_beacon(hapd);
+	hostapd_start_device_cac_background(hapd->iface);
+	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED
+		"freq=%d dfs=%d", freq, is_dfs);
+
+	return true;
+}
+#else /* CONFIG_QCA_LAB_TEST_FEATURES */
+void hostapd_ignorecac_init_iface_extn(struct hostapd_iface *iface)
+{
+}
+
+bool hostapd_ignorecac_should_skip_cac_extn(struct hostapd_iface *iface)
+{
+	return false;
+}
+
+void
+hostapd_ignorecac_update_freq_params_extn(struct hostapd_iface *iface,
+					  struct hostapd_freq_params *freq_params)
+{
+}
+
+bool hostapd_ignorecac_handle_dfs_extn(struct hostapd_iface *iface,
+				       int start_chan_idx, int n_chans)
+{
+	return false;
+}
+
+void hostapd_ignorecac_switch_channel_extn(struct hostapd_data *hapd,
+					   struct csa_settings *settings)
+{
+}
+
+bool hostapd_ignorecac_chan_switch_complete_extn(struct hostapd_data *hapd,
+						 u8 power_mode_6ghz,
+						 int width, int width_device,
+						 int is_dfs)
+{
+	return false;
+}
+#endif /* CONFIG_QCA_LAB_TEST_FEATURES */
 
 int handle_action_extn(struct hostapd_data *hapd,
 		       const struct ieee80211_mgmt *mgmt, size_t len,

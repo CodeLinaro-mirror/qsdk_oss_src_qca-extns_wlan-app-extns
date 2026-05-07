@@ -45,6 +45,8 @@ int hostapd_cli_cmd_get_obss_rx_snr_threshold_extn(struct wpa_ctrl *ctrl, int ar
 						   char *argv[]);
 int hostapd_cli_cmd_set_autorecovery_after_nol_vapdown(struct wpa_ctrl *ctrl,
 						       int argc, char *argv[]);
+int hostapd_cli_cmd_ignorecac_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+
 #ifdef CONFIG_QCN_EXTN
 int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
 		    int min_args, int argc, char *argv[]);
@@ -118,6 +120,8 @@ int hostapd_cli_cmd_get_tpe_tx_pwr_interp(struct wpa_ctrl *ctrl, int argc, char 
 		"<0|1> = avoid ETSI weather radar channels in DFS random channel selection" }, \
 	{ "get_dfs_no_wradar", hostapd_cli_cmd_get_dfs_no_wradar_extn, NULL, \
 		"= get dfs_no_wradar state (0|1)" }, \
+	{ "ignorecac", hostapd_cli_cmd_ignorecac_extn, NULL, \
+		"[0|1] = get/set whether to ignore DFS CAC" },\
 	{ "dcs", hostapd_cli_cmd_dcs_extn, NULL, \
 		"enable		: enable DCS configuration\n" \
 		"bw_reduction_ctrl	: <mask> = set DCS bw reduction control\n" \

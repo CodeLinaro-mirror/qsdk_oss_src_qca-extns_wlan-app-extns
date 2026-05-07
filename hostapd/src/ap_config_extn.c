@@ -31,6 +31,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 
 	/* Repeater defaults */
 	conf_extn->skip_cac = 0;
+	conf_extn->ignorecac = 0;
 	conf_extn->ind_rptr = 0;
 
 	/*configure qacs_default here*/
@@ -127,6 +128,9 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		return 0;
 	} else if (os_strcmp(buf, "skip_cac") == 0) {
 		conf_extn->skip_cac = atoi(pos);
+		return 0;
+	} else if (os_strcmp(buf, "ignorecac") == 0) {
+		conf_extn->ignorecac = atoi(pos);
 		return 0;
 	} else if (os_strcmp(buf, "uplink_csa") == 0) {
 		conf_extn->uplink_csa = atoi(pos);
