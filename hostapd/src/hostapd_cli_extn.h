@@ -18,6 +18,8 @@ int hostapd_cli_cmd_set_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl, int argc,
 int hostapd_cli_cmd_get_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_countryie_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_countryie_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_ecsa_opclass_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_g_ecsa_opclass_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 
 #ifdef CONFIG_IEEE80211AC
 int hostapd_cli_cmd_get_mu_cap_war_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
@@ -165,7 +167,11 @@ int hostapd_cli_cmd_get_tpe_tx_pwr_interp(struct wpa_ctrl *ctrl, int argc, char 
 	{ "set_tpe_punct_channel_tx_pwr", hostapd_cli_cmd_set_tpe_punct_channel_tx_pwr, NULL, \
 		"<value 0|1> :Enable/disable punctured channel min power in TPE IE" }, \
 	{ "get_tpe_punct_channel_tx_pwr", hostapd_cli_cmd_get_tpe_punct_channel_tx_pwr, NULL, \
-		"Get punctured channel min power config in TPE IE" },
+		"Get punctured channel min power config in TPE IE" }, \
+	{ "ecsa_opclass", hostapd_cli_cmd_ecsa_opclass_extn, NULL, \
+		"<opclass> = override operating class in ECSA IE" }, \
+	{ "g_ecsa_opclass", hostapd_cli_cmd_g_ecsa_opclass_extn, NULL, \
+		"= get configured ECSA IE operating class override" },
 #else
 #define HOSTAPD_CLI_CMDS_EXTN
 

@@ -253,6 +253,32 @@ int hostapd_cli_cmd_sync_iface_freq_extn(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, "SYNC_IFACE_FREQ");
 }
 
+int hostapd_cli_cmd_ecsa_opclass_extn(struct wpa_ctrl *ctrl, int argc,
+				      char *argv[])
+{
+	char buf[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: ecsa_opclass <opclass>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "ECSA_OPCLASS %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("ecsa_opclass cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_g_ecsa_opclass_extn(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_ECSA_OPCLASS");
+}
+
 static int hostapd_cli_send_dcs_param_values(struct wpa_ctrl *ctrl,
 					     const char *base,
 					     int argc, char *argv[])
