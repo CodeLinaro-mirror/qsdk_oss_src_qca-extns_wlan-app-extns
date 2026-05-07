@@ -61,6 +61,8 @@ int hostapd_cli_cmd_get_eht_config_ccfs0(struct wpa_ctrl *ctrl, int argc, char *
 
 int hostapd_cli_cmd_set_tpe_common_psd(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_tpe_common_psd(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_set_tpe_punct_channel_tx_pwr(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_tpe_punct_channel_tx_pwr(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_tpe_tx_pwr_interp(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_tpe_tx_pwr_interp(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 #define HOSTAPD_CLI_CMDS_EXTN \
@@ -159,7 +161,11 @@ int hostapd_cli_cmd_get_tpe_tx_pwr_interp(struct wpa_ctrl *ctrl, int argc, char 
 	{ "set_tpe_pwr_unit", hostapd_cli_cmd_set_tpe_tx_pwr_interp, NULL, \
 		"<value 0|1> :Set tx power interpretation unit in TPE IE (0:TPE_REG_EIRP_PSD, 1:TPE_REG_EIRP)" }, \
 	{ "get_tpe_pwr_unit", hostapd_cli_cmd_get_tpe_tx_pwr_interp, NULL, \
-		"Get tx power interpretation unit in TPE IE (0:TPE_REG_EIRP_PSD, 1:TPE_REG_EIRP)"},
+		"Get tx power interpretation unit in TPE IE (0:TPE_REG_EIRP_PSD, 1:TPE_REG_EIRP)"}, \
+	{ "set_tpe_punct_channel_tx_pwr", hostapd_cli_cmd_set_tpe_punct_channel_tx_pwr, NULL, \
+		"<value 0|1> :Enable/disable punctured channel min power in TPE IE" }, \
+	{ "get_tpe_punct_channel_tx_pwr", hostapd_cli_cmd_get_tpe_punct_channel_tx_pwr, NULL, \
+		"Get punctured channel min power config in TPE IE" },
 #else
 #define HOSTAPD_CLI_CMDS_EXTN
 

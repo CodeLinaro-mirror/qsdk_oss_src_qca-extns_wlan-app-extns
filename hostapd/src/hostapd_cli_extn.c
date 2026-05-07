@@ -444,3 +444,30 @@ int hostapd_cli_cmd_get_tpe_tx_pwr_interp(struct wpa_ctrl *ctrl, int argc, char 
 	return wpa_ctrl_command(ctrl, "GET_TPE_TX_PWR_INTERP");
 }
 
+int hostapd_cli_cmd_set_tpe_punct_channel_tx_pwr(struct wpa_ctrl *ctrl,
+						 int argc, char *argv[])
+{
+	char buf[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: set_tpe_punct_channel_tx_pwr <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "SET_TPE_PUNCT_CHANNEL_TX_PWR %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("set_tpe_punct_channel_tx_pwr cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_tpe_punct_channel_tx_pwr(struct wpa_ctrl *ctrl,
+						 int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_TPE_PUNCT_CHANNEL_TX_PWR");
+}
+
