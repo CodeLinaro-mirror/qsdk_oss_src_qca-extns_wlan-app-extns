@@ -620,6 +620,16 @@ struct pure11ac_bss_extn {
 	bool value;
 };
 
+/**
+ * struct pure11ax_bss_extn - Per-BSS pure-11AX CLI override.
+ * @is_overridden: Whether pure-11AX mode is overridden via CLI.
+ * @value: pure-11AC value set via cli.
+ */
+struct pure11ax_bss_extn {
+	bool is_overridden;
+	bool value;
+};
+
 struct hostapd_bss_config_extn {
 	/* Add Per-BSS configuration for extn here */
 	u8 nontx_vendor_elem_size;
@@ -662,7 +672,15 @@ struct hostapd_bss_config_extn {
 	 * This per-BSS configuration overrides the per-radio 'require_vht' config.
 	 */
 	struct pure11ac_bss_extn pure11ac_bss;
-
+	/*
+	 * When set to true, the BSS operates in pure IEEE 802.11ax mode.
+	 *
+	 * By default, an IEEE 802.11ax BSS supports association from both
+	 * HE-capable and non-HE STAs. When pure11ax_bss is enabled, the BSS shall not
+	 * allow association from non-HE STA.
+	 * This per-BSS configuration overrides the per-radio 'require_he' config.
+	 */
+	struct pure11ax_bss_extn pure11ax_bss;
 	/*
 	 * wds_ie - WDS vendor IE advertisement control (AP mode)
 	 *

@@ -726,3 +726,27 @@ int hostapd_cli_cmd_get_pure11ac(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "GET_PURE11AC");
 }
+
+int hostapd_cli_cmd_set_pure11ax(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char buf[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: set_pure11ax <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "SET_PURE11AX %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("set_pure11ax cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_pure11ax(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_PURE11AX");
+}

@@ -422,6 +422,42 @@ static int hostapd_ctrl_iface_get_pure11ac_extn(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_pure11ax_extn(struct hostapd_data *hapd, char *pos)
+{
+	char *end;
+	long user_input;
+
+	if (!hapd || !hapd->iconf || !hapd->conf || !pos)
+		return -1;
+
+	user_input = strtol(pos, &end, 10);
+	if (pos == end || *end != '\0' || user_input < 0 || user_input > 1) {
+		wpa_printf(MSG_ERROR, "Invalid input for set_pure11ax.\n");
+		return -1;
+	}
+
+	hapd->conf->bss_extn.pure11ax_bss.is_overridden = true;
+	hapd->conf->bss_extn.pure11ax_bss.value = (user_input == 1);
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_pure11ax_extn(struct hostapd_data *hapd,
+						char *buf, size_t buflen)
+{
+	int ret = -1;
+
+	if (!hapd || !hapd->conf || !buf)
+		return ret;
+
+	ret = os_snprintf(buf, buflen, "pure11ax %d\n",
+			  hapd->conf->bss_extn.pure11ax_bss.is_overridden ?
+			  hapd->conf->bss_extn.pure11ax_bss.value :
+			  hapd->iconf->require_he);
+
+	return ret;
+}
+
 static int hostapd_ctrl_iface_set_esp_extn(struct hostapd_data *hapd, char *cmd)
 {
 	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
@@ -2320,6 +2356,12 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 			reply_len_extn = -1;
 	} else if (os_strcmp(buf, "GET_PURE11AC") == 0) {
 		reply_len_extn = hostapd_ctrl_iface_get_pure11ac_extn(hapd, reply,
+								      reply_size);
+	} else if (os_strncmp(buf, "SET_PURE11AX ", 13) == 0) {
+		if (hostapd_ctrl_iface_set_pure11ax_extn(hapd, buf + 13))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_PURE11AX") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_pure11ax_extn(hapd, reply,
 								      reply_size);
 	} else {
 		return -1;
