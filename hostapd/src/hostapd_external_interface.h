@@ -191,6 +191,11 @@ struct hostapd_if_frame_ctx {
 			uint8_t sta_assoc_link_mac[6];
 			uint8_t *additional_ies;
 			uint16_t additional_ies_len;
+			struct {
+				uint8_t *pmk;
+				size_t pmk_len;
+				uint8_t *pmkid;
+			} pmk;
 		} assoc_resp;
 
 		struct {
