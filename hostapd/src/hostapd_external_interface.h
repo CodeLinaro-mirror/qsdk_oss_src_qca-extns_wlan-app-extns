@@ -261,6 +261,7 @@ struct hostapd_if_event {
 				HOSTAPD_IF_SET_PTK_ERROR,
 				HOSTAPD_IF_SET_GTK_ERROR,
 				HOSTAPD_IF_START_SA_QUERY_ERROR,
+				HOSTAPD_IF_EAPOL_TX_ERROR,
 			} type;
 			const char *func;
 			int line_num;
@@ -302,7 +303,7 @@ struct hostapd_external_app_object {
 
 	void (*notify_event)(struct hostapd_if_event *event);
 
-	void (*eapol_rx)(char *ifname, uint8_t link_id,
+	void (*eapol_rx)(char *ifname, uint8_t link_id, const uint8_t *sa,
 			 uint8_t *frame, uint16_t frame_len);
 
 	void (*eapol_key_rx)(char *ifname, uint8_t link_id,
@@ -437,8 +438,9 @@ struct hostapd_external_app_object {
 	/*
 	 * ASYNC: EAPOL Tx
 	 */
-	void (*eapol_tx)(char *ifname, uint8_t link_id, uint8_t *frame,
-			 uint16_t frame_len);
+	void (*eapol_tx)(char *ifname, uint8_t *sta_mac, int link_id,
+                              uint8_t type, uint8_t *data,
+                              uint16_t data_len);
 
 	/*
 	 * ASYNC: EAPOL-Key Tx
