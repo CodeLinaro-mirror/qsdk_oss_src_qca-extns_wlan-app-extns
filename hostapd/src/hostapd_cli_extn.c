@@ -597,3 +597,27 @@ int hostapd_cli_cmd_get_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *ar
 {
 	return wpa_ctrl_command(ctrl, "GET_DISABLECOEXIST");
 }
+
+int hostapd_cli_cmd_set_pure11ac(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char buf[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: set_pure11ac <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "SET_PURE11AC %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("set_pure11ac cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_pure11ac(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_PURE11AC");
+}

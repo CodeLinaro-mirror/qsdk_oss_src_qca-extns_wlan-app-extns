@@ -549,6 +549,16 @@ struct puren_bss_extn {
 	bool value;
 };
 
+/**
+ * struct pure11ac_bss_extn - Per-BSS pure-11AC CLI override.
+ * @is_overridden: Whether pure-11AC mode is overridden via CLI.
+ * @value: pure-11AC value set via cli.
+ */
+struct pure11ac_bss_extn {
+	bool is_overridden;
+	bool value;
+};
+
 struct hostapd_bss_config_extn {
 	/* Add Per-BSS configuration for extn here */
 	u8 nontx_vendor_elem_size;
@@ -582,6 +592,15 @@ struct hostapd_bss_config_extn {
 	 * This per-BSS configuration overrides the per-radio 'require_ht' config.
 	 */
 	struct puren_bss_extn puren_bss;
+	/*
+	 * When set to true, the BSS operates in pure IEEE 802.11ac mode.
+	 *
+	 * By default, an IEEE 802.11ac BSS supports association from both
+	 * VHT-capable and non-VHT STAs. When pure11ac_bss is enabled, the BSS shall not
+	 * allow association from non-VHT STA.
+	 * This per-BSS configuration overrides the per-radio 'require_vht' config.
+	 */
+	struct pure11ac_bss_extn pure11ac_bss;
 };
 
 struct esp_extn {
