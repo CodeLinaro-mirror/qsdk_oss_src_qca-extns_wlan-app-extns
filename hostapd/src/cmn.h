@@ -1078,6 +1078,30 @@ bool chan_pri_allowed_extn(const struct hostapd_channel_data *chan)
 	return 0;
 }
 
+static inline int
+nl80211_get_he_mcs_12_13_extn(void *priv, u8 radio_idx, u16 *radio_cap)
+{
+	return -1;
+}
+
+static inline int
+nl80211_set_he_mcs_12_13_peer_cap_extn(void *priv, u8 radio_idx, u16 peer_cap)
+{
+	return -1;
+}
+
+static inline int
+hostapd_set_he_mcs_12_13_peer_cap_extn(struct hostapd_data *hapd)
+{
+	return -1;
+}
+
+static inline int
+wpas_set_he_mcs_12_13_peer_cap_extn(struct wpa_supplicant *wpa_s, int freq)
+{
+	return -1;
+}
+
 #else
 
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
@@ -1269,6 +1293,34 @@ int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 			   union wpa_event_data *data);
 int hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
 				   size_t buflen, size_t curr_len);
+int hostapd_set_he_mcs_12_13_peer_cap_extn(struct hostapd_data *hapd);
+int wpas_set_he_mcs_12_13_peer_cap_extn(struct wpa_supplicant *wpa_s, int freq);
+
+/**
+ * nl80211_get_he_mcs_12_13_extn - Fetch self-cap HE MCS 12/13 NSS bitmap
+ * @priv:      driver private data (struct i802_bss *)
+ * @radio_cap: output - radio NSS bitmap for HE MCS 12/13 support
+ *
+ * Sends QCA GET_WIFI_CONFIGURATION with GENERIC_COMMAND=
+ * QCA_NL80211_VENDOR_SUBCMD_HE_MCS_12_13_SUPP to get the hardware
+ * capability for HE MCS 12 13 support.
+ *
+ * Returns: 0 on success, negative on failure.
+ */
+int nl80211_get_he_mcs_12_13_extn(void *priv, u8 radio_idx, u16 *radio_cap);
+
+/**
+ * nl80211_set_he_mcs_12_13_peer_cap_extn - Set peer HE MCS 12/13 NSS bitmap
+ * @priv: driver private data (struct i802_bss *)
+ * @radio_idx: radio index to target the specific radio
+ * @peer_cap: peer NSS bitmap for HE MCS 12/13 support
+ *
+ * Sends HE MCS 12/13 peer capability using SET_WIFI_CONFIGURATION with
+ * GENERIC_COMMAND=QCA_NL80211_VENDOR_SUBCMD_HE_MCS_12_13_SUPP.
+ *
+ * Returns: 0 on success, negative on failure.
+ */
+int nl80211_set_he_mcs_12_13_peer_cap_extn(void *priv, u8 radio_idx, u16 peer_cap);
 int wpa_ctrl_get_freq_list_extn(struct wpa_supplicant *wpa_s,
 				char *reply, int reply_size);
 int wpa_ctrl_chan_sw_finished_notify_extn(struct wpa_supplicant *wpa_s,

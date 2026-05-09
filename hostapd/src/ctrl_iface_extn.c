@@ -1455,6 +1455,26 @@ int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_data *hapd,
 	return 0;
 }
 
+int hostapd_set_he_mcs_12_13_peer_cap_extn(struct hostapd_data *hapd)
+{
+	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
+	u8 radio_idx;
+
+	if (hapd->iface->current_hw_info)
+		radio_idx = hapd->iface->current_hw_info->hw_idx;
+	else
+		return -1;
+
+	if (nl80211_set_he_mcs_12_13_peer_cap_extn(hapd->drv_priv, radio_idx,
+						   iface_extn->he_mcs_12_13_peer_cap))
+		return -1;
+
+	wpa_printf(MSG_INFO,
+		   "he_mcs_12_13 peer capability = 0x%04x set to driver successfully",
+		   iface_extn->he_mcs_12_13_peer_cap);
+	return 0;
+}
+
 int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *value)
 {
 	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;

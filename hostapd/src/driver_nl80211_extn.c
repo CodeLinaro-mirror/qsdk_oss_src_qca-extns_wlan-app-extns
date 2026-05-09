@@ -845,3 +845,126 @@ fail:
 	nlmsg_free(msg);
 	return -ENOBUFS;
 }
+
+int nl80211_set_he_mcs_12_13_peer_cap_extn(void *priv, u8 radio_idx,
+					   u16 peer_cap)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *params;
+	int ret;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Set HE_MCS_12_13 peer capability = 0x%04x for radio_idx: %d",
+		   peer_cap, radio_idx);
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND,
+			QCA_NL80211_VENDOR_SUBCMD_HE_MCS_12_13_SUPP) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX,
+		       radio_idx) ||
+	    nla_put(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA,
+		    sizeof(peer_cap), &peer_cap)) {
+		nla_nest_end(msg, params);
+		goto fail;
+	}
+
+	nla_nest_end(msg, params);
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Setting HE_MCS_12_13_PEER_CAP failed: %d (%s)",
+			   ret, strerror(-ret));
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
+static int nl80211_get_he_mcs_12_13_handler(struct nl_msg *msg, void *arg)
+{
+	u16 *radio_cap = arg;
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct nlattr *tb_vendor[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1];
+	struct nlattr *data_attr;
+
+	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		  genlmsg_attrlen(gnlh, 0), NULL);
+
+	if (!tb[NL80211_ATTR_VENDOR_DATA])
+		return NL_SKIP;
+
+	if (nla_parse_nested(tb_vendor, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+			     tb[NL80211_ATTR_VENDOR_DATA], NULL))
+		return NL_SKIP;
+
+	data_attr = tb_vendor[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA];
+	if (!data_attr || nla_len(data_attr) < (int)sizeof(u16))
+		return NL_SKIP;
+
+	*radio_cap = *(u16 *)nla_data(data_attr);
+	return NL_SKIP;
+}
+
+int nl80211_get_he_mcs_12_13_extn(void *priv, u8 radio_idx, u16 *radio_cap)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *params;
+	u16 cap = 0;
+	int ret;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Get the HE_MCS_12_13 hardware capability for radio_idx: %d",
+		   radio_idx);
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND,
+			QCA_NL80211_VENDOR_SUBCMD_HE_MCS_12_13_SUPP) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX,
+		       radio_idx)) {
+		nla_nest_end(msg, params);
+		goto fail;
+	}
+
+	nla_nest_end(msg, params);
+	ret = send_and_recv_resp(drv, msg,
+				 nl80211_get_he_mcs_12_13_handler, &cap);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: GET_HE_MCS_12_13 failed: %d (%s) for radio_idx: %d",
+			   ret, strerror(-ret), radio_idx);
+		return ret;
+	}
+
+	*radio_cap = cap;
+	return 0;
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
