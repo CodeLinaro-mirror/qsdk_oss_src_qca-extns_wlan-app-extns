@@ -11,5 +11,3 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 			    u8 new_ch_width, const u8 *nol_ie,
 			    size_t nol_ie_len);
 #endif /* WPA_SUPPLICANT_EXTN_H */
-
-

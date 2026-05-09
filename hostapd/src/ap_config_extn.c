@@ -80,6 +80,8 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 
 	/* Auto-recovery after NOL VAP down */
 	conf_extn->autorecovery_after_nol_vapdown = 1;
+
+	conf_extn->he_mcs_12_13_enabled = DEFAULT_HE_MCS_12_13_SUPPORT;
 }
 
 void
@@ -393,6 +395,14 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->bss_extn.vap_submode = val;
+	} else if (os_strcmp(buf, "he_mcs_12_13_supp") == 0) {
+		val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid he_mcs_12_13_supp %d (expected 0 or 1)",
+				   line, val);
+			return -1;
+		}
+		conf->conf_extn.he_mcs_12_13_enabled = val;
 	} else {
 		return -1;
 	}

@@ -24,7 +24,8 @@ OBJS += \
 	qcn_extns/afc.o \
 	qcn_extns/hostapd_extn.o \
 	qcn_extns/qcn_ie_extn.o \
-	qcn_extns/ttlm_extn.o
+	qcn_extns/ttlm_extn.o \
+	qcn_extns/wpa_config_extn.o \
 
 ifdef CONFIG_ACS
 	OBJS += qcn_extns/acs_extn.o
