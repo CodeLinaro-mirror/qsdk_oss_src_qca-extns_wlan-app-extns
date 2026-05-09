@@ -200,6 +200,9 @@ union wpa_event_data_extn {
 struct ieee802_11_elems_extn {
 	const u8 *eht_240mhz_capab;
 	u8 eht_240mhz_capab_len;
+
+	/* HE MCS 12/13 (4K-QAM) peer capability from QCN IE */
+	u16 he_mcs_12_13_peer_cap;
 };
 
 #ifndef CONFIG_QCN_APP_EXTN
@@ -576,11 +579,36 @@ hostapd_modify_buflen_for_qcn_ie_extn(struct hostapd_data *hapd)
 	return 0;
 }
 
+static inline size_t
+wpas_modify_buflen_for_qcn_ie_extn(struct wpa_supplicant *wpa_s)
+{
+	return 0;
+}
+
 static inline u8 *
 hostapd_eid_qcn_vendor_ie_extn(struct hostapd_data *hapd, u8 *eid,
 				int opmode)
 {
 	return eid;
+}
+
+static inline u8 *
+wpas_eid_qcn_vendor_ie_extn(struct wpa_supplicant *wpa_s, u8 *eid)
+{
+	return eid;
+}
+
+static inline void
+wpas_add_qcn_ie_probe_req_extn(struct wpa_supplicant *wpa_s,
+			       struct wpabuf **extra_ie)
+{
+	return;
+}
+
+static inline void
+wpas_add_qcn_ie_assoc_req_extn(struct wpa_supplicant *wpa_s)
+{
+	return;
 }
 
 static inline u16
@@ -590,6 +618,21 @@ hostapd_copy_sta_eht_240mhz_cap_extn(struct hostapd_data *hapd,
 				     struct ieee802_11_elems_extn *elems_extn)
 {
 	return 0;
+}
+
+static inline void
+hostapd_drv_set_peer_he_mcs_12_13_cap_extn(struct hostapd_data *hapd,
+					   struct ieee802_11_elems_extn *elems_extn)
+{
+	return;
+}
+
+
+static inline void
+wpas_drv_set_peer_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq,
+					const u8 *ies, size_t ies_len)
+{
+	return;
 }
 
 static inline void
@@ -1200,6 +1243,18 @@ hostapd_modify_supported_op_class_for_240mhz_extn(int freq,
 size_t hostapd_modify_buflen_for_qcn_ie_extn(struct hostapd_data *hapd);
 
 /**
+ * wpas_modify_buflen_for_qcn_ie_extn - Compute QCN Vendor IE byte count
+ * @wpas: wpa_supplicant context
+ *
+ * Computes the total number of bytes required for the QCN Vendor IE.
+ * The caller should add the returned value to its buffer-length accumulator
+ * before allocating the frame buffer.
+ *
+ * Returns: number of bytes needed for the QCN Vendor IE, or 0 if not needed
+ */
+size_t wpas_modify_buflen_for_qcn_ie_extn(struct wpa_supplicant *wpa_s);
+
+/**
  * hostapd_eid_qcn_vendor_ie_extn - Encode the QCN Vendor IE
  * @hapd: per-BSS hostapd context
  * @eid: write cursor pointing to the next free byte in the IE buffer
@@ -1211,6 +1266,34 @@ size_t hostapd_modify_buflen_for_qcn_ie_extn(struct hostapd_data *hapd);
  */
 u8 * hostapd_eid_qcn_vendor_ie_extn(struct hostapd_data *hapd, u8 *eid,
 				    enum ieee80211_op_mode opmode);
+
+/**
+ * wpas_eid_qcn_vendor_ie_extn - Encode the QCN Vendor IE
+ * @wpas:   wpa_supplicant context
+ * @eid:    write cursor pointing to the next free byte in the IE buffer
+ * @opmode: IEEE 802.11 operating mode
+ *
+ * Returns: updated write cursor (pos advanced past the completed IE) on
+ *          success, or the original @eid value if no attribute is active or
+ *          @eid is NULL.
+ */
+u8 * wpas_eid_qcn_vendor_ie_extn(struct wpa_supplicant *wpa_s, u8 *eid);
+
+#ifdef CONFIG_SME
+/**
+ * wpas_add_qcn_ie_probe_req_extn - Append QCN Vendor IE to probe-request extra IEs
+ * @wpa_s:     wpa_supplicant context
+ * @extra_ie:  pointer to the wpabuf holding extra probe-request IEs
+ */
+void wpas_add_qcn_ie_probe_req_extn(struct wpa_supplicant *wpa_s,
+				    struct wpabuf **extra_ie);
+
+/**
+ * wpas_add_qcn_ie_assoc_req_extn - Append QCN Vendor IE to SME assoc-request IEs
+ * @wpa_s:  wpa_supplicant context
+ */
+void wpas_add_qcn_ie_assoc_req_extn(struct wpa_supplicant *wpa_s);
+#endif /* CONFIG_SME */
 
 /**
  * hostapd_qcn_buflen_add_240mhz_attr - Compute 240 MHz QCN IE attribute byte count
@@ -1257,6 +1340,36 @@ hostapd_copy_sta_eht_240mhz_cap_extn(struct hostapd_data *hapd,
 				     struct sta_info *sta,
 				     enum ieee80211_op_mode opmode,
 				     struct ieee802_11_elems_extn *elems_extn);
+/**
+ * hostapd_drv_set_peer_he_mcs_12_13_cap_extn - Store peer HE MCS 12/13 capability
+ * @hapd: hostapd BSS data
+ * @sta: station info structure
+ * @elems_extn: extended elements populated by the common parser
+ *              (ieee802_11_parse_vendor_specific_elems_extn path)
+ *
+ * Reads the peer HE MCS 12/13 NSS bitmaps from @elems_extn and send it to the
+ * driver.
+ *
+ * Returns: 0 on success, -1 on invalid arguments.
+ */
+void hostapd_drv_set_peer_he_mcs_12_13_cap_extn(struct hostapd_data *hapd,
+						struct ieee802_11_elems_extn
+						*elems_extn);
+
+/**
+ * wpas_drv_set_peer_he_mcs_12_13_cap_extn - Send AP HE MCS 12/13 cap from
+ * assoc-response IEs to the driver.
+ * @wpa_s:  wpa_supplicant context
+ * @freq: Associated frequency in MHz
+ * @ies: Information elements from the frames
+ * @ies_len: Length of the IE.
+ *
+ * Reads the peer HE MCS 12/13 NSS bitmaps from @elems_extn and send it to the
+ * driver.
+ */
+void wpas_drv_set_peer_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq,
+					     const u8 *ies, size_t ies_len);
+
 void hostapd_get_eht_240mhz_cap_extn(struct hostapd_data *hapd,
 				     struct sta_info_extn *sta_extn,
 				     struct ieee80211_240mhz_vendor_oper_extn
