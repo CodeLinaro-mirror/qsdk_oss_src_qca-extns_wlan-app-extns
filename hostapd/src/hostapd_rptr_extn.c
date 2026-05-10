@@ -177,6 +177,62 @@ uc_hostapd_compare_channel_params_extn(struct hostapd_config *conf,
 	}
 }
 
+enum chan_width
+hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
+				       int sec_channel_offset)
+{
+	if (oper_chwidth == CONF_OPER_CHWIDTH_320MHZ)
+		return CHAN_WIDTH_320;
+	if (oper_chwidth == CONF_OPER_CHWIDTH_160MHZ)
+		return CHAN_WIDTH_160;
+	if (oper_chwidth == CONF_OPER_CHWIDTH_80P80MHZ)
+		return CHAN_WIDTH_80P80;
+	if (oper_chwidth == CONF_OPER_CHWIDTH_80MHZ)
+		return CHAN_WIDTH_80;
+	if (sec_channel_offset)
+		return CHAN_WIDTH_40;
+
+	return CHAN_WIDTH_20;
+}
+
+static void hostapd_get_channel_switch_time_extn(struct hostapd_iface *iface,
+						 struct hostapd_freq_params *freq_params)
+{
+	struct hostapd_data *hapd = NULL;
+	unsigned int i;
+	int ret;
+
+	if (!iface->bss || !iface->num_bss)
+		return;
+
+	iface->cs_time = 0;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		if (!iface->bss[i]->driver || !iface->bss[i]->drv_priv)
+			continue;
+
+		hapd = iface->bss[i];
+		break;
+	}
+
+	if (!hapd || !hapd->driver->get_channel_switch_time)
+		return;
+
+	ret = hapd->driver->get_channel_switch_time(hapd->drv_priv,
+						      freq_params,
+						      &iface->cs_time);
+	if (!ret) {
+		wpa_printf(MSG_DEBUG,
+			   "channel switch time from driver: %u ms",
+			   iface->cs_time);
+		return;
+	}
+
+	wpa_printf(MSG_WARNING,
+		   "Failed to get channel switch time from driver: %d", ret);
+	iface->cs_time = 0;
+}
+
 /**
  * uc_hostapd_iface_switch_channel_extn - Perform CSA with repeater extensions
  * @iface: Hostapd interface on which to switch channel
@@ -210,6 +266,42 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 	if (conf->conf_extn.skip_cac && pre_connect)
 		csa->freq_params.skip_cac = is_dfs;
 #endif
+
+	/*
+	 * Based on the MCST received from kernel channel switch notification,
+	 * derive cs_time (MCST to advertised in Repeater FH beacon).
+	 *
+	 * For a DFS target that can skip CAC, either because skip_cac was already
+	 * enabled or because the received MCST fits within the non-CAC switch-time
+	 * threshold, advertise the larger of the minimum non-CAC switch time and the
+	 * received MCST. For a non-DFS target, or a DFS target that still requires
+	 * CAC, use the driver-provided channel switch time.
+	 */
+	iface->mcst = csa->mcst;
+	if (csa->freq_params.skip_cac)
+		iface->cs_time =
+			MAX(HOSTAPD_NON_CAC_SWITCH_TIME_MSEC_EXTN(conf->beacon_int),
+			    IEEE80211_TU_TO_MS(csa->mcst));
+	else if (!csa->freq_params.skip_cac && is_dfs) {
+		csa->freq_params.skip_cac =
+			hostapd_mcst_allows_skip_cac_extn(csa->mcst,
+							  conf->beacon_int,
+							  is_dfs);
+		if (csa->freq_params.skip_cac)
+			iface->cs_time =
+				MAX(HOSTAPD_NON_CAC_SWITCH_TIME_MSEC_EXTN(conf->beacon_int),
+				    IEEE80211_TU_TO_MS(csa->mcst));
+		else
+			hostapd_get_channel_switch_time_extn(iface, &csa->freq_params);
+	}
+	else
+		hostapd_get_channel_switch_time_extn(iface, &csa->freq_params);
+
+	csa->freq_params.mcst = csa->mcst;
+	wpa_printf(MSG_INFO,
+		   "CSA: is_dfs=%d pre_connect=%d skip_cac=%d mcst=%u cs_time=%u",
+		   is_dfs, pre_connect, csa->freq_params.skip_cac,
+		   csa->mcst, iface->cs_time);
 
 	/* If channel params differ, perform CSA and track per-BSS completion */
 	if (!uc_hostapd_compare_channel_params_extn(conf, csa->freq_params, iface->freq)) {
