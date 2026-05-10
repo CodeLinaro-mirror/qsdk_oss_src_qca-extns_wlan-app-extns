@@ -195,6 +195,66 @@ hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
 	return CHAN_WIDTH_20;
 }
 
+static u8 uc_hostapd_bandwidth_to_oper_chwidth_extn(int bandwidth)
+{
+	if (bandwidth == 320)
+		return CONF_OPER_CHWIDTH_320MHZ;
+	if (bandwidth == 160)
+		return CONF_OPER_CHWIDTH_160MHZ;
+	if (bandwidth == 80)
+		return CONF_OPER_CHWIDTH_80MHZ;
+
+	return CONF_OPER_CHWIDTH_USE_HT;
+}
+
+static int uc_hostapd_handle_csa_during_cac_extn(struct hostapd_iface *iface,
+						 struct csa_settings *csa,
+						 bool pre_connect)
+{
+	int i, ret;
+	u8 oper_chwidth;
+	u8 seg0 = 0;
+	u8 seg1 = 0;
+	u8 channel = 0;
+
+	if (!iface->cac_started)
+		return 1;
+
+	ieee80211_freq_to_chan(csa->freq_params.freq, &channel);
+	oper_chwidth = uc_hostapd_bandwidth_to_oper_chwidth_extn(
+		csa->freq_params.bandwidth);
+
+	if (csa->freq_params.center_freq1)
+		ieee80211_freq_to_chan(csa->freq_params.center_freq1, &seg0);
+	if (csa->freq_params.center_freq2)
+		ieee80211_freq_to_chan(csa->freq_params.center_freq2, &seg1);
+
+	wpa_printf(MSG_INFO,
+		   "CAC active on iface %s - abort CAC and queue deferred CSA "
+		   "for freq=%d chan=%d bw=%d oper_chwidth=%d sec_chan=%d "
+		   "seg0=%u seg1=%u cf1=%d cf2=%d",
+		   iface->bss[0]->conf->iface, csa->freq_params.freq,
+		   channel, csa->freq_params.bandwidth, oper_chwidth,
+		   csa->freq_params.sec_channel_offset, seg0, seg1,
+		   csa->freq_params.center_freq1, csa->freq_params.center_freq2);
+
+	ret = hostapd_dfs_abort_cac_and_request_channel_switch(
+		iface, channel, csa->freq_params.freq,
+		csa->freq_params.sec_channel_offset, oper_chwidth,
+		seg0, seg1, csa->freq_params.punct_bitmap);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CAC abort channel switch request failed ret=%d", ret);
+		return ret;
+	}
+
+	if (pre_connect)
+		for (i = 0; i < iface->num_bss; i++)
+			iface->iface_extn.csa_bitmap |= BIT(i);
+
+	return 0;
+}
+
 static void hostapd_get_channel_switch_time_extn(struct hostapd_iface *iface,
 						 struct hostapd_freq_params *freq_params)
 {
@@ -305,6 +365,13 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 
 	/* If channel params differ, perform CSA and track per-BSS completion */
 	if (!uc_hostapd_compare_channel_params_extn(conf, csa->freq_params, iface->freq)) {
+		if (iface->cac_started) {
+			ret = uc_hostapd_handle_csa_during_cac_extn(iface, csa,
+								    pre_connect);
+			if (ret <= 0)
+				return ret;
+		}
+
 		for (i = 0; i < iface->num_bss; i++) {
 			ret = hostapd_switch_channel(iface->bss[i], csa);
 			if (ret) {
