@@ -328,6 +328,8 @@ struct hostapd_config_extn {
 	 * (the support is enabled by default)
 	 */
 	bool he_mcs_12_13_enabled;
+	bool rcsa_tx;
+	bool process_rcsa;
 	struct qacs_conf_extn qacs_conf;
 	struct chan_params cur_chan_params;
 	struct dcs_conf_extn dcs_conf;
@@ -1530,6 +1532,13 @@ int hostapd_send_uplink_csa_extn(struct hostapd_iface *iface,
 				 u8 oper_centr_freq_seg0_idx,
 				 u8 oper_centr_freq_seg1_idx,
 				 u16 punct_bitmap);
+int hostapd_send_rcsa_extn(struct hostapd_iface *iface,
+			   int channel, int freq,
+			   int secondary_channel,
+			   u8 current_vht_oper_chwidth,
+			   u8 oper_centr_freq_seg0_idx,
+			   u8 oper_centr_freq_seg1_idx,
+			   u16 punct_bitmap);
 void hostapd_uplink_cancel_disconnect_timeout_extn(struct hostapd_iface *iface);
 void hostapd_ucode_trigger_bhsta_disconnect_extn(struct hostapd_iface *iface);
 struct ubus_context *ubus_ap_fetch_context_extn(void);
@@ -1558,6 +1567,7 @@ int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
 
 struct uc_value *uc_wpas_notify_uplink_csa_extn(struct uc_vm *vm, size_t nargs);
 struct uc_value *uc_wpas_iface_reconnect_extn(struct uc_vm *vm, size_t nargs);
+struct uc_value *uc_wpas_notify_rcsa_extn(struct uc_vm *vm, size_t nargs);
 bool hostapd_uplink_csa_hdl(struct hostapd_data *hapd,
 			    const u8 *buf, size_t len);
 int handle_action_extn(struct hostapd_data *hapd,
