@@ -74,6 +74,8 @@ void hostapd_ucode_notify_uplink_csa(struct hostapd_iface *hapd, int event, u8 c
 		ucv_object_add(val, "new_ch_width", ucv_int64_new(new_ch_width));
 		ucv_object_add(val, "ch_seg_0", ucv_int64_new(ch_seg_0));
 		ucv_object_add(val, "ch_seg_1", ucv_int64_new(ch_seg_1));
+		ucv_object_add(val, "cac_abort",
+			       ucv_int64_new(hapd->iface_extn.cac_abort ? 1 : 0));
 
 		/* Add NOL information if present */
 		if (nol_list && nol_list->count > 0) {
@@ -152,6 +154,7 @@ uc_value_t *uc_wpas_notify_uplink_csa_extn(uc_vm_t *vm, size_t nargs)
 	u8 nol_ie_buf[256];
 	size_t nol_ie_len = 0;
 	uc_value_t *nol_channels;
+	int cac_abort = 0;
 
 	if (!wpa_s || ucv_type(info) != UC_OBJECT)
 		return NULL;
@@ -176,9 +179,12 @@ uc_value_t *uc_wpas_notify_uplink_csa_extn(uc_vm_t *vm, size_t nargs)
 	if ((intval = ucv_int64_get(ucv_object_get(info, "ch_seg_1", NULL))) && !errno)
 		ch_seg_1 = intval;
 
+	if ((intval = ucv_int64_get(ucv_object_get(info, "cac_abort", NULL))) && !errno)
+		cac_abort = intval;
+
 	wpa_printf(MSG_INFO,
-		   "%s freq=%d chan=%d csa_count=%d new_ch_width=%u ch_seg_0=%u ch_seg_1=%u\n",
-		   __func__, freq, chan, cs_count, new_ch_width, ch_seg_0, ch_seg_1);
+		   "%s freq=%d chan=%d csa_count=%d new_ch_width=%u ch_seg_0=%u ch_seg_1=%u cac_abort=%d\n",
+		   __func__, freq, chan, cs_count, new_ch_width, ch_seg_0, ch_seg_1, cac_abort);
 
 	if (nol_channels && ucv_type(nol_channels) == UC_ARRAY) {
 		struct dfs_nol_ie_list nol_list;
@@ -227,7 +233,7 @@ uc_value_t *uc_wpas_notify_uplink_csa_extn(uc_vm_t *vm, size_t nargs)
 	wpa_drv_send_uplink_csa(wpa_s, freq, cs_count, ch_seg_0, ch_seg_1,
 				new_ch_width,
 				nol_ie_len > 0 ? nol_ie_buf : NULL,
-				nol_ie_len);
+				nol_ie_len, cac_abort);
 
 	return ucv_boolean_new(1);
 }

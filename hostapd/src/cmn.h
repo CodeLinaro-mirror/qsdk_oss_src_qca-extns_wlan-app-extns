@@ -456,6 +456,7 @@ struct hostapd_iface_extn {
 	u16 dcs_excess_trigger_enable_bitmap; /* Bitmap used while DCS is disabled due to excessive triggers*/
 	u16 dcs_excess_trigger_restore_bitmap; /* Bitmap restored after DCS is enabled back */
 	bool dcs_in_progress; /* DCS-triggered channel switch is in progress */
+	unsigned int cac_abort:1;
 	/* Radio capability for HE MCS 12/13 support */
 	u16 he_mcs_12_13_radio_cap;
 

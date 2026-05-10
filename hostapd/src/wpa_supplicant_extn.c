@@ -57,6 +57,8 @@
  */
 #define UPLINK_CSA_MODE_STOP_TX 1
 
+#define UPLINK_CSA_DUMP_ACTION_FRAME 0
+
 bool wpas_ap_link_address_extn(struct wpa_supplicant *wpa_s, const u8 *addr)
 {
 	int i;
@@ -145,10 +147,62 @@ static int wpas_uplink_csa_get_tx_link(struct wpa_supplicant *wpa_s,
 	return -1;
 }
 
+#ifdef UPLINK_CSA_DUMP_ACTION_FRAME
+static void wpas_uplink_csa_dump_action_frame(struct wpabuf *buf)
+{
+	const u8 *pos, *end;
+
+	wpa_hexdump_buf(MSG_INFO, "uplink_csa: Action frame payload", buf);
+
+	/* Walk IEs (after Category+Action) and print summary */
+	pos = wpabuf_head_u8(buf) + 2;
+	end = wpabuf_head_u8(buf) + wpabuf_len(buf);
+	while (end - pos >= 2) {
+		u8 eid = pos[0];
+		u8 elen = pos[1];
+		const u8 *edata = pos + 2;
+		size_t ie_len = 2 + elen;
+
+		if ((size_t) (end - pos) < ie_len) {
+			wpa_printf(MSG_INFO,
+				   "uplink_csa: IE parse truncated eid=%u elen=%u rem=%zu",
+				   eid, elen, (size_t) (end - pos));
+			break;
+		}
+
+		if (eid == WLAN_EID_CHANNEL_SWITCH && elen >= 3) {
+			wpa_printf(MSG_INFO,
+				   "uplink_csa: CSA IE: mode=%u new_chan=%u count=%u",
+				   edata[0], edata[1], edata[2]);
+		} else if (eid == WLAN_EID_WIDE_BW_CHSWITCH && elen >= 3) {
+			wpa_printf(MSG_INFO,
+				   "uplink_csa: WideBW IE: width=%u seg0=%u seg1=%u",
+				   edata[0], edata[1], edata[2]);
+		} else if (eid == WLAN_EID_EXTENSION && elen >= 3 &&
+			   edata[0] == WLAN_EID_EXT_MLO_LINK_INFO) {
+			wpa_printf(MSG_INFO,
+				   "uplink_csa: ML Info IE: link_id_bitmap=0x%04x",
+				   WPA_GET_LE16(edata + 1));
+		} else if (eid == WLAN_EID_VENDOR_SPECIFIC && elen >= 4) {
+			wpa_printf(MSG_INFO,
+				   "uplink_csa: Vendor IE: OUI=%02x:%02x:%02x type=%u elen=%u",
+				   edata[0], edata[1], edata[2], edata[3], elen);
+		} else {
+			wpa_printf(MSG_INFO,
+				   "uplink_csa: IE parsed: eid=%u elen=%u",
+				   eid, elen);
+			wpa_hexdump(MSG_INFO, "uplink_csa: IE raw", pos, ie_len);
+		}
+
+		pos += ie_len;
+	}
+}
+#endif
+
 int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 			    u8 cs_count, u8 ch_seg_0, u8 ch_seg_1,
 			    u8 new_ch_width, const u8 *nol_ie,
-			    size_t nol_ie_len)
+			    size_t nol_ie_len, int cac_abort)
 {
 	struct wpabuf *buf = NULL;
 	u8 chan;
@@ -158,6 +212,7 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 	bool is_wb_ie_present = false;
 	size_t total_len;
 	u8 width = 0;
+	bool ml_info_present = false;
 
 	if (wpa_s->wpa_state != WPA_COMPLETED)
 		return -1;
@@ -192,6 +247,7 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 			   freq);
 		return -1;
 	}
+
 	wpa_printf(MSG_DEBUG,
 		   "freq %u chan %u cs_count %u ch_seg_0 %u ch_seg_1 %u new_ch_width %u assoc_freq %u tx_freq %u tx_link_id %d",
 		   freq, chan, cs_count, ch_seg_0, ch_seg_1, new_ch_width,
@@ -205,6 +261,9 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 		total_len += UPLINK_CSA_WIDE_BW_IE_TOTAL_LEN;
 		is_wb_ie_present = true;
 	}
+
+	if (cac_abort && wpa_s->valid_links)
+		total_len += 5; /* ML Info IE length */
 
 	if (nol_ie && nol_ie_len > 0) {
 		total_len += nol_ie_len;
@@ -226,26 +285,61 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 	wpabuf_put_u8(buf, UPLINK_CSA_MODE_STOP_TX);
 	wpabuf_put_u8(buf, chan);
 	wpabuf_put_u8(buf, cs_count);
-	if (!is_wb_ie_present)
-		goto send_action;
+	if (is_wb_ie_present) {
+		wpabuf_put_u8(buf, WLAN_EID_WIDE_BW_CHSWITCH);
+		wpabuf_put_u8(buf, UPLINK_CSA_WIDE_BW_IE_BODY_LEN);
+		wpabuf_put_u8(buf, width);
+		wpabuf_put_u8(buf, ch_seg_0);
+		wpabuf_put_u8(buf, ch_seg_1);
+	}
 
-	wpabuf_put_u8(buf, WLAN_EID_WIDE_BW_CHSWITCH);
-	wpabuf_put_u8(buf, UPLINK_CSA_WIDE_BW_IE_BODY_LEN);
-	wpabuf_put_u8(buf, width);
-	wpabuf_put_u8(buf, ch_seg_0);
-	wpabuf_put_u8(buf, ch_seg_1);
-
-	/* Add NOL IE if present */
-	if (nol_ie && nol_ie_len > 0) {
+	/* Add NOL IE only when Wide BW IE is present */
+	if (is_wb_ie_present && nol_ie && nol_ie_len > 0) {
 		wpabuf_put_data(buf, nol_ie, nol_ie_len);
 		wpa_hexdump(MSG_INFO, "Uplink CSA NOL IE", nol_ie, nol_ie_len);
 	}
 
-send_action:
+	if (cac_abort && wpa_s->valid_links) {
+		unsigned int pending_ch_switch_freq = 0;
+		u16 link_id_bitmap = 0;
+		int link_5g = -1;
+		int i;
+		bool has_non_5g_partner = false;
+
+		for_each_link(wpa_s->valid_links, i) {
+			if (wpa_s->links[i].disabled || !wpa_s->links[i].freq)
+				continue;
+			if (is_5ghz_freq(wpa_s->links[i].freq))
+				link_5g = i;
+			else
+				has_non_5g_partner = true;
+		}
+
+		if (has_non_5g_partner && link_5g >= 0) {
+			/* Encoding ML Info IE to the action frame */
+			link_id_bitmap = BIT(link_5g);
+			ml_info_present = true;
+			wpabuf_put_u8(buf, WLAN_EID_EXTENSION);
+			wpabuf_put_u8(buf, 3); /* ext_id (1) + bitmap (2) */
+			wpabuf_put_u8(buf, WLAN_EID_EXT_MLO_LINK_INFO);
+			wpabuf_put_le16(buf, link_id_bitmap);
+		}
+
+		if (tx_link_id >= 0 && tx_link_id < MAX_NUM_MLD_LINKS)
+			pending_ch_switch_freq =
+				wpa_s->links[tx_link_id].pending_ch_switch_freq;
+
+		if (pending_ch_switch_freq != 0)
+			tx_freq = pending_ch_switch_freq;
+	}
+
+#ifdef UPLINK_CSA_DUMP_ACTION_FRAME
+	wpas_uplink_csa_dump_action_frame(buf);
+#endif
 	res = wpa_drv_send_action_extn(wpa_s, tx_freq, 0, wpa_s->bssid,
 				       wpa_s->own_addr, wpa_s->bssid,
 				       wpabuf_head(buf), wpabuf_len(buf), 0,
-				       tx_link_id);
+				       ml_info_present ? -1 : tx_link_id);
 	if (res < 0)
 		wpa_printf(MSG_ERROR,
 			   "Failed to send uplink CSA action frame");
