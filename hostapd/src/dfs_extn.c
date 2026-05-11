@@ -310,6 +310,37 @@ int handle_action_extn(struct hostapd_data *hapd,
 	return 0;
 }
 
+int handle_action_vs_extn(struct hostapd_data *hapd,
+			  struct sta_info *sta,
+			  const struct ieee80211_mgmt *mgmt,
+			  size_t len, unsigned int freq, bool protected)
+{
+	const u8 *pos = (const u8 *)mgmt + IEEE80211_HDRLEN; 
+
+	if (mgmt->u.action.category == WLAN_ACTION_VENDOR_SPECIFIC) {
+		wpa_printf(MSG_DEBUG,"received vendor action");
+		/* category(1) + OUI(3) must be present */
+		if (len < IEEE80211_HDRLEN + 4) {
+			wpa_printf(MSG_DEBUG,
+				   "vendor action frame too short (%zu)",
+				   len);
+			return -1;
+		}
+
+		if (WPA_GET_BE24(pos + 1) != OUI_QCA) {
+			wpa_printf(MSG_DEBUG,
+				   "vendor action OUI mismatch, ignoring");
+			return -1;
+		}
+
+
+		if (hostapd_rcsa_rx_hdl(hapd, (const u8 *) mgmt, len))
+			return 0;
+	}
+
+	return -1;
+}
+
 static int dfs_nol_ie_chan_width_to_bw_mhz(enum chan_width chan_width,
 					    int *bandwidth_mhz)
 {
@@ -486,11 +517,6 @@ int hostapd_send_uplink_csa_extn(struct hostapd_iface *iface,
 
 /* Minimum fixed fields after the 802.11 header for Action frames: Category+Action */
 #define IEEE80211_ACTION_FRAME_MIN_FIXED_FIELDS 2
-
-/* Channel Switch Announcement element (WLAN_EID_CHANNEL_SWITCH) fixed layout. */
-#define IEEE80211_CSA_IE_MIN_LEN 3
-#define IEEE80211_CSA_IE_NEW_CHANNEL_OFFSET 3
-#define IEEE80211_CSA_IE_TOTAL_LEN 5
 
 /* Wide Bandwidth Channel Switch element (WLAN_EID_WIDE_BW_CHSWITCH) fixed layout. */
 #define IEEE80211_WB_CSA_IE_MIN_LEN 3

@@ -8,6 +8,12 @@
 
 #ifndef CONFIG_QCN_EXTN
 #else
+
+/* Channel Switch Announcement element (WLAN_EID_CHANNEL_SWITCH) fixed layout. */
+#define IEEE80211_CSA_IE_MIN_LEN 3
+#define IEEE80211_CSA_IE_NEW_CHANNEL_OFFSET 3
+#define IEEE80211_CSA_IE_TOTAL_LEN 5
+
 /* NOL IE structure for uplink CSA */
 struct dfs_nol_ie_info {
 	u32 freq;              /* Center frequency in MHz */
