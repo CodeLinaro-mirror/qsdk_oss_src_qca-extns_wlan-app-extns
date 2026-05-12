@@ -7,7 +7,6 @@
 #include "common.h"
 #include <sys/un.h>
 #include "utils/includes.h"
-#include "utils/includes.h"
 #include "utils/ucode.h"
 #include <ap/hostapd.h>
 #include "ucode_extn.h"
@@ -22,7 +21,7 @@
 void hostapd_ucode_notify_uplink_csa(struct hostapd_iface *hapd, int event, u8 channel,
 				     int freq, int csa_count, u8 new_ch_width,
 				     u8 ch_seg_0, u8 ch_seg_1,
-				     struct dfs_nol_ie_list *nol_list)
+				     dfs_nol_ie_list *nol_list)
 {
 	uc_value_t *val = NULL;
 	uc_value_t *nol_array = NULL;
@@ -77,12 +76,11 @@ void hostapd_ucode_notify_uplink_csa(struct hostapd_iface *hapd, int event, u8 c
 		ucv_object_add(val, "cac_abort",
 			       ucv_int64_new(hapd->iface_extn.cac_abort ? 1 : 0));
 
-		/* Add NOL information if present */
 		if (nol_list && nol_list->count > 0) {
 			nol_array = ucv_array_new(vm);
 			for (i = 0; i < nol_list->count; i++) {
 				uc_value_t *nol_entry = ucv_object_new(vm);
-				struct dfs_nol_ie_info *entry = &nol_list->entries[i];
+				dfs_nol_ie_info *entry = &nol_list->entries[i];
 
 				ucv_object_add(nol_entry, "freq",
 					       ucv_int64_new(entry->freq));
@@ -97,6 +95,11 @@ void hostapd_ucode_notify_uplink_csa(struct hostapd_iface *hapd, int event, u8 c
 			wpa_printf(MSG_INFO, "%s: Added %zu NOL entries to event\n",
 				   __func__, nol_list->count);
 		}
+	}
+
+	if (nol_list && nol_list->count > 0) {
+		wpa_printf(MSG_INFO, "%s: val object should contain nol_channels array\n",
+			   __func__);
 	}
 
 	ucv_put(wpa_ucode_call(5));
@@ -187,14 +190,14 @@ uc_value_t *uc_wpas_notify_uplink_csa_extn(uc_vm_t *vm, size_t nargs)
 		   __func__, freq, chan, cs_count, new_ch_width, ch_seg_0, ch_seg_1, cac_abort);
 
 	if (nol_channels && ucv_type(nol_channels) == UC_ARRAY) {
-		struct dfs_nol_ie_list nol_list;
+		dfs_nol_ie_list nol_list;
 		int encoded_len = 0;
 		size_t nol_count = ucv_array_length(nol_channels);
 		size_t i;
 
 		if (nol_count > 0 && nol_count <= 8) {
 			nol_list.entries = calloc(nol_count,
-						  sizeof(struct dfs_nol_ie_info));
+						  sizeof(dfs_nol_ie_info));
 			if (nol_list.entries) {
 				nol_list.count = nol_count;
 
@@ -254,7 +257,7 @@ uc_value_t *uc_wpas_iface_reconnect_extn(uc_vm_t *vm, size_t nargs)
 void hostapd_ucode_notify_uplink_csa(struct hostapd_iface *hapd, int event, u8 channel,
 				     int freq, int csa_count, u8 new_ch_width,
 				     u8 ch_seg_0, u8 ch_seg_1,
-				     struct dfs_nol_ie_list *nol_list)
+				     dfs_nol_ie_list *nol_list)
 {
 }
 

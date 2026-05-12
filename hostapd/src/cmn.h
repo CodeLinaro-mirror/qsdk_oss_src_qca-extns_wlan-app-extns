@@ -345,6 +345,16 @@ struct hostapd_data_extn {
 #endif /* CONFIG_IEEE80211AC */
 };
 
+struct dfs_nol_ie_info_extn {
+	u32 freq;              /* Center frequency in MHz */
+	u32 bandwidth;         /* Bandwidth in MHz (20, 40, 80, 160, 320) */
+	u16 subchan_bitmap;    /* Bitmap of affected 20MHz subchannels */
+};
+
+struct dfs_nol_ie_list_extn {
+	struct dfs_nol_ie_info_extn *entries;
+	size_t count;
+};
 
 #ifdef CONFIG_IEEE80211AC
 struct hostapd_mu_cap_war_sta_entry_extn {
@@ -570,7 +580,8 @@ struct hostapd_iface_extn {
 	bool acs_failed;
 	enum dynamic_acs_action_extn dynamic_acs_action;
 	bool dfs_available_from_sta;
-
+	struct dfs_nol_ie_info_extn nol_info;
+	struct dfs_nol_ie_list_extn nol_list;
 	/* Penalty percentage to be applied for non-priority channels in QACS */
 	u8 vlp_non_prior_penalty;
 
@@ -1880,6 +1891,14 @@ struct uc_value *ucode_ap_fetch_iface_reg_extn(void);
 struct uc_vm *ucode_ap_fetch_vm_extn(void);
 bool hostapd_uplink_csa_hdl_extn(struct hostapd_data *hapd,
 				 const u8 *buf, size_t len);
+int hostapd_prepare_nol_ie_bmap_extn(struct hostapd_iface *iface,
+				     int channel, int freq,
+				     int secondary_channel,
+				     int current_vht_oper_chwidth,
+				     int oper_centr_freq_seg0_idx,
+				     int oper_centr_freq_seg1_idx,
+				     u16 punct_bitmap,
+				     u16 radar_bitmap_oper);
 int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 				       int channel, int freq,
 				       int secondary_channel,
