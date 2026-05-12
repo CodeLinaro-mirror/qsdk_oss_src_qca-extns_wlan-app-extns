@@ -528,12 +528,25 @@ struct handle_action_extn_args {
 	int rssi;
 };
 
+/**
+ * struct ht40_intolerant_bss_extn - Per-BSS HT40 intolerance CLI override.
+ * @is_overridden: Whether HT40 intolerance is overridden via CLI.
+ * @value: HT40 intolerance value set by the user.
+ */
+
+struct ht40_intolerant_bss_extn {
+	bool is_overridden;
+	bool value;
+};
+
 struct hostapd_bss_config_extn {
 	/* Add Per-BSS configuration for extn here */
 	u8 nontx_vendor_elem_size;
 	u8 nontx_optional_elem_size;
 	enum repurpose_mode repurpose_mode;
 	enum qca_wlan_vendor_vap_submode_type vap_submode;
+	/* Config to enable/disable HT40 intolerance */
+	struct ht40_intolerant_bss_extn ht40_intol;
 	/* Config to control adding single common PSD to TPE IE */
 	bool tpe_common_psd;
 	/* Config to set Tx power interpretation in the TPE IE */
@@ -1586,6 +1599,11 @@ hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
 	return CHAN_WIDTH_20;
 }
 
+static inline void
+hostapd_override_ht_capabilities_extn(const struct hostapd_data *hapd,
+				      struct ieee80211_ht_capabilities *cap)
+{
+}
 #else
 
 int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
@@ -2354,6 +2372,16 @@ void wpas_dfs_radar_detected_sta_mode(struct wpa_supplicant *wpa_s,
 				      struct dfs_event *radar);
 void wpas_dfs_nop_finished_sta_mode(struct wpa_supplicant *wpa_s,
 				    struct dfs_event *radar);
-
+/**
+ * hostapd_override_ht_capabilities_extn - Override HT capabilities with extension config
+ * @hapd: Pointer to hostapd BSS context
+ * @cap: Pointer to HT capabilities element being constructed for beacon/probes.
+ *
+ * This function applies extension-specific overrides to the HT capabilities
+ * element before it is advertised in beacon/probe frames.
+ *
+ */
+void hostapd_override_ht_capabilities_extn(const struct hostapd_data *hapd,
+					   struct ieee80211_ht_capabilities *cap);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

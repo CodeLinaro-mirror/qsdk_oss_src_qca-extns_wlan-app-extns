@@ -372,3 +372,17 @@ int hostapd_regdom_restore_iface(struct hostapd_iface *iface)
 	return 0;
 }
 #endif
+
+void hostapd_override_ht_capabilities_extn(const struct hostapd_data *hapd,
+					   struct ieee80211_ht_capabilities *cap)
+{
+	if (!hapd || !hapd->conf || !cap)
+		return;
+
+	if (hapd->conf->bss_extn.ht40_intol.is_overridden) {
+		if (hapd->conf->bss_extn.ht40_intol.value)
+			cap->ht_capabilities_info |= HT_CAP_INFO_40MHZ_INTOLERANT;
+		else
+			cap->ht_capabilities_info &= ~HT_CAP_INFO_40MHZ_INTOLERANT;
+	}
+}
