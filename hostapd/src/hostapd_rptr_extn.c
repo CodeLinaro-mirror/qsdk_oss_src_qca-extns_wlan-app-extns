@@ -375,6 +375,27 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 		for (i = 0; i < iface->num_bss; i++) {
 			ret = hostapd_switch_channel(iface->bss[i], csa);
 			if (ret) {
+				/*
+				 * hostapd_switch_channel() returns -1 when
+				 * csa_in_progress is already set.  This can
+				 * happen on an MLD STA where both
+				 * EVENT_LINK_CH_SWITCH_STARTED and
+				 * EVENT_CH_SWITCH_STARTED fire for the same
+				 * physical channel switch, causing this
+				 * function to be called twice.  If the BSS
+				 * already has a CSA in progress toward the
+				 * same target frequency, treat it as a no-op
+				 * rather than a fatal error so the ongoing
+				 * channel switch can complete normally.
+				 */
+				if (iface->bss[i]->csa_in_progress &&
+				    iface->bss[i]->cs_freq_params.freq ==
+				    csa->freq_params.freq) {
+					wpa_printf(MSG_DEBUG,
+						   "CSA already in progress to freq=%d on bss[%d], skipping duplicate",
+						   csa->freq_params.freq, i);
+					continue;
+				}
 				wpa_printf(MSG_ERROR, "Channel switch failed"
 					   " ret = %d", ret);
 #ifdef CONFIG_HOSTAPD_SRC_DIR

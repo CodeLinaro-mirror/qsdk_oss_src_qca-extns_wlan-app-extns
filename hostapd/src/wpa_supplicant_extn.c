@@ -157,8 +157,7 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 	int tx_link_id;
 	bool is_wb_ie_present = false;
 	size_t total_len;
-	u8 width = (new_ch_width == CONF_OPER_CHWIDTH_80MHZ ||
-		    new_ch_width == CONF_OPER_CHWIDTH_160MHZ) ? 1 : 0;
+	u8 width = 0;
 
 	if (wpa_s->wpa_state != WPA_COMPLETED)
 		return -1;
@@ -168,6 +167,19 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 		wpa_printf(MSG_DEBUG, "Invalid new channel width %u", new_ch_width);
 		return -1;
 	}
+
+	/*
+	 * Wide Bandwidth Channel Switch element channel width encoding per
+	 * IEEE Std 802.11-2024, Table 9-316 (VHT Operation Information):
+	 * 0 = 40 MHz, 1 = 80 MHz / 160 MHz / 80+80 MHz.
+	 *
+	 * Both 80 MHz and 160 MHz use width=1. The receiver distinguishes
+	 * them by checking whether cf1 (ch_seg_1 / CCFS1) is non-zero:
+	 * non-zero cf1 indicates 160 MHz, zero cf1 indicates 80 MHz.
+	 */
+	if (new_ch_width == CONF_OPER_CHWIDTH_160MHZ ||
+	    new_ch_width == CONF_OPER_CHWIDTH_80MHZ)
+		width = 1;
 
 	/* Here, "freq" refers to the new channel frequency selected by the repeater
 	 * upon radar detection. This frequency is conveyed to the root AP via an

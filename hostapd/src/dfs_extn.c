@@ -299,8 +299,6 @@ int handle_action_extn(struct hostapd_data *hapd,
 
 	switch (mgmt->u.action.category) {
 		case WLAN_ACTION_SPECTRUM_MGMT:
-			 wpa_printf(MSG_DEBUG,
-				    "uplink_csa: received the action frame at top most API");
 			if (hostapd_uplink_csa_hdl(hapd, (const u8 *) mgmt, len))
 				 return 1;
 			break;
@@ -675,8 +673,22 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 		ch_width = wb_cs_ie[IEEE80211_WB_CSA_IE_CH_WIDTH_OFFSET];
 		cf0 = wb_cs_ie[IEEE80211_WB_CSA_IE_CF0_OFFSET];
 		cf1 = wb_cs_ie[IEEE80211_WB_CSA_IE_CF1_OFFSET];
-		wpa_printf(MSG_DEBUG, "uplink_csa: wide band ie: cf0 %u cf1 %u chwidth %d",
-			   cf0, cf1, ch_width);
+		/*
+		 * Per IEEE Std 802.11-2024, Table 9-316 (VHT Operation Information):
+		 * width=1 is used for both 80 MHz and 160 MHz. The two are
+		 * distinguished by cf1 (CCFS1): non-zero cf1 means 160 MHz, where
+		 * cf0 is the 80 MHz segment center and cf1 is the 160 MHz center.
+		 * Zero cf1 means plain 80 MHz.
+		 */
+		if (ch_width == CONF_OPER_CHWIDTH_80MHZ && cf1 != 0) {
+			ch_width = CONF_OPER_CHWIDTH_160MHZ;
+			wpa_printf(MSG_DEBUG,
+				   "uplink_csa: wide band ie: cf0=%u cf1=%u, reclassifyed as 160 MHz (new_chan=%u chwidth=%d)",
+				   cf0, cf1, new_chan, ch_width);
+		} else {
+			wpa_printf(MSG_DEBUG, "uplink_csa: wide band ie: cf0=%u cf1=%u chwidth=%d",
+				   cf0, cf1, ch_width);
+		}
 	} else {
 		wpa_printf(MSG_DEBUG, "uplink_csa: no wide band ie, assuming 20MHz");
 		ch_width = 0;
@@ -695,7 +707,7 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 		sec_chan = 0;
 	}
 
-	wpa_printf(MSG_DEBUG, "uplink_csa: chanel change prams: cf0 %u cf1 %u sec %d chwidth %u",
+	wpa_printf(MSG_DEBUG, "uplink_csa: channel change prams: cf0 %u cf1 %u sec %d chwidth %u",
 		   cf0, cf1, sec_chan, ch_width);
 
 	if (!wb_cs_ie) {
