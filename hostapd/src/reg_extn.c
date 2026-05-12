@@ -6,6 +6,7 @@
 #include "includes.h"
 #include <netlink/genl/genl.h>
 #include "common.h"
+#include "common/hw_features_common.h"
 #include "common/qca-vendor.h"
 #include "drivers/driver_nl80211.h"
 #include "ap/hostapd.h"
@@ -132,9 +133,10 @@ static int hw_blocklist_copy_entry_extn(
 			if (!dst_mode->pc_chans)
 				goto fail;
 		}
+
+		dst->num_pwr_modes++;
 	}
 
-	dst->num_pwr_modes = src->num_pwr_modes;
 	return 0;
 
 fail:
@@ -264,4 +266,366 @@ void hostapd_event_hw_blocklist_notify_extn(
 		   hapd->iface->iface_extn.num_hw_blocklist);
 
 	hostapd_reg_dump_hw_blocklist_extn(hapd->iface);
+}
+
+static u16 hw_features_hw_blocklist_bw_to_mhz_extn(u32 max_bw)
+{
+	switch (max_bw) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+	case NL80211_CHAN_WIDTH_20:
+		return 20;
+	case NL80211_CHAN_WIDTH_40:
+		return 40;
+	case NL80211_CHAN_WIDTH_80:
+		return 80;
+	case NL80211_CHAN_WIDTH_160:
+		return 160;
+	case NL80211_CHAN_WIDTH_320:
+		return 320;
+	default:
+		return 0;
+	}
+}
+
+static const u16 hw_bl_puncture_pattern_map_80_extn[] = {
+	0x1, 0x2, 0x4, 0x8
+};
+
+static const u16 hw_bl_puncture_pattern_map_160_extn[] = {
+	0x1, 0x2, 0x4, 0x8,
+	0x10, 0x20, 0x40, 0x80,
+	0x0C, 0x03, 0xC0, 0x30
+};
+
+static const u16 hw_bl_puncture_pattern_map_320_extn[] = {
+	0x000C, 0x0003, 0x00C0, 0x0030,
+	0x0C00, 0x0300, 0xC000, 0x3000,
+	0x000F, 0x00F0, 0x0F00, 0xF000,
+	0xF003, 0xF00C, 0xF030, 0xF0C0,
+	0xF300, 0xFC00, 0x003F, 0x00CF,
+	0x030F, 0x0C0F, 0x300F, 0xC00F
+};
+
+static int hw_features_get_puncture_pattern_index_extn(u16 bw,
+							u16 puncture_pattern)
+{
+	const u16 *patterns = NULL;
+	u8 num_patterns = 0;
+	u8 i;
+
+	switch (bw) {
+	case 80:
+		patterns = hw_bl_puncture_pattern_map_80_extn;
+		num_patterns = ARRAY_SIZE(hw_bl_puncture_pattern_map_80_extn);
+		break;
+	case 160:
+		patterns = hw_bl_puncture_pattern_map_160_extn;
+		num_patterns = ARRAY_SIZE(hw_bl_puncture_pattern_map_160_extn);
+		break;
+	case 320:
+		patterns = hw_bl_puncture_pattern_map_320_extn;
+		num_patterns = ARRAY_SIZE(hw_bl_puncture_pattern_map_320_extn);
+		break;
+	default:
+		return -1;
+	}
+
+	for (i = 0; i < num_patterns; i++) {
+		if (patterns[i] == puncture_pattern)
+			return i;
+	}
+
+	return -1;
+}
+
+static bool hw_features_is_chan_punc_extn(u16 puncture_pattern, u16 bw)
+{
+	if (!puncture_pattern)
+		return false;
+
+	return hw_features_get_puncture_pattern_index_extn(
+		bw, puncture_pattern) >= 0;
+}
+
+static bool hw_features_is_chan_in_full_hw_blocklist_extn(
+	const struct hostapd_hw_blocklist_fb_chan *fb_chans, u32 num_fb_chans,
+	u16 freq, u16 center_freq, u16 bw)
+{
+	u32 i;
+
+	for (i = 0; i < num_fb_chans; i++) {
+		u16 bl_bw = hw_features_hw_blocklist_bw_to_mhz_extn(fb_chans[i].max_bw);
+		int start_freq;
+		int offset;
+		u32 pri20_bit;
+
+		if (!bl_bw || bl_bw != bw || fb_chans[i].center_freq != center_freq)
+			continue;
+
+		if (bw == 20) {
+			start_freq = freq;
+		} else {
+			start_freq = (int)center_freq - ((int)bw / 2) + 10;
+			if (start_freq <= 0)
+				continue;
+		}
+
+		offset = (int)freq - start_freq;
+		if (offset < 0 || offset % 20)
+			continue;
+
+		pri20_bit = offset / 20;
+		if (pri20_bit >= 16)
+			continue;
+
+		if (fb_chans[i].pri20_bitmap & BIT(pri20_bit))
+			return true;
+	}
+
+	return false;
+}
+
+static bool hw_features_is_chan_in_punc_hw_blocklist_extn(
+	const struct hostapd_hw_blocklist_pc_chan *pc_chans, u32 num_pc_chans,
+	u16 puncture_pattern, u16 center_freq, u16 bw)
+{
+	int punc_idx;
+	u32 i;
+
+	punc_idx = hw_features_get_puncture_pattern_index_extn(
+		bw, puncture_pattern);
+	if (punc_idx < 0)
+		return false;
+
+	for (i = 0; i < num_pc_chans; i++) {
+		u16 bl_bw = hw_features_hw_blocklist_bw_to_mhz_extn(pc_chans[i].max_bw);
+
+		if (!bl_bw || bl_bw != bw || pc_chans[i].center_freq != center_freq)
+			continue;
+
+		if (pc_chans[i].punc_pat_bmap & BIT(punc_idx))
+			return true;
+	}
+
+	return false;
+}
+
+static const struct hostapd_hw_blocklist_pwr_mode *
+hw_features_get_hw_blocklist_pwr_mode_extn(
+	const struct hostapd_hw_blocklist_info *hw_blocklist_info, u8 pwr_mode_id)
+{
+	u8 i;
+
+	if (!hw_blocklist_info || !hw_blocklist_info->pwr_modes)
+		return NULL;
+
+	for (i = 0; i < hw_blocklist_info->num_pwr_modes; i++) {
+		if (hw_blocklist_info->pwr_modes[i].pwr_mode_id == pwr_mode_id)
+			return &hw_blocklist_info->pwr_modes[i];
+	}
+
+	return NULL;
+}
+
+static bool hw_features_is_channel_in_hw_blocklist_extn(
+	const struct hostapd_hw_blocklist_info *hw_blocklist_info,
+	u16 freq, u16 center_freq, u16 bw, u8 pwr_mode_id, u16 puncture_pattern)
+{
+	const struct hostapd_hw_blocklist_pwr_mode *pwr_mode;
+
+	if (!hw_blocklist_info || !freq || !center_freq || !bw)
+		return false;
+
+	pwr_mode = hw_features_get_hw_blocklist_pwr_mode_extn(hw_blocklist_info,
+							      pwr_mode_id);
+	if (!pwr_mode)
+		return false;
+
+	if (!hw_features_is_chan_punc_extn(puncture_pattern, bw)) {
+		if (!pwr_mode->fb_chans || !pwr_mode->num_fb_chans)
+			return false;
+
+		return hw_features_is_chan_in_full_hw_blocklist_extn(
+			pwr_mode->fb_chans, pwr_mode->num_fb_chans,
+			freq, center_freq, bw);
+	}
+
+	if (!pwr_mode->pc_chans || !pwr_mode->num_pc_chans)
+		return false;
+
+	return hw_features_is_chan_in_punc_hw_blocklist_extn(
+		pwr_mode->pc_chans, pwr_mode->num_pc_chans,
+		puncture_pattern, center_freq, bw);
+}
+
+static bool hw_features_is_channel_in_hw_blocklist_for_hw_idx_extn(
+	const struct hostapd_hw_blocklist_info *hw_blocklist_info,
+	unsigned int num_hw_blocklist, u8 hw_idx,
+	u16 freq, u16 center_freq, u16 bw, u8 pwr_mode_id,
+	u16 puncture_pattern)
+{
+	unsigned int i;
+	bool match_all_hw = hw_idx == NL80211_WIPHY_RADIO_ID_MAX;
+
+	if (!hw_blocklist_info || !num_hw_blocklist)
+		return false;
+
+	for (i = 0; i < num_hw_blocklist; i++) {
+		if (!match_all_hw && hw_blocklist_info[i].hw_idx != hw_idx)
+			continue;
+
+		if (hw_features_is_channel_in_hw_blocklist_extn(
+			    &hw_blocklist_info[i], freq, center_freq, bw,
+			    pwr_mode_id, puncture_pattern))
+			return true;
+	}
+
+	return false;
+}
+
+bool hostapd_is_hw_blocklisted_combo_extn(struct hostapd_iface *iface,
+					  u16 freq, u16 center_freq, u16 bw,
+					  u16 puncture_pattern, u8 pwr_mode_id)
+{
+	struct hostapd_multi_hw_info *hw_info = NULL;
+	u8 hw_idx = NL80211_WIPHY_RADIO_ID_MAX;
+
+	if (!iface || !is_6ghz_freq(freq) ||
+	    pwr_mode_id >= NL80211_REG_NUM_POWER_MODES)
+		return false;
+	if (!iface->iface_extn.check_hw_blocklist)
+		return false;
+
+	if (iface->current_hw_info &&
+	    iface->current_hw_info->start_freq <= freq &&
+	    iface->current_hw_info->end_freq >= freq)
+		hw_info = iface->current_hw_info;
+	else
+		hw_info = hostapd_get_current_hw_info(iface, freq);
+
+	if (hw_info)
+		hw_idx = hw_info->hw_idx;
+
+	if (!iface->iface_extn.hw_blocklist_info ||
+	    !iface->iface_extn.num_hw_blocklist)
+		return false;
+
+	return hw_features_is_channel_in_hw_blocklist_for_hw_idx_extn(
+		iface->iface_extn.hw_blocklist_info,
+		iface->iface_extn.num_hw_blocklist, hw_idx, freq, center_freq,
+		bw, pwr_mode_id, puncture_pattern);
+}
+
+int hostapd_validate_hw_blocklist_for_freq_params_extn(
+	struct hostapd_iface *iface,
+	const struct hostapd_freq_params *freq_params,
+	u8 pwr_mode_id, const char *op_name)
+{
+	struct hostapd_multi_hw_info *hw_info = NULL;
+	u8 hw_idx = NL80211_WIPHY_RADIO_ID_MAX;
+	u16 center_freq;
+	u16 bw;
+
+	if (!iface || !freq_params || !is_6ghz_freq(freq_params->freq))
+		return 0;
+
+	if (!iface->iface_extn.check_hw_blocklist)
+		return 0;
+
+	if (!freq_params->center_freq1 || !freq_params->bandwidth) {
+		wpa_printf(MSG_ERROR,
+			   "Reject %s: invalid 6 GHz params for HW blocklist check (freq=%d center=%d bw=%d)",
+			   op_name ? op_name : "operation",
+			   freq_params->freq, freq_params->center_freq1,
+			   freq_params->bandwidth);
+		return -1;
+	}
+
+	if (pwr_mode_id >= NL80211_REG_NUM_POWER_MODES ||
+	    pwr_mode_id < NL80211_REG_AP_LPI) {
+		u8 orig_pwr_mode_id = pwr_mode_id;
+
+		pwr_mode_id = iface->conf->he_6ghz_reg_pwr_type;
+		wpa_printf(MSG_DEBUG,
+			   "Invalid power mode ID %u for %s, fallback to iface config value %u",
+			   orig_pwr_mode_id, op_name ? op_name : "operation",
+			   pwr_mode_id);
+	}
+
+	if (iface->current_hw_info &&
+	    iface->current_hw_info->start_freq <= freq_params->freq &&
+	    iface->current_hw_info->end_freq >= freq_params->freq)
+		hw_info = iface->current_hw_info;
+	else
+		hw_info = hostapd_get_current_hw_info(iface, freq_params->freq);
+
+	if (hw_info)
+		hw_idx = hw_info->hw_idx;
+
+	center_freq = freq_params->center_freq1;
+	bw = freq_params->bandwidth;
+	if (iface->iface_extn.hw_blocklist_info &&
+	    iface->iface_extn.num_hw_blocklist &&
+	    hw_features_is_channel_in_hw_blocklist_for_hw_idx_extn(
+		    iface->iface_extn.hw_blocklist_info,
+		    iface->iface_extn.num_hw_blocklist, hw_idx,
+		    freq_params->freq, center_freq, bw, pwr_mode_id,
+		    freq_params->punct_bitmap)) {
+		wpa_printf(MSG_ERROR,
+			   "Reject %s: 6 GHz HW blocklisted channel (hw_idx=%u freq=%d center=%u bw=%u pwr_mode=%u punct=0x%04x)",
+			   op_name ? op_name : "operation", hw_idx,
+			   freq_params->freq, center_freq, bw, pwr_mode_id,
+			   freq_params->punct_bitmap);
+		return -1;
+	}
+
+	return 0;
+}
+
+int hostapd_validate_current_6ghz_hw_blocklist_extn(
+	struct hostapd_iface *iface,
+	u8 pwr_mode_id, const char *op_name)
+{
+	struct hostapd_freq_params freq_params;
+	struct hostapd_hw_modes *mode;
+	struct hostapd_data *hapd;
+
+	if (!iface || !iface->num_bss || !iface->bss || !iface->bss[0] ||
+	    !is_6ghz_freq(iface->freq))
+		return 0;
+
+	hapd = iface->bss[0];
+	mode = iface->current_mode;
+
+	if (hostapd_set_freq_params(&freq_params, iface->conf->hw_mode,
+				    iface->freq, iface->conf->channel,
+				    iface->conf->enable_edmg,
+				    iface->conf->edmg_channel,
+				    iface->conf->ieee80211n,
+				    iface->conf->ieee80211ac,
+				    iface->conf->ieee80211ax,
+				    iface->conf->ieee80211be,
+				    iface->conf->ieee80211bn,
+				    iface->conf->secondary_channel,
+				    hostapd_get_oper_chwidth(iface->conf),
+				    hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
+				    hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
+				    iface->conf->vht_capab,
+				    mode ? &mode->he_capab[IEEE80211_MODE_AP] :
+				    NULL,
+				    mode ? &mode->eht_capab[IEEE80211_MODE_AP] :
+				    NULL,
+				    mode ? &mode->uhr_capab[IEEE80211_MODE_AP] :
+				    NULL,
+				    hostapd_get_punct_bitmap(hapd),
+				    pwr_mode_id, iface->conf->bandwidth_device,
+				    iface->conf->center_freq_device)) {
+		wpa_printf(MSG_ERROR,
+			   "Reject %s: failed to build current 6 GHz frequency params",
+			   op_name ? op_name : "operation");
+		return -1;
+	}
+
+	return hostapd_validate_hw_blocklist_for_freq_params_extn(
+		iface, &freq_params, pwr_mode_id, op_name);
 }

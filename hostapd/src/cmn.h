@@ -460,6 +460,7 @@ struct hostapd_iface_extn {
 
 	struct hostapd_hw_blocklist_info *hw_blocklist_info;
 	unsigned int num_hw_blocklist;
+	bool check_hw_blocklist;
 };
 
 struct hostapd_channel_data_extn {
@@ -953,6 +954,31 @@ static inline void
 hostapd_query_hw_blocklist_extn(struct hostapd_iface *iface,
 				struct hostapd_data *hapd)
 {
+}
+
+static inline bool
+hostapd_is_hw_blocklisted_combo_extn(struct hostapd_iface *iface,
+				     u16 freq, u16 center_freq, u16 bw,
+				     u16 puncture_pattern, u8 pwr_mode_id)
+{
+	return false;
+}
+
+static inline int
+hostapd_validate_hw_blocklist_for_freq_params_extn(
+	struct hostapd_iface *iface,
+	const struct hostapd_freq_params *freq_params,
+	u8 pwr_mode_id, const char *op_name)
+{
+	return 0;
+}
+
+static inline int
+hostapd_validate_current_6ghz_hw_blocklist_extn(
+	struct hostapd_iface *iface,
+	u8 pwr_mode_id, const char *op_name)
+{
+	return 0;
 }
 
 static inline void
@@ -1774,6 +1800,16 @@ void hostapd_query_hw_blocklist_extn(struct hostapd_iface *iface,
 void hostapd_free_hw_blocklist_info_extn(
 	struct hostapd_hw_blocklist_info *hw_blocklist_info,
 	unsigned int num_hw_blocklist);
+bool hostapd_is_hw_blocklisted_combo_extn(struct hostapd_iface *iface,
+					  u16 freq, u16 center_freq, u16 bw,
+					  u16 puncture_pattern, u8 pwr_mode_id);
+int hostapd_validate_hw_blocklist_for_freq_params_extn(
+	struct hostapd_iface *iface,
+	const struct hostapd_freq_params *freq_params,
+	u8 pwr_mode_id, const char *op_name);
+int hostapd_validate_current_6ghz_hw_blocklist_extn(
+	struct hostapd_iface *iface,
+	u8 pwr_mode_id, const char *op_name);
 int intf_chan_range_available_5g(struct hostapd_hw_modes *mode,
 				 int first_chan_idx, int num_chans);
 int intf_chan_range_available_2g(struct hostapd_hw_modes *mode,
