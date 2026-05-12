@@ -125,6 +125,16 @@ int hostapd_cli_cmd_ignorecac_extn(struct wpa_ctrl *ctrl, int argc,
 	return hostapd_cli_cmd(ctrl, "IGNORECAC", 0, argc, argv);
 }
 
+int hostapd_cli_cbs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc < 1) {
+		printf("Invalid CBS command: needs at least 1 argument\n");
+		return -1;
+	}
+
+	return hostapd_cli_cmd(ctrl, "CBS", 1, argc, argv);
+}
+
 #ifdef CONFIG_IEEE80211AC
 int hostapd_cli_cmd_get_mu_cap_war_extn(struct wpa_ctrl *ctrl,
 					     int argc, char *argv[])

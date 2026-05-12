@@ -23,6 +23,7 @@ OBJS += \
 	qcn_extns/wpa_supplicant_extn.o \
 	qcn_extns/mucapwar.o \
 	qcn_extns/dcs.o \
+	qcn_extns/cbs.o \
 	qcn_extns/afc.o \
 	qcn_extns/hostapd_extn.o \
 	qcn_extns/qcn_ie_extn.o \
