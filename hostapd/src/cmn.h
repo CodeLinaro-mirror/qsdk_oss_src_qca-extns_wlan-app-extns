@@ -20,6 +20,7 @@
 #include "../src/common/qca-vendor.h"
 #include "rropinfo.h"
 #include "wpa_config_extn.h"
+#include "reg_extn.h"
 
 struct hostapd_config;
 struct sta_info;
@@ -54,6 +55,8 @@ struct ieee80211_mgmt;
 struct wpa_driver_scan_params;
 struct dl_list;
 struct hostapd_hw_modes;
+struct wpa_driver_nl80211_data;
+struct nl80211_vendor_cmd_info;
 struct wpa_scan_res;
 struct wpa_config;
 
@@ -195,6 +198,7 @@ struct chan_params {
 union wpa_event_data_extn {
 	struct esp_update_event esp_update_event;
 	struct dcs_intf_event dcs_intf_event;
+	struct hostapd_hw_blocklist_info hw_blocklist_info;
 };
 
 struct ieee802_11_elems_extn {
@@ -448,12 +452,14 @@ struct hostapd_iface_extn {
 	u16 dcs_excess_trigger_enable_bitmap; /* Bitmap used while DCS is disabled due to excessive triggers*/
 	u16 dcs_excess_trigger_restore_bitmap; /* Bitmap restored after DCS is enabled back */
 	bool dcs_in_progress; /* DCS-triggered channel switch is in progress */
-
 	/* Radio capability for HE MCS 12/13 support */
 	u16 he_mcs_12_13_radio_cap;
 
 	/* Peer capability for HE MCS 12/13 support. */
 	u16 he_mcs_12_13_peer_cap;
+
+	struct hostapd_hw_blocklist_info *hw_blocklist_info;
+	unsigned int num_hw_blocklist;
 };
 
 struct hostapd_channel_data_extn {
@@ -936,6 +942,25 @@ qca_nl80211_handle_wifi_config_evt_extn(struct i802_bss *bss,
 	return -1;
 }
 
+static inline void
+nl80211_set_vendor_6ghz_hw_blocked_chans_support_extn(
+	struct wpa_driver_nl80211_data *drv,
+	const struct nl80211_vendor_cmd_info *vinfo)
+{
+}
+
+static inline void
+hostapd_query_hw_blocklist_extn(struct hostapd_iface *iface,
+				struct hostapd_data *hapd)
+{
+}
+
+static inline void
+wiphy_info_qca_vendor_command_extn(struct wpa_driver_nl80211_data *drv,
+				   const struct nl80211_vendor_cmd_info *vinfo)
+{
+}
+
 static inline
 u8 * hostapd_eid_esp_extn(struct hostapd_data *hapd, u8 *eid, size_t len)
 {
@@ -1079,6 +1104,16 @@ hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
 			      char *buf, size_t buflen)
 {
 	return -1;
+}
+
+static inline void
+hostapd_iface_init_extn(struct hostapd_iface *iface)
+{
+}
+
+static inline void
+hostapd_iface_deinit_extn(struct hostapd_iface *iface)
+{
 }
 
 static inline int
@@ -1720,6 +1755,8 @@ void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
 			u32 chan_bw_interference_bitmap);
 int hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
 				  char *buf, size_t buflen);
+void hostapd_iface_init_extn(struct hostapd_iface *iface);
+void hostapd_iface_deinit_extn(struct hostapd_iface *iface);
 /**
  * hostapd_get_6ghz_thresh_priority_freq_extn() - Helper function to fetch the
  * VLP priority threshold frequency from driver
@@ -1728,6 +1765,15 @@ int hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
  * Return: 0 if threshold frequency was fetched successfully, else error code.
  */
 int hostapd_get_6ghz_thresh_priority_freq_extn(struct hostapd_iface *iface);
+bool nl80211_is_6ghz_hw_blocked_chans_supported_extn(void *priv);
+int nl80211_fetch_hw_blocked_chans_extn(void *priv, int radio_idx);
+void wiphy_info_qca_vendor_command_extn(struct wpa_driver_nl80211_data *drv,
+					const struct nl80211_vendor_cmd_info *vinfo);
+void hostapd_query_hw_blocklist_extn(struct hostapd_iface *iface,
+				     struct hostapd_data *hapd);
+void hostapd_free_hw_blocklist_info_extn(
+	struct hostapd_hw_blocklist_info *hw_blocklist_info,
+	unsigned int num_hw_blocklist);
 int intf_chan_range_available_5g(struct hostapd_hw_modes *mode,
 				 int first_chan_idx, int num_chans);
 int intf_chan_range_available_2g(struct hostapd_hw_modes *mode,

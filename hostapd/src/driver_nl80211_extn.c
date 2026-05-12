@@ -29,6 +29,7 @@
 #include "esp.h"
 #include "dcs.h"
 #include "rropinfo.h"
+#include "reg_extn.h"
 
 
 struct hostapd_sta_add_params;
@@ -285,6 +286,458 @@ fail:
 	return;
 }
 
+static u16 nl80211_hw_blocked_chans_bw_to_mhz_extn(u32 max_bw)
+{
+	switch (max_bw) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+	case NL80211_CHAN_WIDTH_20:
+		return 20;
+	case NL80211_CHAN_WIDTH_40:
+		return 40;
+	case NL80211_CHAN_WIDTH_80:
+		return 80;
+	case NL80211_CHAN_WIDTH_160:
+		return 160;
+	case NL80211_CHAN_WIDTH_320:
+		return 320;
+	default:
+		return 0;
+	}
+}
+
+static u32 nl80211_hw_blocked_chans_puncture_mask_extn(u32 max_bw)
+{
+	switch (max_bw) {
+	case NL80211_CHAN_WIDTH_80:
+		return 0x0000000F;
+	case NL80211_CHAN_WIDTH_160:
+		return 0x00000FFF;
+	case NL80211_CHAN_WIDTH_320:
+		return 0x00FFFFFF;
+	default:
+		return 0;
+	}
+}
+
+static bool nl80211_hw_blocked_chans_valid_pwr_mode_extn(u8 pwr_mode_id)
+{
+	return (pwr_mode_id == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR ||
+		pwr_mode_id == HE_REG_INFO_6GHZ_AP_TYPE_SP ||
+		pwr_mode_id == HE_REG_INFO_6GHZ_AP_TYPE_VLP);
+}
+
+static int
+qca_nl80211_parse_hw_blocked_chans_fb_chans_extn(
+	struct nlattr *fb_list,
+	struct hostapd_hw_blocklist_pwr_mode *pwr_mode)
+{
+	struct nlattr *nl;
+	struct nlattr *fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_MAX + 1];
+	struct hostapd_hw_blocklist_fb_chan *fb_chans = NULL;
+	int rem;
+	u32 count = 0;
+
+	nla_for_each_nested(nl, fb_list, rem) {
+		struct hostapd_hw_blocklist_fb_chan *new_fb_chans;
+
+		if (nla_parse_nested(fb,
+				     QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_MAX,
+				     nl, NULL)) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: Invalid HW blocked channels FB channel entry");
+			os_free(fb_chans);
+			return -EINVAL;
+		}
+
+		new_fb_chans = os_realloc_array(fb_chans, count + 1,
+						sizeof(*new_fb_chans));
+		if (!new_fb_chans) {
+			os_free(fb_chans);
+			return -ENOMEM;
+		}
+
+		fb_chans = new_fb_chans;
+		os_memset(&fb_chans[count], 0, sizeof(fb_chans[count]));
+
+		if (fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_BW]) {
+			u32 max_bw =
+				nla_get_u32(fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_BW]);
+
+			if (!nl80211_hw_blocked_chans_bw_to_mhz_extn(max_bw)) {
+				wpa_printf(MSG_ERROR,
+					   "nl80211: Invalid HW blocked channels FB max_bw %u",
+					   max_bw);
+				os_free(fb_chans);
+				return -EINVAL;
+			}
+			fb_chans[count].max_bw = max_bw;
+		}
+		if (fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_CENTER_FREQ])
+			fb_chans[count].center_freq =
+				nla_get_u16(fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_CENTER_FREQ]);
+		if (fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_PRI20_BITMAP])
+			fb_chans[count].pri20_bitmap =
+				nla_get_u16(fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_PRI20_BITMAP]);
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: HW blocked channels FB chan[%u]: pri20_bitmap=0x%x center_freq=%u max_bw=%u",
+			   count, fb_chans[count].pri20_bitmap,
+			   fb_chans[count].center_freq, fb_chans[count].max_bw);
+		count++;
+	}
+
+	pwr_mode->fb_chans = fb_chans;
+	pwr_mode->num_fb_chans = count;
+	return 0;
+}
+
+static int
+qca_nl80211_parse_hw_blocked_chans_pc_chans_extn(
+	struct nlattr *pc_list,
+	struct hostapd_hw_blocklist_pwr_mode *pwr_mode)
+{
+	struct nlattr *nl;
+	struct nlattr *pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_MAX + 1];
+	struct hostapd_hw_blocklist_pc_chan *pc_chans = NULL;
+	int rem;
+	u32 count = 0;
+
+	nla_for_each_nested(nl, pc_list, rem) {
+		struct hostapd_hw_blocklist_pc_chan *new_pc_chans;
+
+		if (nla_parse_nested(pc,
+				     QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_MAX,
+				     nl, NULL)) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: Invalid HW blocked channels PC channel entry");
+			os_free(pc_chans);
+			return -EINVAL;
+		}
+
+		new_pc_chans = os_realloc_array(pc_chans, count + 1,
+						sizeof(*new_pc_chans));
+		if (!new_pc_chans) {
+			os_free(pc_chans);
+			return -ENOMEM;
+		}
+
+		pc_chans = new_pc_chans;
+		os_memset(&pc_chans[count], 0, sizeof(pc_chans[count]));
+
+		if (pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_BW]) {
+			u32 max_bw =
+				nla_get_u32(pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_BW]);
+
+			if (!nl80211_hw_blocked_chans_bw_to_mhz_extn(max_bw)) {
+				wpa_printf(MSG_ERROR,
+					   "nl80211: Invalid HW blocked channels PC max_bw %u",
+					   max_bw);
+				os_free(pc_chans);
+				return -EINVAL;
+			}
+			pc_chans[count].max_bw = max_bw;
+		}
+		if (pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_CENTER_FREQ])
+			pc_chans[count].center_freq =
+				nla_get_u16(pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_CENTER_FREQ]);
+		if (pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_PUNC_PATTERN_BITMAP])
+			/* Bitmap of puncture patterns (BIT(idx)). */
+			pc_chans[count].punc_pat_bmap =
+				nla_get_u32(pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_PUNC_PATTERN_BITMAP]);
+		if (pc_chans[count].punc_pat_bmap &&
+		    (pc_chans[count].punc_pat_bmap &
+		     ~nl80211_hw_blocked_chans_puncture_mask_extn(
+			     pc_chans[count].max_bw))) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: Invalid HW blocked channels PC puncture-pattern bitmap 0x%x bw=%u",
+				   pc_chans[count].punc_pat_bmap,
+				   pc_chans[count].max_bw);
+			os_free(pc_chans);
+			return -EINVAL;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: HW blocked channels PC chan[%u]: center_freq=%u max_bw=%u puncture_pattern_bitmap=0x%x",
+			   count, pc_chans[count].center_freq,
+			   pc_chans[count].max_bw, pc_chans[count].punc_pat_bmap);
+		count++;
+	}
+
+	pwr_mode->pc_chans = pc_chans;
+	pwr_mode->num_pc_chans = count;
+	return 0;
+}
+
+static void
+qca_nl80211_free_hw_blocked_chans_info_extn(
+	struct hostapd_hw_blocklist_info *hw_blocklist_info)
+{
+	u8 i;
+
+	if (!hw_blocklist_info || !hw_blocklist_info->pwr_modes)
+		return;
+
+	for (i = 0; i < hw_blocklist_info->num_pwr_modes; i++) {
+		os_free(hw_blocklist_info->pwr_modes[i].fb_chans);
+		os_free(hw_blocklist_info->pwr_modes[i].pc_chans);
+	}
+
+	os_free(hw_blocklist_info->pwr_modes);
+	hw_blocklist_info->pwr_modes = NULL;
+	hw_blocklist_info->num_pwr_modes = 0;
+}
+
+static int
+qca_nl80211_handle_hw_blocked_chans_info_extn(struct i802_bss *bss,
+					      struct nlattr **attr,
+					      bool check_first_bss)
+{
+	union wpa_event_data event;
+	struct hostapd_hw_blocklist_info hw_blocklist_info;
+	struct nlattr *band_nl;
+	struct nlattr *nl;
+	struct hostapd_hw_blocklist_pwr_mode *new_pwr_modes;
+	u32 band_id;
+	u32 num_pwr_modes = 0;
+	int band_rem;
+	int rem;
+	int hw_idx;
+	int ret = 0;
+
+	if (!attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RADIO_RADIO_INDEX]) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: HW blocked channels payload missing radio index");
+		return -EINVAL;
+	}
+
+	hw_idx = nla_get_s32(attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RADIO_RADIO_INDEX]);
+	if (hw_idx < 0 || hw_idx > NL80211_WIPHY_RADIO_ID_MAX) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid HW blocked channels radio index %d",
+			   hw_idx);
+		return -EINVAL;
+	}
+	if (check_first_bss && bss != bss->drv->first_bss) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Ignore HW blocked channels payload for hw_idx %u on %s",
+			   hw_idx, bss->ifname);
+		return 0;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Handling HW blocked channels payload for hw_idx %u on %s",
+		   hw_idx, bss->ifname);
+
+	os_memset(&hw_blocklist_info, 0, sizeof(hw_blocklist_info));
+	hw_blocklist_info.hw_idx = (u8)hw_idx;
+
+	if (!attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RADIO_BAND_LIST]) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: HW blocked channels payload has no band list");
+		goto notify;
+	}
+
+	nla_for_each_nested(band_nl,
+			    attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RADIO_BAND_LIST],
+			    band_rem) {
+		struct nlattr *band[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_BAND_MAX + 1];
+
+		if (nla_parse_nested(band,
+				     QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_BAND_MAX,
+				     band_nl, NULL)) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: Invalid HW blocked channels band entry");
+			ret = -EINVAL;
+			goto fail;
+		}
+
+		if (!band[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_BAND_ID]) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: Skip HW blocked channels band entry without band ID");
+			continue;
+		}
+
+		band_id =
+			nla_get_u32(band[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_BAND_ID]);
+		if (band_id != NL80211_BAND_6GHZ) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: Ignore HW blocked channels band %u (6 GHz only)",
+				   band_id);
+			continue;
+		}
+
+		if (!band[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_BAND_PWR_MODE_LIST]) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: 6 GHz blocked channels band entry has no power-mode list");
+			continue;
+		}
+
+		nla_for_each_nested(nl,
+				    band[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_BAND_PWR_MODE_LIST],
+				    rem) {
+			struct hostapd_hw_blocklist_pwr_mode *pwr_mode;
+			struct nlattr *mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_MAX + 1];
+			u8 pwr_mode_id;
+
+			if (nla_parse_nested(mode,
+					     QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_MAX,
+					     nl, NULL)) {
+				wpa_printf(MSG_ERROR,
+					   "nl80211: Invalid HW blocked channels power-mode entry");
+				ret = -EINVAL;
+				goto fail;
+			}
+
+			if (!mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_ID]) {
+				wpa_printf(MSG_DEBUG,
+					   "nl80211: Skip HW blocked channels power-mode entry without power-mode ID");
+				continue;
+			}
+
+			new_pwr_modes = os_realloc_array(hw_blocklist_info.pwr_modes,
+							 num_pwr_modes + 1,
+							 sizeof(*new_pwr_modes));
+			if (!new_pwr_modes) {
+				ret = -ENOMEM;
+				goto fail;
+			}
+
+			hw_blocklist_info.pwr_modes = new_pwr_modes;
+			pwr_mode = &hw_blocklist_info.pwr_modes[num_pwr_modes];
+			os_memset(pwr_mode, 0, sizeof(*pwr_mode));
+			hw_blocklist_info.num_pwr_modes = num_pwr_modes + 1;
+
+			pwr_mode_id =
+				nla_get_u8(mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_ID]);
+			if (!nl80211_hw_blocked_chans_valid_pwr_mode_extn(pwr_mode_id)) {
+				wpa_printf(MSG_ERROR,
+					   "nl80211: Invalid HW blocked channels power-mode ID %u",
+					   pwr_mode_id);
+				ret = -EINVAL;
+				goto fail;
+			}
+			pwr_mode->pwr_mode_id = pwr_mode_id;
+			wpa_printf(MSG_DEBUG, "nl80211: HW blocked channels pwr_mode=%u",
+				   pwr_mode_id);
+
+			if (mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_FB_CHAN_LIST]) {
+				ret = qca_nl80211_parse_hw_blocked_chans_fb_chans_extn(
+					mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_FB_CHAN_LIST],
+					pwr_mode);
+				if (ret)
+					goto fail;
+			}
+
+			if (mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_PC_CHAN_LIST]) {
+				ret = qca_nl80211_parse_hw_blocked_chans_pc_chans_extn(
+					mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_PC_CHAN_LIST],
+					pwr_mode);
+				if (ret)
+					goto fail;
+			}
+
+			num_pwr_modes++;
+		}
+	}
+
+	hw_blocklist_info.num_pwr_modes = num_pwr_modes;
+
+notify:
+	os_memset(&event, 0, sizeof(event));
+	event.event_data_extn.hw_blocklist_info = hw_blocklist_info;
+	wpa_supplicant_event(bss->ctx, EVENT_HW_BLOCKED_CHANS_NOTIFY, &event);
+	qca_nl80211_free_hw_blocked_chans_info_extn(&hw_blocklist_info);
+	return 0;
+
+fail:
+	qca_nl80211_free_hw_blocked_chans_info_extn(&hw_blocklist_info);
+	return ret;
+}
+
+static int qca_nl80211_handle_hw_blocked_chans_events_extn(struct i802_bss *bss,
+							   u8 *data,
+							   size_t len,
+							   bool check_first_bss)
+{
+	struct nlattr *attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RESP_MAX + 1];
+	struct nlattr *nl;
+	int rem;
+	int ret;
+
+	if (!(data && len)) {
+		wpa_printf(MSG_ERROR, "nl80211: Invalid HW blocked channels payload");
+		return -EINVAL;
+	}
+
+	if (nla_parse(attr, QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RESP_MAX,
+		      (struct nlattr *) data, len, NULL)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to parse HW blocked channels payload attributes");
+		return -EINVAL;
+	}
+
+	if (!attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RESP_RADIO_LIST]) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: HW blocked channels payload missing radio list");
+		return -EINVAL;
+	}
+
+	nla_for_each_nested(nl, attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RESP_RADIO_LIST],
+			    rem) {
+		struct nlattr *radio_attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RADIO_MAX + 1];
+
+		if (nla_parse_nested(radio_attr,
+				     QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RADIO_MAX,
+				     nl, NULL)) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: Invalid HW blocked channels radio entry");
+			return -EINVAL;
+		}
+
+		ret = qca_nl80211_handle_hw_blocked_chans_info_extn(bss, radio_attr,
+								    check_first_bss);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int hw_blocked_chans_process_event_extn(struct nl_msg *msg, void *arg)
+{
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	u8 *data;
+	size_t len;
+	struct i802_bss *bss = arg;
+	int ret;
+
+	ret = nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+			genlmsg_attrlen(gnlh, 0), NULL);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Failed to parse HW blocked channels attributes: %d",
+			   ret);
+		return NL_SKIP;
+	}
+
+	if (!tb[NL80211_ATTR_VENDOR_DATA]) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: No vendor data in HW blocked channels reply");
+		return NL_SKIP;
+	}
+
+	data = nla_data(tb[NL80211_ATTR_VENDOR_DATA]);
+	len = nla_len(tb[NL80211_ATTR_VENDOR_DATA]);
+	ret = qca_nl80211_handle_hw_blocked_chans_events_extn(bss, data, len, false);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Failed to handle HW blocked channels reply: %d",
+			   ret);
+	}
+
+	return NL_SKIP;
+}
+
 int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 				  u32 subcmd, u8 *data, size_t len)
 {
@@ -294,6 +747,10 @@ int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 		break;
 	case QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG:
 		qca_nl80211_handle_dcs_config_evt_extn(bss, data, len);
+		break;
+	case QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS:
+		qca_nl80211_handle_hw_blocked_chans_events_extn(bss, data, len,
+								true);
 		break;
 	default:
 		return -EINVAL;
@@ -384,6 +841,75 @@ int qca_nl80211_handle_dcs_config_evt_extn(struct i802_bss *bss,
 	wpa_supplicant_event(bss->ctx, EVENT_DCS_INTF, &event);
 
 	return 0;
+}
+
+int nl80211_fetch_hw_blocked_chans_extn(void *priv, int radio_idx)
+{
+	struct nl_msg *msg;
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nlattr *params;
+	int ret = -ENOBUFS;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Fetching HW blocked channels (radio_idx=%d)",
+		   radio_idx);
+	if (radio_idx < -1)
+		return -EINVAL;
+
+	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR)) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS))
+		goto error;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto error;
+	if (radio_idx >= 0 &&
+	    nla_put_s32(msg, QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_REQ_RADIO_INDEX,
+			radio_idx))
+		goto error;
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_resp(drv, msg, hw_blocked_chans_process_event_extn, bss);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: HW blocked channels fetch failed err=%d (%s)",
+			   ret, strerror(-ret));
+	}
+
+	return ret;
+
+error:
+	nlmsg_free(msg);
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Could not fetch HW blocked channels on radio: %d",
+		   radio_idx);
+	return ret;
+}
+
+bool nl80211_is_6ghz_hw_blocked_chans_supported_extn(void *priv)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+
+	return drv->vendor_6ghz_hw_blocked_chans_support;
+}
+
+void wiphy_info_qca_vendor_command_extn(struct wpa_driver_nl80211_data *drv,
+					const struct nl80211_vendor_cmd_info *vinfo)
+{
+	if (!drv || !vinfo || vinfo->vendor_id != OUI_QCA)
+		return;
+
+	switch (vinfo->subcmd) {
+	case QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS:
+		drv->vendor_6ghz_hw_blocked_chans_support = 1;
+		break;
+	default:
+		break;
+	}
 }
 
 int wpa_driver_nl80211_vendor_bss_addr(void *priv, u8 radio_idx, u8 bss_id,
