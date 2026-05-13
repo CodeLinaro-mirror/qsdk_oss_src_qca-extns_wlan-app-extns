@@ -1005,6 +1005,13 @@ wpas_query_hw_blocklist_extn(struct wpa_supplicant *wpa_s)
 {
 }
 
+static inline bool
+wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
+				const struct wpa_bss *bss)
+{
+	return true;
+}
+
 static inline void
 wiphy_info_qca_vendor_command_extn(struct wpa_driver_nl80211_data *drv,
 				   const struct nl80211_vendor_cmd_info *vinfo)
@@ -1850,6 +1857,8 @@ int hostapd_validate_current_6ghz_hw_blocklist_extn(
 	struct hostapd_iface *iface,
 	u8 pwr_mode_id, const char *op_name);
 void wpas_query_hw_blocklist_extn(struct wpa_supplicant *wpa_s);
+bool wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
+				     const struct wpa_bss *bss);
 int intf_chan_range_available_5g(struct hostapd_hw_modes *mode,
 				 int first_chan_idx, int num_chans);
 int intf_chan_range_available_2g(struct hostapd_hw_modes *mode,
