@@ -132,9 +132,7 @@ int hostapd_cli_cmd_get_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *ar
 		"g_dwellsplit         : get dwell split value\n" \
 		"totaldwell <value>   : set total dwell value\n" \
 		"g_totaldwell         : get total dwell value\n" \
-		"csa <1|0>            : enable/disable CSA for CBS\n" \
-		"g_csa                : get CSA state for CBS\n" \
-	}, \
+		}, \
 	{ "mu_cap_war", hostapd_cli_cmd_mu_cap_war_extn, NULL, \
 		"enable/disable VHT MU-MIMO capability for MU_CAP_WAR clients" }, \
 	{ "sync_iface_freq", hostapd_cli_cmd_sync_iface_freq_extn, NULL, \

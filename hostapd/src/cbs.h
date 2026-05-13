@@ -7,6 +7,7 @@
 #define CBS_H
 
 #include <stdbool.h>
+#include "utils/os.h"
 
 union wpa_event_data;
 struct i802_bss;
@@ -20,8 +21,8 @@ struct cbs_params_extn {
 	int dwellrest; /* time to rest before issuing the next consecutive scan on the same channel (msec) */
 	int resttime; /* time to wait between scans on different channels (msec) */
 	int waittime; /* time to wait after scanning all channels and before starting the next scan (msec) */
-	bool csa_enable; /* enable CSA for best channel obtained after CBS scan */
 	struct hostapd_channel_data *best_chan; /* Best channel chosen based on CBS scan results */
+	struct os_reltime best_chan_fill_ts; /* Timestamp when best_chan was updated */
 };
 
 int hostapd_handle_cli_cbs_extn(struct hostapd_data *hapd,
