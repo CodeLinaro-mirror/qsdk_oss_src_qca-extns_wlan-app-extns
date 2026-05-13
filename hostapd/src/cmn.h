@@ -430,9 +430,14 @@ enum dynamic_acs_action_extn {
 
 #define HOSTAPD_DCS_REENABLE_TIME_SEC DCS_ENABLE_TIME
 
+#define RCSA_MAX_OPTIONAL_IE_LEN 32
+
 struct hostapd_rcsa_ctx {
 	bool rcsa_inprogress;
 	s8 bh_discon_wait_cnt;
+	u8 optional_ie[RCSA_MAX_OPTIONAL_IE_LEN];
+	u8 optional_ie_len;
+	u8 rcsa_tx_cnt;
 };
 
 struct hostapd_iface_extn {

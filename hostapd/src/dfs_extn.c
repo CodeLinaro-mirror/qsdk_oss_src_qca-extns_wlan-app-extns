@@ -476,6 +476,7 @@ void hostapd_uplink_cancel_disconnect_timeout_extn(struct hostapd_iface *iface)
 		wpa_printf(MSG_INFO, "chanswitch: cancel radar handling timer");
 		eloop_cancel_timeout(hostapd_trigger_backhaul_sta_disconnect, iface, NULL);
 		eloop_cancel_timeout(hostapd_rcsa_trigger_channal_change, iface, NULL);
+		eloop_cancel_timeout(hostapd_trigger_rcsa_tx, iface, NULL);
 		hostapd_set_rcsa_inprogress(iface, false);
 	}
 }

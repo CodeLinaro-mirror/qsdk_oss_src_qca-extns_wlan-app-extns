@@ -36,12 +36,11 @@
 	(RCSA_VENDOR_ACTION_HDR_LEN + RCSA_CSA_IE_HDR_LEN + \
 	 IEEE80211_CSA_IE_MIN_LEN)
 
-/* To be revisited to send 5 RCSAs */
-#define HOSTAPD_RCSA_TX_COUNT 1
+#define HOSTAPD_RCSA_TX_COUNT 5
 #define HOSTAPD_RCSA_SWITCH_MODE 1
-#define RCSA_MAX_OPTIONAL_IE_LEN 256
-#define HAPD_DFS_WAIT_FOR_RCSA_FROM_ROOT_DUR(bcn_intval) (HOSTAPD_RCSA_TX_COUNT * (bcn_intval) * 2)
+#define HAPD_DFS_WAIT_FOR_RCSA_FROM_ROOT_DUR_US(bcn_intval) (HOSTAPD_RCSA_TX_COUNT * (bcn_intval) * 2)
 #define HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_SEC 3
+#define HOSTAPD_RCSA_INTVAL_US (100 * 1000)
 
 /* RCSA config to be revisited once cswopt is introduced.
  * Hardcoding this to DISABLE for now
@@ -219,6 +218,7 @@ static int hostapd_ucode_notify_rcsa_tx(struct hostapd_iface *iface, u8 channel,
 	struct uc_vm *vm = NULL;
 	s8 hw_idx = 0;
 	char *opt_ie_hex = NULL;
+	struct hostapd_rcsa_ctx *rcsa_ctx;
 
 	wpa_printf(MSG_INFO, "RCSA TX notify: freq=%d channel=%d",
 		   freq, channel);
@@ -277,10 +277,20 @@ static int hostapd_ucode_notify_rcsa_tx(struct hostapd_iface *iface, u8 channel,
 	hostapd_set_rcsa_inprogress(iface, true);
 	if (!eloop_is_timeout_registered(hostapd_trigger_backhaul_sta_disconnect,
 					 iface, NULL)) {
-		eloop_register_timeout(1, HAPD_DFS_WAIT_FOR_RCSA_FROM_ROOT_DUR(100000),
+		eloop_register_timeout(1, HAPD_DFS_WAIT_FOR_RCSA_FROM_ROOT_DUR_US(100000),
 				       hostapd_trigger_backhaul_sta_disconnect,
 				       iface, NULL);
 	}
+	rcsa_ctx = &iface->iface_extn.rcsa_ctx;
+	if (!rcsa_ctx->rcsa_tx_cnt &&
+	    !eloop_is_timeout_registered(hostapd_trigger_rcsa_tx,
+					 iface, NULL)) {
+		rcsa_ctx->rcsa_tx_cnt = HOSTAPD_RCSA_TX_COUNT;
+		eloop_register_timeout(0, HOSTAPD_RCSA_INTVAL_US,
+				       hostapd_trigger_rcsa_tx,
+				       iface, NULL);
+	}
+	rcsa_ctx->rcsa_tx_cnt--;
 
 	return 0;
 }
@@ -430,6 +440,59 @@ static int hostapd_build_nol_ie(struct hostapd_iface *iface,
 	return pos - buf;
 }
 
+static void hostapd_rcsa_store_optional_ie(struct hostapd_iface *iface,
+					   const u8 *opt_ie,
+					   size_t opt_ie_len)
+{
+	struct hostapd_rcsa_ctx *rcsa_ctx;
+
+	rcsa_ctx = &iface->iface_extn.rcsa_ctx;
+	rcsa_ctx->optional_ie_len = 0;
+
+	if (!opt_ie || !opt_ie_len)
+		return;
+
+	if (opt_ie_len > sizeof(rcsa_ctx->optional_ie)) {
+		wpa_printf(MSG_WARNING,
+				"RCSA: optional IE too long (%zu > %zu)",
+				opt_ie_len, sizeof(rcsa_ctx->optional_ie));
+		return;
+	}
+	os_memcpy(rcsa_ctx->optional_ie, opt_ie, opt_ie_len);
+	rcsa_ctx->optional_ie_len = opt_ie_len;
+}
+
+void hostapd_trigger_rcsa_tx(void *eloop_data, void *user_data)
+{
+	struct hostapd_iface *iface = eloop_data;
+	struct hostapd_rcsa_ctx *rcsa_ctx;
+	u8 chan;
+
+	if (!iface)
+		return;
+
+	rcsa_ctx = &iface->iface_extn.rcsa_ctx;
+
+	if (!hostapd_is_rcsa_inprogress(iface))
+		return;
+
+	if (hostapd_csa_in_progress(iface))
+		return;
+
+	if (!rcsa_ctx->rcsa_tx_cnt)
+		return;
+
+	ieee80211_freq_to_chan(iface->freq, &chan);
+	hostapd_ucode_notify_rcsa_tx(iface, chan, iface->freq,
+				     IEEE80211_CSA_IE_MODE_OFFSET,
+				     rcsa_ctx->optional_ie_len ? rcsa_ctx->optional_ie : NULL,
+				     rcsa_ctx->optional_ie_len);
+
+	eloop_register_timeout(0, HOSTAPD_RCSA_INTVAL_US,
+			       hostapd_trigger_rcsa_tx,
+			       iface, NULL);
+}
+
 int hostapd_send_rcsa_extn(struct hostapd_iface *iface,
 			   int channel, int freq,
 			   int secondary_channel,
@@ -481,6 +544,8 @@ int hostapd_send_rcsa_extn(struct hostapd_iface *iface,
 				attach_nol_ie ? (size_t) nol_ie_len : 0,
 				attach_ml_ie, link_id_bitmap,
 				opt_ie, sizeof(opt_ie));
+
+	hostapd_rcsa_store_optional_ie(iface, opt_ie, opt_ie_len);
 
 	return hostapd_ucode_notify_rcsa_tx(iface, channel, freq,
 					    HOSTAPD_RCSA_SWITCH_MODE,
@@ -617,6 +682,8 @@ bool hostapd_rcsa_rx_hdl(struct hostapd_data *hapd,
 							     rebuilt_opt_ie,
 							     sizeof(rebuilt_opt_ie));
 
+	hostapd_rcsa_store_optional_ie(iface, rebuilt_opt_ie, rebuilt_opt_ie_len);
+
 	ret = hostapd_ucode_notify_rcsa_tx(iface, new_chan, iface->freq,
 					   switch_mode,
 					   rebuilt_opt_ie_len ? rebuilt_opt_ie : NULL,
@@ -660,6 +727,8 @@ void hostapd_rcsa_trigger_channal_change(void *eloop_data, void *user_data)
 void hostapd_rcsa_handle_csa_timeout(struct hostapd_iface *iface)
 {
 	struct hostapd_rcsa_ctx *rcsa_ctx = &iface->iface_extn.rcsa_ctx;
+
+	eloop_cancel_timeout(hostapd_trigger_rcsa_tx, iface, NULL);
 
 	if(!hostapd_is_rcsa_inprogress(iface))
 		return;

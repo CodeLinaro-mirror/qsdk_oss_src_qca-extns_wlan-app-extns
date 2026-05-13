@@ -44,6 +44,7 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface);
 bool hostapd_is_backhaul_sta_configured(struct hostapd_iface *iface);
 void hostapd_trigger_backhaul_sta_disconnect(void *eloop_data, void *user_data);
 void hostapd_rcsa_trigger_channal_change(void *eloop_data, void *user_data);
+void hostapd_trigger_rcsa_tx(void *eloop_data, void *user_data);
 bool hostapd_rcsa_tx_bh_enabled(struct hostapd_iface *iface);
 void hostapd_rcsa_handle_csa_timeout(struct hostapd_iface *iface);
 void hostapd_set_rcsa_inprogress(struct hostapd_iface *iface, bool value);
