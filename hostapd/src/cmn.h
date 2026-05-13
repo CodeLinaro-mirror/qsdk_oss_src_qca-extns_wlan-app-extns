@@ -490,10 +490,16 @@ enum hostapd_dcs_intf_type {
  * struct wpa_supplicant_extn - QCN extension struct for struct wpa_supplicant.
  * @he_mcs_12_13_radio_cap: Self hardware capability for HE MCS 12/13 support.
  * @he_mcs_12_13_peer_cap: Peer capability for HE MCS 12/13 support.
+ * @hw_blocklist_info: HW blocklist channel info array.
+ * @num_hw_blocklist: Number of HW blocklist entries.
+ * @check_hw_blocklist: Flag indicating HW blocklist check is needed.
  */
 struct wpa_supplicant_extn {
 	u16 he_mcs_12_13_radio_cap;
 	u16 he_mcs_12_13_peer_cap;
+	struct hostapd_hw_blocklist_info *hw_blocklist_info;
+	unsigned int num_hw_blocklist;
+	bool check_hw_blocklist;
 };
 
 /**
@@ -942,6 +948,14 @@ hostapd_wpa_event_extn(void *ctx, int event,
 }
 
 static inline int
+wpa_supplicant_event_extn(struct wpa_supplicant *wpa_s,
+			  int event,
+			  union wpa_event_data *data)
+{
+	return -1;
+}
+
+static inline int
 qca_nl80211_handle_wifi_config_evt_extn(struct i802_bss *bss,
 					u8 *data, size_t len)
 {
@@ -984,6 +998,11 @@ hostapd_validate_current_6ghz_hw_blocklist_extn(
 	u8 pwr_mode_id, const char *op_name)
 {
 	return 0;
+}
+
+static inline void
+wpas_query_hw_blocklist_extn(struct wpa_supplicant *wpa_s)
+{
 }
 
 static inline void
@@ -1144,6 +1163,16 @@ hostapd_iface_init_extn(struct hostapd_iface *iface)
 
 static inline void
 hostapd_iface_deinit_extn(struct hostapd_iface *iface)
+{
+}
+
+static inline void
+wpas_iface_init_extn(struct wpa_supplicant *wpa_s)
+{
+}
+
+static inline void
+wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s)
 {
 }
 
@@ -1560,6 +1589,9 @@ int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *value);
 int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 			   union wpa_event_data *data);
+int wpa_supplicant_event_extn(struct wpa_supplicant *wpa_s,
+			      enum wpa_event_type event,
+			      union wpa_event_data *data);
 int hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
 				   size_t buflen, size_t curr_len);
 int hostapd_set_he_mcs_12_13_peer_cap_extn(struct hostapd_data *hapd);
@@ -1788,6 +1820,8 @@ int hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
 				  char *buf, size_t buflen);
 void hostapd_iface_init_extn(struct hostapd_iface *iface);
 void hostapd_iface_deinit_extn(struct hostapd_iface *iface);
+void wpas_iface_init_extn(struct wpa_supplicant *wpa_s);
+void wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s);
 /**
  * hostapd_get_6ghz_thresh_priority_freq_extn() - Helper function to fetch the
  * VLP priority threshold frequency from driver
@@ -1815,6 +1849,7 @@ int hostapd_validate_hw_blocklist_for_freq_params_extn(
 int hostapd_validate_current_6ghz_hw_blocklist_extn(
 	struct hostapd_iface *iface,
 	u8 pwr_mode_id, const char *op_name);
+void wpas_query_hw_blocklist_extn(struct wpa_supplicant *wpa_s);
 int intf_chan_range_available_5g(struct hostapd_hw_modes *mode,
 				 int first_chan_idx, int num_chans);
 int intf_chan_range_available_2g(struct hostapd_hw_modes *mode,

@@ -12,6 +12,7 @@
 struct hostapd_iface;
 struct hostapd_data;
 struct hostapd_hw_blocklist_info;
+struct wpa_supplicant;
 
 /**
  * struct hostapd_hw_blocklist_fb_chan - HW blocklist full-bandwidth channel
@@ -68,5 +69,9 @@ struct hostapd_hw_blocklist_info {
 
 void hostapd_event_hw_blocklist_notify_extn(struct hostapd_data *hapd,
 		const struct hostapd_hw_blocklist_info *hw_blocklist_info);
+
+void wpas_event_hw_blocklist_notify_extn(
+	struct wpa_supplicant *wpa_s,
+	const struct hostapd_hw_blocklist_info *hw_blocklist_info);
 
 #endif /* REG_EXTN_H */
