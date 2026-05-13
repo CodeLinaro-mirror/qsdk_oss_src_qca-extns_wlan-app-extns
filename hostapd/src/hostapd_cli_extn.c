@@ -76,6 +76,25 @@ int hostapd_cli_cmd_get_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl,
 	return wpa_ctrl_command(ctrl, "GET_RNR_6GHZ_COLOCATED");
 }
 
+int hostapd_cli_cmd_set_channel_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid set_channel command: needs exactly one argument (channel)\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_CHANNEL %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Too long SET_CHANNEL command.\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
 int hostapd_cli_cmd_countryie_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	char cmd[32];
