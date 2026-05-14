@@ -745,7 +745,7 @@ inline int wpa_driver_nl80211_dcs_sim_extn(void *priv,
 
 static inline int wpa_driver_nl80211_cbs_trigger_scan(void *priv,
 						      const struct cbs_params_extn *params,
-						      int *freq_list)
+						      int *freq_list, int link_id)
 {
 	return -1;
 }
@@ -1556,7 +1556,7 @@ int wpa_driver_nl80211_dcs_sim_extn(void *priv, u8 link_id,
 				    struct driver_dcs_sim *params);
 int wpa_driver_nl80211_cbs_trigger_scan(void *priv,
 					const struct cbs_params_extn *params,
-					int *freq_list);
+					int *freq_list, int link_id);
 int hostapd_drv_fetch_and_set_vendor_bssid_extn(struct hostapd_data *hapd);
 void hostapd_free_bss_index_extn(struct hostapd_data *hapd);
 bool hostapd_dfs_get_valid_punc_bitmap_extn(int chan_freq,

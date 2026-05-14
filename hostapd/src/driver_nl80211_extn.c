@@ -1448,7 +1448,7 @@ static int nl80211_get_he_mcs_12_13_handler(struct nl_msg *msg, void *arg)
 
 int wpa_driver_nl80211_cbs_trigger_scan(void *priv,
 				const struct cbs_params_extn *params,
-				int *freq_list)
+				int *freq_list, int link_id)
 {
 	struct nl_msg *msg = NULL;
 	struct nlattr *attr = NULL;
@@ -1529,6 +1529,9 @@ int wpa_driver_nl80211_cbs_trigger_scan(void *priv,
 		goto fail;
 
 	nla_nest_end(msg, attr);
+
+	if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id))
+		goto fail;
 
 	ret = send_and_recv_cmd(drv, msg);
 	msg = NULL;

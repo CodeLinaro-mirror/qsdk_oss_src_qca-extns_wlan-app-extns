@@ -83,7 +83,8 @@ static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
 	if (!val) {
 		cbs_params->cbs_enable = 0;
 		return hapd->driver->set_cbs(hapd->drv_priv,
-					     cbs_params, NULL);
+					     cbs_params, NULL,
+					     hapd->mld_link_id);
 	}
 
 	if (!hapd->iface->current_mode)
@@ -111,7 +112,8 @@ static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
 	cbs_params->cbs_enable = val;
 
 	ret = hapd->driver->set_cbs(hapd->drv_priv,
-				    cbs_params, freq_list);
+				    cbs_params, freq_list,
+				    hapd->mld_link_id);
 	if (ret)
 		cbs_params->cbs_enable = 0;
 
