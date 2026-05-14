@@ -7,7 +7,9 @@
 #include "utils/common.h"
 #include "common/defs.h"
 #include "drivers/driver.h"
+#include "common/hw_features_common.h"
 #include "ap/hostapd.h"
+#include "ap/hw_features.h"
 #include "cmn.h"
 #include "common/ieee802_11_common.h"
 #include "common/wpa_ctrl.h"
@@ -145,3 +147,175 @@ int hostapd_validate_mbssid_group_size_extn(struct hostapd_data *hapd)
 
 	return 0;
 }
+
+#ifdef HOSTAPD
+bool hostapd_regdom_channel_supported(struct hostapd_iface *iface,
+				      struct hostapd_channel_data *chan)
+{
+	if (!chan)
+		return false;
+
+	if (!chan_in_current_hw_info(iface->current_hw_info, chan))
+		return false;
+
+	if ((chan->flag & HOSTAPD_CHAN_DISABLED) && !is_6ghz_freq(chan->freq))
+		return false;
+
+	if ((chan->flag & HOSTAPD_CHAN_NO_IR) && !is_6ghz_freq(chan->freq))
+		return false;
+
+	return true;
+}
+
+bool hostapd_is_iface_regdom_supported(struct hostapd_iface *iface)
+{
+	struct hostapd_channel_data *chan;
+	enum hostapd_hw_mode hw_mode;
+	struct hostapd_hw_modes *mode;
+	int oper_freq, i, j;
+
+	if (!iface->hw_features || !iface->num_hw_features ||
+	    !iface->current_hw_info)
+		return false;
+
+	oper_freq = iface->freq;
+	if (!oper_freq && iface->conf->channel > 0)
+		oper_freq = hostapd_hw_get_freq(iface->bss[0], iface->conf->channel);
+
+	if (oper_freq > 0) {
+		hw_mode = iface->current_mode ? iface->current_mode->mode :
+			  iface->conf->hw_mode;
+		chan = hw_get_channel_freq(hw_mode, oper_freq, NULL,
+					   iface->hw_features,
+					   iface->num_hw_features);
+		return hostapd_regdom_channel_supported(iface, chan);
+	}
+
+	for (i = 0; i < iface->num_hw_features; i++) {
+		mode = &iface->hw_features[i];
+		if (mode->mode != iface->conf->hw_mode)
+			continue;
+
+		for (j = 0; j < mode->num_channels; j++) {
+			if (hostapd_regdom_channel_supported(iface,
+							     &mode->channels[j]))
+				return true;
+		}
+	}
+
+	return false;
+}
+
+struct hostapd_channel_data *
+hostapd_regdom_first_supported_channel(struct hostapd_iface *iface)
+{
+	struct hostapd_hw_modes *mode;
+	int i, j;
+
+	if (!iface->hw_features || !iface->num_hw_features)
+		return NULL;
+
+	for (i = 0; i < iface->num_hw_features; i++) {
+		mode = &iface->hw_features[i];
+		if (mode->mode != iface->conf->hw_mode)
+			continue;
+
+		for (j = 0; j < mode->num_channels; j++) {
+			if (hostapd_regdom_channel_supported(iface,
+							     &mode->channels[j]))
+				return &mode->channels[j];
+		}
+	}
+
+	return NULL;
+}
+
+int hostapd_regdom_move_iface_to_supported_channel(struct hostapd_iface *iface)
+{
+	struct hostapd_channel_data *chan;
+	u8 op_class = 0;
+	u8 op_chan = 0;
+
+	chan = hostapd_regdom_first_supported_channel(iface);
+	if (!chan)
+		return -1;
+
+	iface->freq = chan->freq;
+	iface->conf->channel = chan->chan;
+
+	if (ieee80211_freq_to_channel_ext(chan->freq,
+					  iface->conf->secondary_channel,
+					  hostapd_get_oper_chwidth(iface->conf),
+					  &op_class, &op_chan) != NUM_HOSTAPD_MODES &&
+	    op_chan == chan->chan)
+		iface->conf->op_class = op_class;
+
+	if (hostapd_set_current_hw_info(iface, iface->freq))
+		return -1;
+
+	wpa_printf(MSG_INFO,
+		   "REGDOM: Interface %s moving to supported channel %u (%d MHz)",
+		   iface->conf->bss[0]->iface, iface->conf->channel, iface->freq);
+
+	return 0;
+}
+
+void hostapd_regdom_force_disable_iface(struct hostapd_iface *iface,
+						 const char *reason)
+{
+	if (iface->state != HAPD_IFACE_ENABLED &&
+	    iface->state != HAPD_IFACE_NO_IR &&
+	    !iface->is_regdom_forced_down)
+		return;
+
+	iface->is_regdom_forced_down = true;
+	wpa_printf(MSG_INFO,
+		   "REGDOM: Disabling interface %s (%s)",
+		   iface->conf->bss[0]->iface, reason);
+
+	if (iface->state == HAPD_IFACE_ENABLED)
+		hostapd_set_no_ir_state(iface);
+}
+
+int hostapd_regdom_restore_iface(struct hostapd_iface *iface)
+{
+	bool pending_reenable;
+	int ret;
+
+	if (!iface->is_regdom_forced_down)
+		return 0;
+
+	if (iface->state == HAPD_IFACE_ENABLED) {
+		iface->is_regdom_forced_down = false;
+		return 0;
+	}
+
+	if (iface->state == HAPD_IFACE_NO_IR) {
+		pending_reenable = hostapd_check_reenable_bss(iface);
+
+		ret = hostapd_no_ir_channel_list_updated(iface);
+		if (ret)
+			return ret;
+
+		if (iface->state != HAPD_IFACE_NO_IR) {
+			iface->is_regdom_forced_down = false;
+			return 0;
+		}
+
+		if (pending_reenable && hostapd_check_reenable_bss(iface)) {
+			hostapd_enable_pending_bss(iface);
+
+			if (iface->state == HAPD_IFACE_ENABLED ||
+			    !hostapd_check_reenable_bss(iface))
+				iface->is_regdom_forced_down = false;
+		}
+
+		return 0;
+	}
+
+	if (iface->state == HAPD_IFACE_ENABLED)
+		iface->is_regdom_forced_down = false;
+
+	return 0;
+}
+#endif

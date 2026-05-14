@@ -11,9 +11,41 @@
 #include "dcs.h"
 #include "dfs_extn.h"
 #include "reg_extn.h"
+#include "ap/ap_drv_ops.h"
 
 
 struct hostapd_freq_params;
+
+void hostapd_sync_country_from_driver(struct hostapd_data *hapd)
+{
+	char alpha2[3] = { 0 };
+
+	if (!hapd || !hapd->iconf)
+		return;
+
+	if (hostapd_get_country(hapd, alpha2) < 0)
+		return;
+
+	if (alpha2[0] < 'A' || alpha2[0] > 'Z' ||
+	    alpha2[1] < 'A' || alpha2[1] > 'Z') {
+		wpa_printf(MSG_DEBUG,
+			   "Ignore invalid country code from driver: %02x %02x",
+			   (unsigned int) (u8) alpha2[0],
+			   (unsigned int) (u8) alpha2[1]);
+		return;
+	}
+
+	if (hapd->iconf->country[0] == alpha2[0] &&
+	    hapd->iconf->country[1] == alpha2[1])
+		return;
+
+	wpa_printf(MSG_DEBUG,
+		   "Update hostapd country from driver: %c%c -> %c%c",
+		   hapd->iconf->country[0], hapd->iconf->country[1],
+		   alpha2[0], alpha2[1]);
+	hapd->iconf->country[0] = alpha2[0];
+	hapd->iconf->country[1] = alpha2[1];
+}
 
 int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 			   union wpa_event_data *data)
