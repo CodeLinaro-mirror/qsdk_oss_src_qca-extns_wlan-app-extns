@@ -1108,6 +1108,33 @@ acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
 	return -EOPNOTSUPP;
 }
 
+static inline bool
+acs_hwbl_candidate_ok(struct hostapd_iface *iface,
+		      struct hostapd_channel_data *chan,
+		      u32 bw, int bw320_offset, u16 punct_bitmap,
+		      u8 nl80211_pwr_mode)
+{
+	return true;
+}
+
+static inline bool
+acs_hwbl_chan_ok_extn(struct hostapd_iface *iface,
+		      struct hostapd_hw_modes *mode, u32 bw, int bw320_offset,
+		      int n_chans, struct hostapd_channel_data *chan,
+		      long double factor)
+{
+	return true;
+}
+
+static inline bool
+hostapd_hwbl_validate_6ghz(struct hostapd_iface *iface,
+			    struct hostapd_channel_data *chan,
+			    u16 bw, u16 center_freq, u16 punct_bitmap,
+			    u8 nl80211_pwr_mode)
+{
+	return true;
+}
+
 static inline int
 qca_nl80211_handle_dcs_config_evt_extn(struct i802_bss *bss,
 				       u8 *data, size_t len)
@@ -1157,7 +1184,8 @@ is_chan_range_available(struct hostapd_hw_modes *mode,
 }
 
 static inline void
-reduced_chan_width(int *new_chan_width, int chan_width, int freq,
+reduced_chan_width(struct hostapd_iface *iface, int *new_chan_width,
+		   int chan_width, int freq,
 		   struct hostapd_hw_modes *mode,
 		   u32 chan_bw_interference_bitmap)
 {
@@ -1815,6 +1843,21 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			       int err);
 int
 acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err);
+bool acs_hwbl_candidate_ok(struct hostapd_iface *iface,
+			   struct hostapd_channel_data *chan,
+			   u32 bw, int bw320_offset, u16 punct_bitmap,
+			   u8 nl80211_pwr_mode);
+bool acs_hwbl_chan_ok_extn(struct hostapd_iface *iface,
+			   struct hostapd_hw_modes *mode, u32 bw, int bw320_offset,
+			   int n_chans, struct hostapd_channel_data *chan,
+			   long double factor);
+#ifdef CONFIG_IEEE80211BE
+void acs_update_puncturing_bitmap(struct hostapd_iface *iface,
+				  struct hostapd_hw_modes *mode, u32 bw,
+				  int n_chans,
+				  struct hostapd_channel_data *chan,
+				  long double factor, int index_primary);
+#endif /* CONFIG_IEEE80211BE */
 bool
 acs_usable_bw_chan(const struct hostapd_channel_data *chan, enum bw_type bw);
 int qca_nl80211_handle_dcs_config_evt_extn(struct i802_bss *bss,
@@ -1830,7 +1873,8 @@ struct hostapd_channel_data *
 get_chan_data_by_freq(struct hostapd_hw_modes *mode, int freq);
 int is_chan_range_available(struct hostapd_hw_modes *mode,
 				 int first_chan_idx, int num_chans);
-void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
+void reduced_chan_width(struct hostapd_iface *iface, int *new_chan_width,
+			int chan_width, int freq,
 			struct hostapd_hw_modes *mode,
 			u32 chan_bw_interference_bitmap);
 int hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
@@ -1871,6 +1915,10 @@ bool wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
 				     const struct wpa_bss *bss);
 int intf_chan_range_available_5g(struct hostapd_hw_modes *mode,
 				 int first_chan_idx, int num_chans);
+bool hostapd_hwbl_validate_6ghz(struct hostapd_iface *iface,
+				struct hostapd_channel_data *chan,
+				u16 bw, u16 center_freq, u16 punct_bitmap,
+				u8 nl80211_pwr_mode);
 int intf_chan_range_available_2g(struct hostapd_hw_modes *mode,
 				 int first_chan_idx, int num_chans);
 int get_centre_freq(struct hostapd_channel_data *first_chan,

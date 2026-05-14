@@ -1639,9 +1639,53 @@ bool awgn_bw_range_available(struct hostapd_hw_modes *mode,
 	return true;
 }
 
-void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
-		struct hostapd_hw_modes *mode,
-		u32 chan_bw_interference_bitmap)
+static bool
+awgn_bw_hwbl_available(struct hostapd_iface *iface,
+		       struct hostapd_channel_data *chan_data,
+		       int chan_width)
+{
+	int center_freq;
+	int bw;
+	int target_pwr_mode;
+
+	if (!iface || !chan_data)
+		return false;
+
+	if (!is_6ghz_freq(chan_data->freq))
+		return true;
+
+	if (get_centre_freq(chan_data, chan_width, &center_freq))
+		return false;
+
+	bw = channel_width_to_int(chan_width == CHAN_WIDTH_20_NOHT ?
+				  CHAN_WIDTH_20 : chan_width);
+	if (bw <= 0)
+		return false;
+
+	target_pwr_mode = iface->conf->he_6ghz_reg_pwr_type;
+	if (iface->conf->enable_best_power_mode) {
+		int best_power_mode;
+
+		best_power_mode =
+			hostapd_get_best_ap_6ghz_power_mode(iface,
+							    chan_data->freq,
+							    center_freq, bw, 0);
+		if (best_power_mode < NL80211_REG_NUM_POWER_MODES)
+			target_pwr_mode = best_power_mode;
+	}
+
+	if (target_pwr_mode >= NL80211_REG_NUM_POWER_MODES)
+		return false;
+
+	return hostapd_validate_chan_bw_in_pwr_mode(iface, chan_data->freq,
+						     center_freq, bw, 0,
+						     target_pwr_mode);
+}
+
+void reduced_chan_width(struct hostapd_iface *iface, int *new_chan_width,
+			int chan_width, int freq,
+			struct hostapd_hw_modes *mode,
+			u32 chan_bw_interference_bitmap)
 {
 	struct hostapd_channel_data *chan_data;
 
@@ -1655,7 +1699,7 @@ void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
 		wpa_printf(MSG_ERROR,
 			   "AWGN: reduced_chan_width: no channel found for freq %d",
 			   freq);
-		*new_chan_width = CHAN_WIDTH_20;
+		*new_chan_width = chan_width;
 		return;
 	}
 
@@ -1676,8 +1720,12 @@ void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
 	}
 
 	while (*new_chan_width > CHAN_WIDTH_20 &&
-	       !awgn_bw_range_available(mode, chan_data, *new_chan_width))
+	       (!awgn_bw_range_available(mode, chan_data, *new_chan_width) ||
+		!awgn_bw_hwbl_available(iface, chan_data, *new_chan_width)))
 		*new_chan_width = get_next_max_width(*new_chan_width);
+
+	if (!awgn_bw_hwbl_available(iface, chan_data, *new_chan_width))
+		*new_chan_width = chan_width;
 
 	wpa_printf(MSG_DEBUG,
 		   "AWGN: reduced bandwidth %d -> %d on channel %d (%d) bitmap=0x%x",
