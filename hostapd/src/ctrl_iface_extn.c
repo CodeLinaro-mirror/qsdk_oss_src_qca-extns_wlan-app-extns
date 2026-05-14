@@ -966,6 +966,8 @@ int hostapd_iface_rep_ap_enable_extn(struct hostapd_iface *iface, char *pos)
 	}
 
 	conf->punct_bitmap = punct_bitmap;
+	conf->hw_mode = hw_mode;
+	conf->channel = channel;
 	conf->acs = 0;
 
 	/* Decide DFS/CAC skip if configured to skip */

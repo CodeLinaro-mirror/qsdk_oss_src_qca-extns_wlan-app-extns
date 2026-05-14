@@ -419,6 +419,9 @@ enum tpe_tx_pwr_interp_unit {
 	TPE_REG_EIRP = 1,	/* Interpretation EIRP */
 };
 
+#define QCN_HOP_COUNT_CONNECTED 1
+#define QCN_HOP_COUNT_UNKNOWN 255
+
 struct hostapd_config_extn {
 	/* Add Per-radio configuration for extn here */
 
@@ -432,6 +435,11 @@ struct hostapd_config_extn {
 	bool skip_cac;    /* Skip DFS CAC for Repeater AP */
 	bool ignorecac;   /* Skip DFS CAC for Root AP */
 	int ind_rptr;    /* 1 - Independent Rep; 0 - Dependent */
+	/* Same SSID Repeater
+	 * 0 = different SSIDs or not a repeater
+	 * 1 = same SSID repeater configuration
+	 */
+	int same_ssid;
 	bool qacs_enable;
 	bool uplink_csa;
 	bool rpt_max_phy;
@@ -1480,6 +1488,12 @@ bool chan_pri_allowed_extn(const struct hostapd_channel_data *chan)
 }
 
 static inline int
+hostapd_update_assoc_resp_with_hop_count_extn(struct hostapd_data *hapd)
+{
+    return -1;
+}
+
+static inline int
 nl80211_get_he_mcs_12_13_extn(void *priv, u8 radio_idx, u16 *radio_cap)
 {
 	return -1;
@@ -2274,6 +2288,7 @@ int hostapd_get_primary_chanlist(struct hostapd_iface *iface,
 				 char *buf, size_t buflen);
 void hostapd_update_primary_chanlist_flags(struct hostapd_data *hapd);
 int hostapd_is_chan_in_primary_list(struct hostapd_iface *iface, u16 freq);
+int hostapd_update_assoc_resp_with_hop_count_extn(struct hostapd_data *hapd);
 
 bool chan_pri_allowed_extn(const struct hostapd_channel_data *chan);
 

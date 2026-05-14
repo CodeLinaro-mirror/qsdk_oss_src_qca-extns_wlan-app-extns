@@ -706,3 +706,76 @@ bool hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface)
 
 	return false;
 }
+
+/**
+ * create_hop_count_vendor_ie - Create a vendor IE with hop count
+ * @hop_count: The hop count value to include (0-255)
+ * Returns: wpabuf containing the vendor IE, or NULL on failure
+ */
+struct wpabuf * hostapd_create_hop_count_vendor_ie_extn(u8 hop_count)
+{
+	struct wpabuf *buf;
+	u8 *len_pos;
+
+	/* Allocate buffer: EID(1) + Length(1) + OUI(3) + Type(1) + HopCount(1) = 7 bytes */
+	buf = wpabuf_alloc(7);
+	if (!buf) {
+		wpa_printf(MSG_ERROR, "Failed to allocate buffer for hop count vendor IE");
+		return NULL;
+	}
+
+	/* Element ID: Vendor Specific */
+	wpabuf_put_u8(buf, WLAN_EID_VENDOR_SPECIFIC);
+
+	/* Length field - will be filled at the end */
+	len_pos = wpabuf_put(buf, 1);
+
+	/* OUI: 3 bytes */
+	wpabuf_put_be24(buf, OUI_QCA);
+
+	/* OUI Type: 1 byte */
+	wpabuf_put_u8(buf, MULTI_AP_OUI_TYPE);
+
+	/* Hop Count: 1 byte */
+	wpabuf_put_u8(buf, hop_count);
+
+	/* Set the length field (OUI + Type + HopCount = 5 bytes) */
+	*len_pos = 5;
+
+	wpa_hexdump_buf(MSG_DEBUG, "same_ssid: Created hop count vendor IE", buf);
+
+	return buf;
+}
+
+/**
+ * update_assoc_resp_with_hop_count -  Update association response elements with hop count
+ * @hapd: hostapd_data
+ * @hop_count: The hop count value to include (0-255)
+ */
+int hostapd_update_assoc_resp_with_hop_count_extn(struct hostapd_data *hapd)
+{
+	struct wpabuf *hop_ie;
+
+	if (!hapd->iface->conf->conf_extn.same_ssid)
+		return -1;
+
+	if (!os_strncmp(hapd->iface->iface_extn.sta_wpa_state, "COMPLETED", 9))
+		hop_ie = hostapd_create_hop_count_vendor_ie_extn(QCN_HOP_COUNT_CONNECTED);
+	else
+		hop_ie = hostapd_create_hop_count_vendor_ie_extn(QCN_HOP_COUNT_UNKNOWN);
+
+	if (!hop_ie)
+		return -1;
+
+	/* Free old assocresp_elements before replacing to avoid memory leak */
+	wpabuf_free(hapd->conf->assocresp_elements);
+
+	/* Update the association response elements (hop_ie ownership transferred) */
+	hapd->conf->assocresp_elements = hop_ie;
+
+	wpa_hexdump_buf(MSG_DEBUG, "same_ssid: assoc_resp_elem",
+	hapd->conf->assocresp_elements);
+
+	return 0;
+}
+
