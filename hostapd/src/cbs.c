@@ -60,17 +60,63 @@ static int hostapd_cbs_get_enable(struct hostapd_config_extn *conf_extn,
 	return ret;
 }
 
-static int hostapd_cbs_set_enable(struct hostapd_config_extn *conf_extn,
-				    const char *pos, char *reply, size_t reply_size)
+static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
+				  struct hostapd_config_extn *conf_extn,
+				  const char *pos, char *reply,
+				  size_t reply_size)
 {
 	int val = atoi(pos);
+	int acs_ch_list_all = 0;
+	int *freq_list = NULL;
+	int ret;
+	struct hostapd_hw_modes *mode;
+	struct cbs_params_extn *cbs_params = &conf_extn->cbs_params;
 
-	if (val == 0 || val == 1) {
-		conf_extn->cbs_params.cbs_enable = val;
-		return 0;
+	if (!(val == 0 || val == 1 || val == 2)) {
+		wpa_printf(MSG_ERROR, "CBS: Invalid input: %d", val);
+		return -1;
 	}
 
-	return -1;
+	if (!hapd->driver || !hapd->driver->set_cbs)
+		return -1;
+
+	if (!val) {
+		cbs_params->cbs_enable = 0;
+		return hapd->driver->set_cbs(hapd->drv_priv,
+					     cbs_params, NULL);
+	}
+
+	if (!hapd->iface->current_mode)
+		return -1;
+
+	mode = hapd->iface->current_mode;
+
+	/*
+	 * If no chanlist config parameter is provided, include all
+	 * enabled channels of the selected hw_mode.
+	 */
+	if (hapd->iface->conf->acs_freq_list_present)
+		acs_ch_list_all = !hapd->iface->conf->acs_freq_list.num;
+	else
+		acs_ch_list_all = !hapd->iface->conf->acs_ch_list.num;
+
+	hostapd_get_hw_mode_any_channels(hapd, mode,
+					 acs_ch_list_all,
+					 false, &freq_list);
+	if (!freq_list) {
+		wpa_printf(MSG_ERROR, "CBS: freq_list is empty. Failing CBS trigger.");
+		return -1;
+	}
+
+	cbs_params->cbs_enable = val;
+
+	ret = hapd->driver->set_cbs(hapd->drv_priv,
+				    cbs_params, freq_list);
+	if (ret)
+		cbs_params->cbs_enable = 0;
+
+	os_free(freq_list);
+	return ret;
 }
 
 static int hostapd_cbs_set_resttime(struct hostapd_config_extn *conf_extn,
@@ -244,7 +290,9 @@ int hostapd_handle_cli_cbs_extn(struct hostapd_data *hapd,
 		return hostapd_cbs_get_enable(conf_extn, pos, buf, buflen);
 
 	} else if (os_strncmp(pos, "enable ", 7) == 0) {
-		return hostapd_cbs_set_enable(conf_extn, pos + 7, buf, buflen);
+		return hostapd_cbs_set_enable(hapd,
+					      conf_extn,
+					      pos + 7, buf, buflen);
 
 	} else if (os_strncmp(pos, "g_resttime", 10) == 0) {
 		return hostapd_cbs_get_resttime(conf_extn, pos, buf, buflen);

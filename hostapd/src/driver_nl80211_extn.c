@@ -27,6 +27,7 @@
 #include "ap/hostapd.h"
 #include "ap/hw_features.h"
 #include "esp.h"
+#include "cbs.h"
 #include "dcs.h"
 #include "rropinfo.h"
 #include "reg_extn.h"
@@ -1443,6 +1444,111 @@ static int nl80211_get_he_mcs_12_13_handler(struct nl_msg *msg, void *arg)
 
 	*radio_cap = *(u16 *)nla_data(data_attr);
 	return NL_SKIP;
+}
+
+int wpa_driver_nl80211_cbs_trigger_scan(void *priv,
+				const struct cbs_params_extn *params,
+				int *freq_list)
+{
+	struct nl_msg *msg = NULL;
+	struct nlattr *attr = NULL;
+	struct nlattr *cbs = NULL;
+	struct i802_bss *bss;
+	struct wpa_driver_nl80211_data *drv;
+	int ret = -ENOBUFS;
+
+	if (!priv || !params) {
+		wpa_printf(MSG_ERROR, "nl80211: Invalid args for CBS trigger scan");
+		return -EINVAL;
+	}
+
+	bss = priv;
+	drv = bss->drv;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_TRIGGER_SCAN)) {
+		goto fail;
+	}
+
+	attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!attr)
+		goto fail;
+
+	cbs = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN);
+	if (!cbs)
+		goto fail;
+
+	if (params->dwellsplit &&
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_DWELL,
+			params->dwellsplit))
+		goto fail;
+
+	if (params->dwellrest &&
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_DWELLREST,
+			params->dwellrest))
+		goto fail;
+
+	if (params->cbs_enable &&
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_TYPE,
+		       params->cbs_enable))
+		goto fail;
+
+	nla_nest_end(msg, cbs);
+
+	if (params->resttime &&
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_SCAN_RESTTIME,
+			params->resttime))
+		goto fail;
+
+	if (params->waittime &&
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_SCAN_WAITTIME,
+			params->waittime))
+		goto fail;
+
+	if (freq_list) {
+		struct nlattr *freqs;
+		int i;
+
+		freqs = nla_nest_start(msg,
+				       QCA_WLAN_VENDOR_ATTR_SCAN_FREQUENCIES);
+		if (!freqs)
+			goto fail;
+		for (i = 0; freq_list[i]; i++) {
+			if (nla_put_u32(msg, i + 1, freq_list[i]))
+				goto fail;
+		}
+		nla_nest_end(msg, freqs);
+	}
+
+	if (params->totaldwell &&
+	    nla_put_u64(msg, QCA_WLAN_VENDOR_ATTR_SCAN_DWELL_TIME,
+			params->totaldwell))
+		goto fail;
+
+	nla_nest_end(msg, attr);
+
+	ret = send_and_recv_cmd(drv, msg);
+	msg = NULL;
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: CBS trigger scan vendor cmd failed: %s (%d)",
+			   strerror(-ret), ret);
+		return ret;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: CBS trigger scan sent: cbs_enable=%d resttime=%d dwellrest=%d waittime=%d dwellsp=%d totaldwell=%d",
+		   params->cbs_enable, params->resttime, params->dwellrest,
+		   params->waittime, params->dwellsplit, params->totaldwell);
+	return 0;
+
+fail:
+	if (msg)
+		nlmsg_free(msg);
+	return ret;
 }
 
 int nl80211_get_he_mcs_12_13_extn(void *priv, u8 radio_idx, u16 *radio_cap)
