@@ -45,10 +45,8 @@ Signed-off-by: Venkateswara Swamy Bandaru <vbandaru@qti.qualcomm.com>
  wpa_supplicant/ap.c            |  8 +++++
  19 files changed, 261 insertions(+)
 
-Index: hostapd-2025.03.10~95ad7115/hostapd/ctrl_iface.c
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/hostapd/ctrl_iface.c
-+++ hostapd-2025.03.10~95ad7115/hostapd/ctrl_iface.c
+--- a/hostapd/ctrl_iface.c
++++ b/hostapd/ctrl_iface.c
 @@ -3299,6 +3299,11 @@ static int hostapd_ctrl_iface_chan_switc
  		break;
  	}
@@ -69,10 +67,8 @@ Index: hostapd-2025.03.10~95ad7115/hostapd/ctrl_iface.c
  
  	if (dfs_range) {
  		ret = ieee80211_freq_to_chan(settings.freq_params.freq, &chan);
-Index: hostapd-2025.03.10~95ad7115/src/ap/acs.c
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/ap/acs.c
-+++ hostapd-2025.03.10~95ad7115/src/ap/acs.c
+--- a/src/ap/acs.c
++++ b/src/ap/acs.c
 @@ -290,6 +290,7 @@ static const struct bw_item bw_160[] = {
  	{ 6755, 6895, 175 }, { 6915, 7055, 207 }, { -1, -1, -1 }
  };
@@ -91,10 +87,8 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/acs.c
  		start_freq_list =  acs_get_bw_start_chan(bw, chan,
  							 &freq_match_size);
  		for (int i = 0; i < freq_match_size; i++) {
-Index: hostapd-2025.03.10~95ad7115/src/ap/ap_config.h
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/ap/ap_config.h
-+++ hostapd-2025.03.10~95ad7115/src/ap/ap_config.h
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
 @@ -20,6 +20,7 @@
  #include "wps/wps.h"
  #include "fst/fst.h"
@@ -115,10 +109,8 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ap_config.h
  #endif /* CONFIG_IEEE80211BE */
  #ifdef CONFIG_IEEE80211AX
  	if (conf->ieee80211ax)
-Index: hostapd-2025.03.10~95ad7115/src/ap/ap_drv_ops.c
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/ap/ap_drv_ops.c
-+++ hostapd-2025.03.10~95ad7115/src/ap/ap_drv_ops.c
+--- a/src/ap/ap_drv_ops.c
++++ b/src/ap/ap_drv_ops.c
 @@ -22,6 +22,8 @@
  #include "hs20.h"
  #include "wpa_auth.h"
@@ -128,7 +120,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ap_drv_ops.c
  #ifdef CONFIG_IEEE80211BE
  #include "common/qca-vendor.h"
  #include "hw_features.h"
-@@ -528,6 +530,9 @@ int hostapd_sta_add(struct hostapd_data
+@@ -542,6 +544,9 @@ int hostapd_sta_add(struct hostapd_data
  		    size_t he_capab_len,
  		    const struct ieee80211_eht_capabilities *eht_capab,
  		    size_t eht_capab_len,
@@ -138,7 +130,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ap_drv_ops.c
  		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
  		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
  		    int set, const u8 *link_addr, bool mld_link_sta,
-@@ -564,6 +569,10 @@ int hostapd_sta_add(struct hostapd_data
+@@ -578,6 +583,10 @@ int hostapd_sta_add(struct hostapd_data
  	params.set = set;
  	params.mld_link_id = -1;
  
@@ -149,10 +141,8 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ap_drv_ops.c
  #ifdef CONFIG_IEEE80211BE
  	/*
  	 * An AP MLD needs to always specify to what link the station needs
-Index: hostapd-2025.03.10~95ad7115/src/ap/ap_drv_ops.h
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/ap/ap_drv_ops.h
-+++ hostapd-2025.03.10~95ad7115/src/ap/ap_drv_ops.h
+--- a/src/ap/ap_drv_ops.h
++++ b/src/ap/ap_drv_ops.h
 @@ -47,6 +47,9 @@ int hostapd_sta_add(struct hostapd_data
  		    size_t he_capab_len,
  		    const struct ieee80211_eht_capabilities *eht_capab,
@@ -163,10 +153,8 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ap_drv_ops.h
  		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
  		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
  		    int set, const u8 *link_addr, bool mld_link_sta,
-Index: hostapd-2025.03.10~95ad7115/src/ap/beacon.c
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/ap/beacon.c
-+++ hostapd-2025.03.10~95ad7115/src/ap/beacon.c
+--- a/src/ap/beacon.c
++++ b/src/ap/beacon.c
 @@ -572,6 +572,9 @@ static u8 * hostapd_eid_supported_op_cla
  	*eid++ = WLAN_EID_SUPPORTED_OPERATING_CLASSES;
  	*eid++ = 2;
@@ -196,7 +184,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/beacon.c
  		if (hapd->mld &&
  		    hapd->mld->ttlm_ctx.established_ttlm.ttlm.expected_duration_present)
  			pos = hostapd_add_ttlm_info_elem(pos,
-@@ -2477,6 +2485,8 @@ int ieee802_11_build_ap_params(struct ho
+@@ -2484,6 +2492,8 @@ int ieee802_11_build_ap_params(struct ho
  		if (hapd->iconf->punct_bitmap)
  			tail_len += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
  
@@ -205,7 +193,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/beacon.c
  		/*
  		 * TODO: Multi-Link element has variable length and can be
  		 * long based on the common info and number of per
-@@ -2742,6 +2752,8 @@ int ieee802_11_build_ap_params(struct ho
+@@ -2749,6 +2759,8 @@ int ieee802_11_build_ap_params(struct ho
  		if (hapd == tx_bss)
  			hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
  						   tailpos-startpos, ELEMID_CU_PARAM_EXT_EHTOP);
@@ -214,10 +202,8 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/beacon.c
  	}
  
  	if (hapd->conf->mld_ap)
-Index: hostapd-2025.03.10~95ad7115/src/ap/dfs.c
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/ap/dfs.c
-+++ hostapd-2025.03.10~95ad7115/src/ap/dfs.c
+--- a/src/ap/dfs.c
++++ b/src/ap/dfs.c
 @@ -22,6 +22,7 @@
  #include "beacon.h"
  #include "eloop.h"
@@ -312,7 +298,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/dfs.c
  
  	res = hostapd_start_dfs_cac(
  		iface, iface->conf->hw_mode, iface->freq, iface->conf->channel,
-@@ -1859,6 +1897,11 @@ int hostapd_dfs_radar_detected(struct ho
+@@ -1847,6 +1885,11 @@ int hostapd_dfs_radar_detected(struct ho
  
  		chan_width = convert_to_oper_chan_width(chan_width);
  
@@ -324,7 +310,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/dfs.c
  		if (iface->cac_started) {
  
  			wpa_printf(MSG_DEBUG, "radar detected during cac,"
-@@ -2264,6 +2307,10 @@ int hostapd_is_dfs_overlap(struct hostap
+@@ -2240,6 +2283,10 @@ int hostapd_is_dfs_overlap(struct hostap
  		half_width = 80;
  		break;
  	default:
@@ -335,11 +321,9 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/dfs.c
  		wpa_printf(MSG_WARNING, "DFS chanwidth %d not supported",
  			   width);
  		return 0;
-Index: hostapd-2025.03.10~95ad7115/src/ap/dfs.h
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/ap/dfs.h
-+++ hostapd-2025.03.10~95ad7115/src/ap/dfs.h
-@@ -51,4 +51,7 @@ int hostapd_is_dfs_overlap(struct hostap
+--- a/src/ap/dfs.h
++++ b/src/ap/dfs.h
+@@ -52,4 +52,7 @@ int hostapd_is_dfs_overlap(struct hostap
  			   int center_freq);
  void hostapd_dfs_radar_handling_timeout(void *eloop_data, void *user_data);
  void hostapd_start_device_cac_background(struct hostapd_iface *iface);
@@ -347,10 +331,8 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/dfs.h
 +enum oper_chan_width convert_to_oper_chan_width(int chan_width);
 +
  #endif /* DFS_H */
-Index: hostapd-2025.03.10~95ad7115/src/ap/hw_features.c
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/ap/hw_features.c
-+++ hostapd-2025.03.10~95ad7115/src/ap/hw_features.c
+--- a/src/ap/hw_features.c
++++ b/src/ap/hw_features.c
 @@ -1072,6 +1072,11 @@ bool hostapd_is_usable_punct_bitmap(stru
  			start_chan = conf->eht_oper_centr_freq_seg0_idx - 14;
  			break;
@@ -363,10 +345,8 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/hw_features.c
  			return false;
  		}
  	}
-Index: hostapd-2025.03.10~95ad7115/src/ap/ieee802_11.c
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/ap/ieee802_11.c
-+++ hostapd-2025.03.10~95ad7115/src/ap/ieee802_11.c
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
 @@ -61,6 +61,7 @@
  #include "comeback_token.h"
  #include "nan_usd_ap.h"
@@ -375,7 +355,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ieee802_11.c
  #include "wpa_auth_i.h"
  #include "ttlm.h"
  #include "dscp_policy.h"
-@@ -4529,6 +4530,13 @@ static int __check_assoc_ies(struct host
+@@ -4562,6 +4563,13 @@ static int __check_assoc_ies(struct host
  					  elems->eht_capabilities_len);
  		if (resp != WLAN_STATUS_SUCCESS)
  			return resp;
@@ -389,7 +369,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ieee802_11.c
  	}
  #endif /* CONFIG_IEEE80211BE */
  
-@@ -5064,6 +5072,8 @@ void ieee80211_ml_build_assoc_resp(struc
+@@ -5097,6 +5105,8 @@ void ieee80211_ml_build_assoc_resp(struc
  		if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
  			p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
  			p = hostapd_eid_eht_operation(hapd, p);
@@ -398,7 +378,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ieee802_11.c
  		}
  	}
  
-@@ -5286,7 +5296,14 @@ int hostapd_process_assoc_ml_info(struct
+@@ -5323,7 +5333,14 @@ int hostapd_process_assoc_ml_info(struct
  			if (hostapd_sta_add(hapd, sta->addr, 0, 0,
  					    sta->supported_rates,
  					    sta->supported_rates_len,
@@ -413,7 +393,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ieee802_11.c
  					    sta->flags, 0, 0, 0, 0,
  					    mld_link_addr, mld_link_sta,
  					    eml_cap, reassoc)) {
-@@ -5477,6 +5494,11 @@ static int add_associated_sta(struct hos
+@@ -5516,6 +5533,11 @@ static int add_associated_sta(struct hos
  			    sta->flags & WLAN_STA_HE ? sta->he_capab_len : 0,
  			    sta->flags & WLAN_STA_EHT ? &eht_cap : NULL,
  			    sta->flags & WLAN_STA_EHT ? sta->eht_capab_len : 0,
@@ -425,7 +405,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ieee802_11.c
  			    sta->he_6ghz_capab,
  			    sta->flags | WLAN_STA_ASSOC, sta->qosinfo,
  			    sta->vht_opmode, sta->p2p_ie ? 1 : 0,
-@@ -5536,6 +5558,7 @@ static u16 send_assoc_resp(struct hostap
+@@ -5575,6 +5597,7 @@ static u16 send_assoc_resp(struct hostap
  		buflen += hostapd_eid_channel_usage_len(hapd);
  		if (hapd->iconf->punct_bitmap)
  			buflen += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
@@ -433,7 +413,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ieee802_11.c
  	}
  #endif /* CONFIG_IEEE80211BE */
  
-@@ -5698,6 +5721,8 @@ rsnxe_done:
+@@ -5737,6 +5760,8 @@ rsnxe_done:
  						     WLAN_FC_STYPE_ASSOC_RESP);
  		p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
  		p = hostapd_eid_eht_operation(hapd, p);
@@ -442,7 +422,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ieee802_11.c
  		hostapd_get_epcs_capab(hapd, sta);
  
  		/* Append Channel Usage element to Association response */
-@@ -10763,6 +10788,14 @@ static u8 * hostapd_eid_rnr_iface(struct
+@@ -10875,6 +10900,14 @@ static u8 * hostapd_eid_rnr_iface(struct
  	if (!(iface->drv_flags & WPA_DRIVER_FLAGS_AP_CSA) || !iface->freq)
  		return eid;
  
@@ -457,10 +437,8 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ieee802_11.c
  	if (ieee80211_freq_to_channel_ext(iface->freq,
  					  hapd->iconf->secondary_channel,
  					  hostapd_get_oper_chwidth(hapd->iconf),
-Index: hostapd-2025.03.10~95ad7115/src/ap/ieee802_11_vht.c
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/ap/ieee802_11_vht.c
-+++ hostapd-2025.03.10~95ad7115/src/ap/ieee802_11_vht.c
+--- a/src/ap/ieee802_11_vht.c
++++ b/src/ap/ieee802_11_vht.c
 @@ -95,7 +95,13 @@ u8 * hostapd_eid_vht_operation(struct ho
  	le32 vht_capabilities_info = 0;
  	u8 *pos = eid;
@@ -485,10 +463,8 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/ieee802_11_vht.c
  		punct_update_legacy_bw(punct_bitmap,
  				       hapd->iconf->channel,
  				       &oper_chwidth, &seg0, &seg1);
-Index: hostapd-2025.03.10~95ad7115/src/ap/sta_info.c
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/ap/sta_info.c
-+++ hostapd-2025.03.10~95ad7115/src/ap/sta_info.c
+--- a/src/ap/sta_info.c
++++ b/src/ap/sta_info.c
 @@ -37,6 +37,7 @@
  #include "mbo_ap.h"
  #include "ndisc_snoop.h"
@@ -507,7 +483,7 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/sta_info.c
  	hostapd_free_psk_list(sta->psk);
  	os_free(sta->identity);
  	os_free(sta->radius_cui);
-@@ -2402,7 +2406,15 @@ int ap_sta_re_add(struct hostapd_data *h
+@@ -2405,7 +2409,15 @@ int ap_sta_re_add(struct hostapd_data *h
  	if (hostapd_sta_add(hapd, sta->addr, 0, 0,
  			    sta->supported_rates,
  			    sta->supported_rates_len,
@@ -523,10 +499,8 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/sta_info.c
  			    sta->flags, 0, 0, 0, 0,
  			    mld_link_addr, mld_link_sta, eml_cap, 0)) {
  		hostapd_logger(hapd, sta->addr,
-Index: hostapd-2025.03.10~95ad7115/src/ap/sta_info.h
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/ap/sta_info.h
-+++ hostapd-2025.03.10~95ad7115/src/ap/sta_info.h
+--- a/src/ap/sta_info.h
++++ b/src/ap/sta_info.h
 @@ -18,6 +18,7 @@
  #include "crypto/sha384.h"
  #include "pasn/pasn_common.h"
@@ -545,10 +519,8 @@ Index: hostapd-2025.03.10~95ad7115/src/ap/sta_info.h
  	u8 addr[6];
  	be32 ipaddr;
  	struct dl_list ip6addr; /* list head for struct ip6addr */
-Index: hostapd-2025.03.10~95ad7115/src/common/ieee802_11_common.c
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/common/ieee802_11_common.c
-+++ hostapd-2025.03.10~95ad7115/src/common/ieee802_11_common.c
+--- a/src/common/ieee802_11_common.c
++++ b/src/common/ieee802_11_common.c
 @@ -213,6 +213,10 @@ static int ieee802_11_parse_vendor_speci
  		break;
  
@@ -569,10 +541,8 @@ Index: hostapd-2025.03.10~95ad7115/src/common/ieee802_11_common.c
  			*op_class = vht_opclass;
  		else if (sec_channel == 1)
  			*op_class = 122;
-Index: hostapd-2025.03.10~95ad7115/src/common/ieee802_11_common.h
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/common/ieee802_11_common.h
-+++ hostapd-2025.03.10~95ad7115/src/common/ieee802_11_common.h
+--- a/src/common/ieee802_11_common.h
++++ b/src/common/ieee802_11_common.h
 @@ -10,6 +10,7 @@
  #define IEEE802_11_COMMON_H
  
@@ -591,22 +561,9 @@ Index: hostapd-2025.03.10~95ad7115/src/common/ieee802_11_common.h
  	const u8 *ds_params;
  	const u8 *challenge;
  	const u8 *erp_info;
-Index: hostapd-2025.03.10~95ad7115/src/common/qca-vendor.h
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/common/qca-vendor.h
-+++ hostapd-2025.03.10~95ad7115/src/common/qca-vendor.h
-@@ -1598,7 +1598,9 @@ enum qca_nl80211_vendor_subcmds {
- 	QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS = 261,
- 	QCA_NL80211_VENDOR_SUBCMD_AFC_CLEAR_PAYLOAD = 264,
- 	QCA_NL80211_VENDOR_SUBCMD_AFC_RESET = 265,
--	QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD = 267
-+	QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD = 267,
-+	QCA_NL80211_VENDOR_SUBCMD_240MHZ_INFO = 299,
-+	QCA_NL80211_VENDOR_SUBCMD_AFC_FETCH_POWER_EVENT = 352,
- };
- 
- /* Compatibility defines for previously used subcmd names.
-@@ -19229,4 +19231,45 @@ enum qca_wlan_vendor_atf_offload_operati
+--- a/src/common/qca-vendor.h
++++ b/src/common/qca-vendor.h
+@@ -19245,4 +19245,45 @@ enum qca_wlan_vendor_atf_offload_operati
  	QCA_WLAN_VENDOR_ATF_OFFLOAD_STATS = 11,
  };
  
@@ -652,10 +609,8 @@ Index: hostapd-2025.03.10~95ad7115/src/common/qca-vendor.h
 +};
 +
  #endif /* QCA_VENDOR_H */
-Index: hostapd-2025.03.10~95ad7115/src/drivers/driver.h
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/drivers/driver.h
-+++ hostapd-2025.03.10~95ad7115/src/drivers/driver.h
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
 @@ -30,6 +30,7 @@
  #include "utils/list.h"
  #include "drivers/nl80211_copy.h"
@@ -674,10 +629,8 @@ Index: hostapd-2025.03.10~95ad7115/src/drivers/driver.h
  	u16 capability;
  	const u8 *supp_rates;
  	size_t supp_rates_len;
-Index: hostapd-2025.03.10~95ad7115/src/drivers/driver_nl80211.c
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/src/drivers/driver_nl80211.c
-+++ hostapd-2025.03.10~95ad7115/src/drivers/driver_nl80211.c
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
 @@ -41,6 +41,7 @@
  #include "radiotap_iter.h"
  #include "rfkill.h"
@@ -686,7 +639,7 @@ Index: hostapd-2025.03.10~95ad7115/src/drivers/driver_nl80211.c
  
  
  #ifndef NETLINK_CAP_ACK
-@@ -6377,6 +6378,8 @@ static int wpa_driver_nl80211_sta_add(vo
+@@ -6383,6 +6384,8 @@ static int wpa_driver_nl80211_sta_add(vo
  	u8 cmd;
  	const char *cmd_string;
  
@@ -695,10 +648,8 @@ Index: hostapd-2025.03.10~95ad7115/src/drivers/driver_nl80211.c
  	if (params->mld_link_sta) {
  		cmd = params->set ? NL80211_CMD_MODIFY_LINK_STA :
  			NL80211_CMD_ADD_LINK_STA;
-Index: hostapd-2025.03.10~95ad7115/wpa_supplicant/ap.c
-===================================================================
---- hostapd-2025.03.10~95ad7115.orig/wpa_supplicant/ap.c
-+++ hostapd-2025.03.10~95ad7115/wpa_supplicant/ap.c
+--- a/wpa_supplicant/ap.c
++++ b/wpa_supplicant/ap.c
 @@ -103,10 +103,20 @@ static void wpas_conf_ap_vht(struct wpa_
  				       &freq_seg_idx);
  		hostapd_set_oper_centr_freq_seg0_idx(conf, freq_seg_idx);
