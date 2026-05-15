@@ -11,9 +11,34 @@
 #include "drivers/driver_nl80211.h"
 #include "ap/hostapd.h"
 #include "ap/hw_features.h"
+#include "ap/ieee802_11.h"
 #include "../wpa_supplicant/wpa_supplicant_i.h"
 #include "../wpa_supplicant/bss.h"
 #include "reg_extn.h"
+
+static inline bool
+hostapd_is_freq_in_between_extn(int freq, int start_freq, int end_freq)
+{
+	return freq >= start_freq && freq <= end_freq;
+}
+
+static inline bool
+hostapd_is_range_overlap_extn(int start1, int end1, int start2, int end2)
+{
+	return (hostapd_is_freq_in_between_extn(start1, start2, end2) ||
+		hostapd_is_freq_in_between_extn(end1, start2, end2) ||
+		hostapd_is_freq_in_between_extn(start2, start1, end1) ||
+		hostapd_is_freq_in_between_extn(end2, start1, end1));
+}
+
+static bool
+hostapd_is_6ghz_overlap_hw_extn(struct hostapd_multi_hw_info *hw_info)
+{
+	return hostapd_is_range_overlap_extn(hw_info->start_freq,
+					     hw_info->end_freq,
+					     DEFAULT_LOW_6GFREQ,
+					     DEFAULT_HIGH_6GFREQ);
+}
 
 void hostapd_query_hw_blocklist_extn(struct hostapd_iface *iface,
 				     struct hostapd_data *hapd)
@@ -33,10 +58,27 @@ void hostapd_query_hw_blocklist_extn(struct hostapd_iface *iface,
 	if (!hapd->driver->is_6ghz_hw_blocked_chans_supported(hapd->drv_priv))
 		return;
 
+	if (!iface->freq) {
+		ret = configured_fixed_chan_to_freq_helper(iface);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "Configured channel is not valid (%d)",
+				   ret);
+			return;
+		}
+	}
+
 	if (iface->freq && iface->num_multi_hws && iface->multi_hw_info)
 		hw_info = hostapd_get_current_hw_info(iface, iface->freq);
 
 	if (iface->freq && hw_info) {
+		if (!hostapd_is_6ghz_overlap_hw_extn(hw_info)) {
+			wpa_printf(MSG_DEBUG,
+				   "Current HW (hw_idx=%d start_freq=%d end_freq=%d) does not overlap with 6 GHz, skip querying HW blocklist",
+				   hw_info->hw_idx, hw_info->start_freq,
+				   hw_info->end_freq);
+			return;
+		}
+
 		radio_idx = hw_info->hw_idx;
 		wpa_printf(MSG_DEBUG,
 			   "Query HW blocklist for freq=%d hw_idx=%d",
