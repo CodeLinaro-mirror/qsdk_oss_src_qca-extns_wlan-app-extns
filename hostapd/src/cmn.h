@@ -46,6 +46,7 @@ union wpa_event_data;
 struct ieee80211_neighbor_ap_info;
 struct wpa_supplicant;
 struct wpa_bss;
+struct dfs_event;
 struct wpa_connect_work;
 struct csa_settings;
 struct ubus_context;
@@ -1515,6 +1516,26 @@ wpas_set_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq)
 	return -1;
 }
 
+static inline bool
+wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, struct wpa_bss *bss)
+{
+	return false;
+}
+
+static inline void
+wpas_dfs_radar_detected_sta_mode(struct wpa_supplicant *wpa_s,
+				      struct dfs_event *radar)
+{
+	return;
+}
+
+static inline void
+wpas_dfs_nop_finished_sta_mode(struct wpa_supplicant *wpa_s,
+				    struct dfs_event *radar)
+{
+	return;
+}
+
 static inline void
 wpa_config_alloc_empty_extn(struct wpa_config *config)
 {
@@ -2280,5 +2301,11 @@ bool chan_pri_allowed_extn(const struct hostapd_channel_data *chan);
 enum chan_width
 hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
 				       int sec_channel_offset);
+bool wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, struct wpa_bss *bss);
+void wpas_dfs_radar_detected_sta_mode(struct wpa_supplicant *wpa_s,
+				      struct dfs_event *radar);
+void wpas_dfs_nop_finished_sta_mode(struct wpa_supplicant *wpa_s,
+				    struct dfs_event *radar);
+
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
