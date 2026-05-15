@@ -69,7 +69,8 @@ hostapd_config_check_bss_repurpose_mode_extn(const struct hostapd_config *conf,
 bool
 hostapd_is_repurpose_disabled_11ax_extn(const struct hostapd_bss_config *bss)
 {
-	if (hostapd_is_valid_repurpose_mode_extn(bss->bss_extn.repurpose_mode) &&
+	if (bss &&
+	    hostapd_is_valid_repurpose_mode_extn(bss->bss_extn.repurpose_mode) &&
 	    bss->bss_extn.repurpose_mode < REPURPOSE_11AX)
 		return true;
 
@@ -92,7 +93,8 @@ hostapd_is_repurpose_disabled_11ax_extn(const struct hostapd_bss_config *bss)
 bool
 hostapd_is_repurpose_disabled_11be_extn(const struct hostapd_bss_config *bss)
 {
-	if (hostapd_is_valid_repurpose_mode_extn(bss->bss_extn.repurpose_mode) &&
+	if (bss &&
+	    hostapd_is_valid_repurpose_mode_extn(bss->bss_extn.repurpose_mode) &&
 	    bss->bss_extn.repurpose_mode < REPURPOSE_11BE)
 		return true;
 
