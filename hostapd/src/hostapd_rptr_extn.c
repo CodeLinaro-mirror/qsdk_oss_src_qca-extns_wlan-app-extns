@@ -102,7 +102,8 @@ void hostapd_ml_acs_check_and_notify(struct hostapd_iface *iface, bool status)
 	if (num_ap_with_acs_done == hapd->iface->interfaces->count) {
 		wpa_printf(MSG_DEBUG, "ACS: All ML partner links have completed ACS, sending notification");
 #ifdef CONFIG_HOSTAPD_SRC_DIR
-		hostapd_ucode_notify_acs_completed(iface, 1);
+		if (!hostapd_is_bh_sta_connecting_or_connected_extn(iface))
+			hostapd_ucode_notify_acs_completed(iface, 1);
 #endif
 	}
 }
