@@ -160,6 +160,8 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		return 0;
 	} else if (os_strcmp(buf, "rpt_max_phy") == 0) {
 		conf_extn->rpt_max_phy = atoi(pos);
+	} else if (os_strcmp(buf, "rptr_allow_chan_sw") == 0) {
+		conf_extn->rptr_allow_chan_sw = atoi(pos);
 		return 0;
 	} else if (os_strcmp(buf, "qacs_enable") == 0) {
 		conf_extn->qacs_enable = atoi(pos);
