@@ -298,6 +298,9 @@ enum hostapd_if_event_type {
 	HOSTAPD_IF_EVENT_ACTION_COMPLETION,
 	HOSTAPD_IF_EVENT_INBOUND_CALL_ERROR,
 	HOSTAPD_IF_EVENT_DOT1X_COMPLETE,
+	HOSTAPD_IF_EVENT_RADIUS_SEND,
+	HOSTAPD_IF_EVENT_RADIUS_RECEIVE,
+	HOSTAPD_IF_EVENT_RADIUS_COA,
 	HOSTAPD_IF_EVENT_MAX
 };
 
@@ -340,7 +343,12 @@ struct hostapd_if_event {
 			size_t identity_len;
 			int success;
 		} dot1x_completion;
-
+		struct {
+			const uint8_t *attrs;
+			size_t attrs_len;
+			uint8_t hdr_code;
+			uint32_t msg_type; //unused for CoA
+		} radius_msg;
 		struct {
 			enum HOSTAPD_IF_INBOUND_ERROR {
 				HOSTAPD_IF_AUTH_RESPONSE_ERROR,
