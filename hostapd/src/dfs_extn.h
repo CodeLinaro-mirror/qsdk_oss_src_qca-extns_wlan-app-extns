@@ -11,7 +11,9 @@
 
 /* Channel Switch Announcement element (WLAN_EID_CHANNEL_SWITCH) fixed layout. */
 #define IEEE80211_CSA_IE_MIN_LEN 3
+#define IEEE80211_CSA_IE_MODE_OFFSET 2
 #define IEEE80211_CSA_IE_NEW_CHANNEL_OFFSET 3
+#define IEEE80211_CSA_IE_COUNT_OFFSET 4
 #define IEEE80211_CSA_IE_TOTAL_LEN 5
 
 /* NOL IE structure for uplink CSA */
