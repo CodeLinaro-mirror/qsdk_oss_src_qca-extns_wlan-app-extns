@@ -419,6 +419,10 @@ struct hostapd_config_extn {
 	u16 primary_freq_list[MAX_NUM_CHANNELS];
 	u8 num_primary_freq;
 
+	/* MLO Repurpose specific configurations */
+	u16 repurpose_vht_width;
+	u16 repurpose_he_width;
+
 	/* OBSS SNR thresholds */
 	u8 obss_snr_threshold;    /* OBSS SNR threshold */
 	u8 obss_rx_snr_threshold; /* OBSS RX SNR threshold */
@@ -2182,6 +2186,11 @@ int hostapd_drv_mark_vap_submode_extn(void *priv, unsigned int vendor_id,
 				      unsigned int subcmd,
 				      const char *ifname,
 				      u8 vap_submode);
+
+u16 hostapd_get_width_from_oper_chwidth_extn(enum oper_chan_width oper_chwidth,
+					     int secondary_channel);
+
+enum oper_chan_width hostapd_get_oper_chwidth_from_width_extn(u16 width);
 
 /**
  * hostapd_set_he_mcs_12_13_cap_extn - Fetch and store the HE MCS 12/13

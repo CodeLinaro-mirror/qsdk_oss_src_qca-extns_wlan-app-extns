@@ -73,6 +73,60 @@ hostapd_validate_mbssid_group_repurpose_mode_extn(struct hostapd_data *hapd)
 {
 	return 0;
 }
+
+static inline void
+hostapd_set_repurpose_oper_chwidth_extn(struct hostapd_config *conf,
+					enum oper_chan_width oper_chwidth)
+{
+}
+
+static inline void
+hostapd_get_oper_info_of_repurposed_bss_extn(struct hostapd_data *hapd,
+					     enum oper_chan_width *oper_chwidth,
+				             u8 *seg0, u8 *seg1)
+{
+}
+
+static inline bool
+hostapd_config_check_repurpose_width_extn(struct hostapd_config *conf)
+{
+	return true;
+}
+
+static inline void
+hostapd_repurpose_update_ht_capabilities_extn(struct hostapd_data *hapd,
+					      struct ieee80211_ht_capabilities *cap)
+{
+}
+
+static inline u8
+hostapd_get_repurpose_width_extn(struct hostapd_data *hapd)
+{
+	return 0;
+}
+
+static inline bool
+hostapd_repurpose_update_ht_operation_mode_extn(struct hostapd_data *hapd,
+						le32 vht_capabilities_info,
+						struct ieee80211_ht_operation *oper)
+{
+	return false;
+}
+
+static inline void
+hostapd_repurpose_update_vht_capabilities_extn(struct hostapd_data *hapd,
+					       u8 *chwidth,
+					       struct ieee80211_vht_capabilities *cap)
+{
+}
+
+static inline void
+hostapd_repurpose_get_vht_legacy_chan_info_extn(struct hostapd_data *hapd,
+						enum oper_chan_width *chwidth,
+						u8 *seg0,
+						u8 *seg1)
+{
+}
 #else /* CONFIG_QCN_EXTN */
 int
 hostapd_config_check_bss_repurpose_mode_extn(const struct hostapd_config *conf,
@@ -104,5 +158,34 @@ hostapd_validate_mbssid_group_repurpose_mode_extn(struct hostapd_data *hapd);
 
 struct hostapd_data *
 hostapd_get_non_repurposed_link_of_mld_extn(struct hostapd_data *hapd);
+
+void hostapd_set_repurpose_oper_chwidth_extn(struct hostapd_config *conf,
+					     enum oper_chan_width oper_chwidth);
+
+void hostapd_get_oper_info_of_repurposed_bss_extn(
+			struct hostapd_data *hapd,
+			enum oper_chan_width *oper_chwidth,
+			u8 *seg0,
+			u8 *seg1);
+
+bool hostapd_config_check_repurpose_width_extn(struct hostapd_config *conf);
+void
+hostapd_repurpose_update_ht_capabilities_extn(struct hostapd_data *hapd,
+					      struct ieee80211_ht_capabilities *cap);
+u8 hostapd_get_repurpose_width_extn(struct hostapd_data *hapd);
+bool
+hostapd_repurpose_update_ht_operation_mode_extn(struct hostapd_data *hapd,
+						le32 vht_capabilities_info,
+						struct ieee80211_ht_operation *oper);
+void
+hostapd_repurpose_update_vht_capabilities_extn(struct hostapd_data *hapd,
+					       u8 *chwidth,
+					       struct ieee80211_vht_capabilities *cap);
+void
+hostapd_repurpose_get_vht_legacy_chan_info_extn(struct hostapd_data *hapd,
+						enum oper_chan_width *chwidth,
+						u8 *seg0,
+						u8 *seg1);
+
 #endif /* CONFIG_QCN_EXTN */
 #endif /* REPURPOSE_H */
