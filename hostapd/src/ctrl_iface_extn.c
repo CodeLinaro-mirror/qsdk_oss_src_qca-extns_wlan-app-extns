@@ -1602,7 +1602,15 @@ int hostapd_set_cswopts_extn(struct hostapd_config_extn *conf_extn,
 
 	if (IS_CSH_APRIORI_NEXT_CHANNEL_ENABLED(*cswopts))
 		wpa_printf(MSG_INFO,
-			   "CSwOpts: Apriori next channel (0x40) - Apriori channel selection feature is not yet supported");
+			   "CSwOpts %s: Apriori channel selection feature is not yet supported",
+			   convert_cswopts_to_str(CSH_OPT_APRIORI_NEXT_CHANNEL));
+
+	if (IS_CSH_CAC_APUP_BYSTA_ENABLED(*cswopts)) {
+		wpa_printf(MSG_INFO,
+			   "CSwOpts %s: Setting skip_cac to 0",
+			   convert_cswopts_to_str(CSH_OPT_CAC_APUP_BYSTA));
+		conf_extn->skip_cac = 0;
+	}
 
 	return 0;
 }
