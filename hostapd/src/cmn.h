@@ -159,6 +159,34 @@ static inline bool cswopts_validate(long int val)
 	return val >= 0 && !(val & ~CSH_OPT_VALID_MASK);
 }
 
+/**
+ * convert_cswopts_to_str - Return a human-readable name for a single CSwOpts bit.
+ * @opt: A single CSH_OPT_* constant
+ *
+ * Return: Human-readable description of the option, or "unknown" for unrecognised values.
+ */
+static inline const char *convert_cswopts_to_str(unsigned int opt)
+{
+	switch (opt) {
+	case CSH_OPT_NONDFS_RANDOM:
+		return "(0x01: non-DFS random channel select)";
+	case CSH_OPT_IGNORE_CSA_DFS:
+		return "(0x02: ignore uplink CSA to DFS channel)";
+	case CSH_OPT_CAC_APUP_BYSTA:
+		return "(0x04: AP VAP runs CAC on STA-triggered bring-up)";
+	case CSH_OPT_CSA_APUP_BYSTA:
+		return "(0x08: AP VAP sends CSA on STA-triggered bring-up)";
+	case CSH_OPT_RCSA_TO_UPLINK:
+		return "(0x10: forward RCSA to uplink AP on radar)";
+	case CSH_OPT_PROCESS_RCSA:
+		return "(0x20: process received RCSA)";
+	case CSH_OPT_APRIORI_NEXT_CHANNEL:
+		return "(0x40: switch to apriori next channel on radar)";
+	default:
+		return "unknown";
+	}
+}
+
 struct driver_dcs_config {
 	u8 cmd_type;
 	u16 dcs_enable;

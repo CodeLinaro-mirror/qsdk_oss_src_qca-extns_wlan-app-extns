@@ -363,6 +363,31 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 		   is_dfs, pre_connect, csa->freq_params.skip_cac,
 		   csa->mcst, iface->cs_time);
 
+	if (is_dfs && IS_CSH_IGNORE_CSA_DFS_ENABLED(conf->conf_extn.cswopts) &&
+	    !pre_connect) {
+		wpa_printf(MSG_INFO,
+			   "CSwOpts %s: uplink CSA target freq=%d is DFS;"
+			   " selecting local non-DFS channel for repeater AP vap",
+			   convert_cswopts_to_str(CSH_OPT_IGNORE_CSA_DFS),
+			   csa->freq_params.freq);
+#ifdef CONFIG_HOSTAPD_SRC_DIR
+		for (i = 0; i < iface->num_bss; i++) {
+			ret = hostapd_dfs_start_channel_switch(iface);
+			if (ret) {
+				wpa_printf(MSG_ERROR, "Repeater AP Channel switch"
+					   " to Non-DFS channel failed ret = %d", ret);
+				hostapd_ucode_chsw_result_ev_notify(
+							iface->bss[i],
+							csa->freq_params.freq,
+							ret);
+				return ret;
+			}
+			iface->iface_extn.csa_bitmap |= BIT(i);
+		}
+#endif
+		return ret;
+	}
+
 	/* If channel params differ, perform CSA and track per-BSS completion */
 	if (!uc_hostapd_compare_channel_params_extn(conf, csa->freq_params, iface->freq)) {
 		if (iface->cac_started) {
