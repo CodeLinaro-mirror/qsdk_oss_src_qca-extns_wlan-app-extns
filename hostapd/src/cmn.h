@@ -60,6 +60,7 @@ struct wpa_driver_nl80211_data;
 struct nl80211_vendor_cmd_info;
 struct wpa_scan_res;
 struct wpa_config;
+struct freq_survey;
 
 struct ieee80211_240mhz_vendor_oper_extn {
 	u8 ccfs1;
@@ -189,6 +190,15 @@ struct dcs_intf_event {
 	u16 type;
 };
 
+struct cbs_event {
+	u32 scan_complete_freq;
+	enum scan_status status;
+};
+
+struct scan_results_event {
+	struct cbs_event cbs_event;
+};
+
 struct chan_params {
 	u32 cf1;
 	u32 cf2;
@@ -200,6 +210,7 @@ union wpa_event_data_extn {
 	struct esp_update_event esp_update_event;
 	struct dcs_intf_event dcs_intf_event;
 	struct hostapd_hw_blocklist_info hw_blocklist_info;
+	struct scan_results_event scan_results_event;
 };
 
 struct ieee802_11_elems_extn {
@@ -1103,6 +1114,14 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 }
 
 static inline int
+hostapd_cbs_handle_single_channel_survey(struct hostapd_iface *iface,
+					 struct hostapd_channel_data *chan,
+					 struct freq_survey *survey)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
 acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
 {
 	return -EOPNOTSUPP;
@@ -1749,6 +1768,11 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 					 struct csa_settings *csa);
 void hostapd_iface_set_supplicant_channel_extn(struct hostapd_iface *hapd_iface);
 int acs_get_bw_center_chan(int freq, enum bw_type bw);
+struct hostapd_channel_data *
+acs_find_ideal_chan(struct hostapd_iface *iface);
+void hostapd_update_nf(struct hostapd_iface *iface,
+		       struct hostapd_channel_data *chan,
+		       struct freq_survey *survey);
 void hostapd_ml_acs_check_and_notify(struct hostapd_iface *iface, bool status);
 void wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx);
 bool hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface);
@@ -1809,10 +1833,29 @@ acs_process_hostapd_scan_data(struct hostapd_iface *iface)
 	wpa_printf(MSG_ERROR, "QACS is not supported");
 	return -EOPNOTSUPP;
 }
+
+static inline void
+qacs_reset_scan_stats(struct hostapd_iface *iface,
+		      struct hostapd_hw_modes *mode)
+{
+	wpa_printf(MSG_ERROR, "QACS is not supported");
+}
+
+static inline int
+acs_process_hostapd_scan_data_per_freq(struct hostapd_iface *iface,
+					   int freq_filter)
+{
+	wpa_printf(MSG_ERROR, "QACS is not supported");
+	return -EOPNOTSUPP;
+}
 #else
 struct hostapd_channel_data *
 qacs_find_ideal_chan(struct hostapd_iface *iface);
 int acs_process_hostapd_scan_data(struct hostapd_iface *iface);
+int acs_process_hostapd_scan_data_per_freq(struct hostapd_iface *iface,
+					       int freq_filter);
+void qacs_reset_scan_stats(struct hostapd_iface *iface,
+			   struct hostapd_hw_modes *mode);
 #endif /*CONFIG_QCN_APP_EXTN */
 
 int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_data *hapd,
@@ -1929,6 +1972,9 @@ bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num);
 int chan_pri_allowed(const struct hostapd_channel_data *chan);
 int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd,
 				enum dynamic_acs_action_extn acs_action);
+int hostapd_cbs_handle_single_channel_survey(struct hostapd_iface *iface,
+					     struct hostapd_channel_data *chan,
+					     struct freq_survey *survey);
 int hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 			   struct driver_dcs_config *params);
 void dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap);

@@ -15,6 +15,7 @@
 #include "ap/ap_drv_ops.h"
 #include "ap/hw_features.h"
 #include "utils/eloop.h"
+#include "cbs.h"
 
 static int
 cbs_print_usage_extn(char *reply, int reply_size)
@@ -110,6 +111,8 @@ static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
 	}
 
 	cbs_params->cbs_enable = val;
+	cbs_params->best_chan = NULL;
+	qacs_reset_scan_stats(hapd->iface, mode);
 
 	ret = hapd->driver->set_cbs(hapd->drv_priv,
 				    cbs_params, freq_list,
@@ -276,6 +279,61 @@ static int hostapd_cbs_get_csa(struct hostapd_config_extn *conf_extn,
 
 	return ret;
 }
+
+int hostapd_cbs_handle_single_channel_survey(struct hostapd_iface *iface,
+					     struct hostapd_channel_data *chan,
+					     struct freq_survey *survey)
+{
+	if (iface->conf->conf_extn.cbs_params.cbs_enable) {
+		dl_list_del(&survey->list);
+		dl_list_add_tail(&chan->survey_list, &survey->list);
+		hostapd_update_nf(iface, chan, survey);
+		return 0;
+	}
+
+	return -1;
+}
+
+int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
+				     union wpa_event_data *data)
+{
+	struct cbs_event *cbs_evt;
+	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_config_extn *conf_extn = &hapd->iface->conf->conf_extn;
+
+	if (!data) {
+		wpa_printf(MSG_ERROR, "WPA event with NULL data");
+		return -1;
+	}
+
+	cbs_evt = &data->event_data_extn.scan_results_event.cbs_event;
+
+	wpa_printf(MSG_DEBUG, "CBS scan complete: frequency=%u scan_complete=%u",
+		   cbs_evt->scan_complete_freq, cbs_evt->status);
+
+	if (!cbs_evt->scan_complete_freq)
+		return -1;
+
+	if (cbs_evt->status == VENDOR_SCAN_STATUS_NEW_RESULTS ||
+	    cbs_evt->status == VENDOR_SPLIT_SCAN_COMPLETE_PER_CHANNEL) {
+		if (hostapd_drv_get_survey(hapd, cbs_evt->scan_complete_freq))
+			wpa_printf(MSG_ERROR, "CBS: survey results failed");
+		acs_process_hostapd_scan_data_per_freq(
+				iface, cbs_evt->scan_complete_freq);
+	}
+
+	if (cbs_evt->status == VENDOR_SCAN_STATUS_NEW_RESULTS) {
+		if (conf_extn->qacs_enable)
+			conf_extn->cbs_params.best_chan =
+				qacs_find_ideal_chan(iface);
+		else
+			conf_extn->cbs_params.best_chan =
+				acs_find_ideal_chan(iface);
+	}
+
+	return 0;
+}
+
 
 int hostapd_handle_cli_cbs_extn(struct hostapd_data *hapd,
 				char *pos, char *buf,
