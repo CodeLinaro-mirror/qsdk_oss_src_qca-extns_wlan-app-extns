@@ -99,6 +99,66 @@ struct ieee80211_240mhz_params_extn {
 	size_t eht_240mhz_capab_len;
 };
 
+/**
+ * enum cswopts_flags - Channel Switch Option flags
+ *
+ * Bitmap flags that control the behaviour of the channel-switch handler
+ * (CSH).  Multiple flags may be OR-ed together into a single cswopts value.
+ *
+ * @CSH_OPT_NONDFS_RANDOM:        Select a random channel from non-DFS
+ *                                channels only.
+ * @CSH_OPT_IGNORE_CSA_DFS:       Ignore a CSA received from the uplink AP
+ *                                when the target channel is DFS; instead pick
+ *                                a non-DFS channel locally.
+ * @CSH_OPT_CAC_APUP_BYSTA:       AP VAP performs CAC when it is brought up
+ *                                by a STA VAP.
+ * @CSH_OPT_CSA_APUP_BYSTA:       AP VAP sends a CSA when it is brought up
+ *                                by a STA VAP (implicit channel change).
+ * @CSH_OPT_RCSA_TO_UPLINK:       Send an RCSA to the uplink AP on radar
+ *                                detection or upon receiving an RCSA.
+ * @CSH_OPT_PROCESS_RCSA:         Process a received RCSA and act on it.
+ * @CSH_OPT_APRIORI_NEXT_CHANNEL: On radar detection, switch to the
+ *                                pre-configured apriori next channel.
+ */
+enum cswopts_flags {
+	CSH_OPT_NONDFS_RANDOM        = 0x01,
+	CSH_OPT_IGNORE_CSA_DFS       = 0x02,
+	CSH_OPT_CAC_APUP_BYSTA       = 0x04,
+	CSH_OPT_CSA_APUP_BYSTA       = 0x08,
+	CSH_OPT_RCSA_TO_UPLINK       = 0x10,
+	CSH_OPT_PROCESS_RCSA         = 0x20,
+	CSH_OPT_APRIORI_NEXT_CHANNEL = 0x40,
+};
+
+/* Accessor macros operating on a cswopts unsigned int value */
+#define IS_CSH_NONDFS_RANDOM_ENABLED(cswopts)        ((cswopts) & CSH_OPT_NONDFS_RANDOM)
+#define IS_CSH_IGNORE_CSA_DFS_ENABLED(cswopts)       ((cswopts) & CSH_OPT_IGNORE_CSA_DFS)
+#define IS_CSH_CAC_APUP_BYSTA_ENABLED(cswopts)       ((cswopts) & CSH_OPT_CAC_APUP_BYSTA)
+#define IS_CSH_CSA_APUP_BYSTA_ENABLED(cswopts)       ((cswopts) & CSH_OPT_CSA_APUP_BYSTA)
+#define IS_CSH_RCSA_TO_UPLINK_ENABLED(cswopts)       ((cswopts) & CSH_OPT_RCSA_TO_UPLINK)
+#define IS_CSH_PROCESS_RCSA_ENABLED(cswopts)         ((cswopts) & CSH_OPT_PROCESS_RCSA)
+#define IS_CSH_APRIORI_NEXT_CHANNEL_ENABLED(cswopts) ((cswopts) & CSH_OPT_APRIORI_NEXT_CHANNEL)
+
+/* Aggregate mask of all supported CSwOpts bits */
+#define CSH_OPT_VALID_MASK (CSH_OPT_NONDFS_RANDOM   | \
+			    CSH_OPT_IGNORE_CSA_DFS  | \
+			    CSH_OPT_CAC_APUP_BYSTA  | \
+			    CSH_OPT_CSA_APUP_BYSTA  | \
+			    CSH_OPT_RCSA_TO_UPLINK  | \
+			    CSH_OPT_PROCESS_RCSA    | \
+			    CSH_OPT_APRIORI_NEXT_CHANNEL)
+
+/**
+ * cswopts_validate - Check that a raw value fits within the supported mask
+ * @val: Raw (long int) value read from config or ctrl_iface
+ *
+ * Return: true if valid (non-negative and no unknown bits set), false otherwise.
+ */
+static inline bool cswopts_validate(long int val)
+{
+	return val >= 0 && !(val & ~CSH_OPT_VALID_MASK);
+}
+
 struct driver_dcs_config {
 	u8 cmd_type;
 	u16 dcs_enable;
