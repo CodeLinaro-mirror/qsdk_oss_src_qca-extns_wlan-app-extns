@@ -1574,6 +1574,39 @@ int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_data *hapd,
 	return 0;
 }
 
+/**
+ * hostapd_set_cswopts_extn - Validate and apply a CSwOpts value
+ * @conf_extn: Hostapd extension config structure
+ * @value: String value to parse (decimal or hex with 0x prefix)
+ *
+ * Return: 0 on success, -1 on invalid value.
+ */
+int hostapd_set_cswopts_extn(struct hostapd_config_extn *conf_extn,
+			     const char *value)
+{
+	unsigned int *cswopts = &conf_extn->cswopts;
+	long int val = strtol(value, NULL, 0);
+
+	if (!cswopts_validate(val)) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid CSwOpts value 0x%lx: valid mask is 0x%x",
+			   val, CSH_OPT_VALID_MASK);
+		return -1;
+	}
+
+	if (val == 0)
+		*cswopts = 0;
+	else
+		*cswopts |= (unsigned int)val;
+	wpa_printf(MSG_INFO, "CSwOpts updated to 0x%x", *cswopts);
+
+	if (IS_CSH_APRIORI_NEXT_CHANNEL_ENABLED(*cswopts))
+		wpa_printf(MSG_INFO,
+			   "CSwOpts: Apriori next channel (0x40) - Apriori channel selection feature is not yet supported");
+
+	return 0;
+}
+
 int hostapd_set_he_mcs_12_13_peer_cap_extn(struct hostapd_data *hapd)
 {
 	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
@@ -1697,6 +1730,8 @@ int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *valu
 	} else if (os_strcasecmp(cmd, "he_mcs_12_13_supp") == 0) {
 		val = !!atoi(value);
 		return hostapd_he_mcs_12_13_supp_extn(hapd, val);
+	} else if (os_strcasecmp(cmd, "CSwOpts") == 0) {
+		return hostapd_set_cswopts_extn(conf_extn, value);
 	}
 
 	return 0;
@@ -1719,6 +1754,12 @@ int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *cmd,
 				  conf_extn->he_mcs_12_13_enabled);
 		if (os_snprintf_error(buflen, res))
 			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "CSwOpts") == 0) {
+		res = os_snprintf(buf, buflen, "CSwOpts=0x%x\n", conf_extn->cswopts);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
 	}
 
 	return res;

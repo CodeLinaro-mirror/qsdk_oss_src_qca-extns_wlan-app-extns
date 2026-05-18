@@ -33,6 +33,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->skip_cac = 0;
 	conf_extn->ignorecac = 0;
 	conf_extn->ind_rptr = 0;
+	conf_extn->cswopts = 0;
 
 	/*configure qacs_default here*/
 	conf_extn->qacs_enable = 0;                 /* QACS disabled */
@@ -428,6 +429,9 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		conf->conf_extn.he_mcs_12_13_enabled = val;
+	} else if (os_strcasecmp(buf, "CSwOpts") == 0) {
+		if (hostapd_set_cswopts_extn(conf_extn, pos) < 0)
+			return 1;
 	} else {
 		return -1;
 	}

@@ -423,6 +423,17 @@ struct hostapd_config_extn {
 	u8 obss_snr_threshold;    /* OBSS SNR threshold */
 	u8 obss_rx_snr_threshold; /* OBSS RX SNR threshold */
 
+	/* Channel Switch Options bitmap
+	 * Bit 0 (0x1): Random non DFS channel selection
+	 * Bit 1 (0x2): Ignore CSA from Root AP on DFS
+	 * Bit 2 (0x4): CAC before joining Root AP
+	 * Bit 3 (0x8): Repeater AP propagates CSA received from RootAP
+	 * Bit 4 (0x10): Send RCSA on radar detection
+	 * Bit 5 (0x20): Process RCSA from downstream
+	 * Bit 6 (0x40): Apriori next channel propagation
+	 */
+	unsigned int cswopts;
+
 	/* Config to set EHT operation CCFS0 to 0*/
 	bool eht_config_ccfs0;
 
@@ -955,6 +966,20 @@ static inline int
 wpa_ctrl_chan_sw_finished_notify_extn(struct wpa_supplicant *wpa_s,
 				      const char *buf, char *reply,
 				      int reply_size)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
+wpa_config_process_cswopts_extn(struct wpa_config *config, int line,
+				const char *pos)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
+wpa_supplicant_ctrl_iface_set_cswopts_extn(struct wpa_supplicant *wpa_s,
+					   const char *value)
 {
 	return -EOPNOTSUPP;
 }
@@ -1766,6 +1791,10 @@ int wpa_ctrl_get_freq_list_extn(struct wpa_supplicant *wpa_s,
 int wpa_ctrl_chan_sw_finished_notify_extn(struct wpa_supplicant *wpa_s,
 					  const char *buf, char *reply,
 					  int reply_size);
+int wpa_config_process_cswopts_extn(struct wpa_config *config, int line,
+				    const char *pos);
+int wpa_supplicant_ctrl_iface_set_cswopts_extn(struct wpa_supplicant *wpa_s,
+					       const char *value);
 int compute_sec_channel_offset_extn(int primary_freq, int center_freq1,
 				    enum chan_width width);
 void wpa_get_bss_channel_oper_info_extn(struct wpa_supplicant *wpa_s,
@@ -1936,6 +1965,9 @@ void qacs_reset_scan_stats(struct hostapd_iface *iface,
 int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_data *hapd,
 						     struct hostapd_bss_config *conf,
 						     char *value);
+
+int hostapd_set_cswopts_extn(struct hostapd_config_extn *conf_extn,
+			     const char *value);
 
 void acs_request_scan_add_freqs_extn(struct hostapd_channel_data *chan,
 				     int **freq);

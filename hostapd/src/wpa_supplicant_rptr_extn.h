@@ -10,5 +10,9 @@
 
 void wpa_bss_check_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
 					    struct wpa_bss *bss);
+int wpa_config_process_cswopts_extn(struct wpa_config *config, int line,
+				    const char *pos);
+int wpa_supplicant_ctrl_iface_set_cswopts_extn(struct wpa_supplicant *wpa_s,
+					       const char *value);
 
 #endif /* WPA_SUPPLICANT_RPTR_EXTN_H */
