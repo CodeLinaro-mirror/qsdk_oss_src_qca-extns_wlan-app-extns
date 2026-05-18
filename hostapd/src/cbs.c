@@ -13,6 +13,7 @@
 #include "common/wpa_ctrl.h"
 #include "drivers/driver.h"
 #include "ap/ap_drv_ops.h"
+#include "ap/acs.h"
 #include "ap/hw_features.h"
 #include "utils/eloop.h"
 #include "cbs.h"
@@ -112,6 +113,7 @@ static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
 
 	cbs_params->cbs_enable = val;
 	cbs_params->best_chan = NULL;
+	acs_cleanup(hapd->iface);
 	qacs_reset_scan_stats(hapd->iface, mode);
 
 	ret = hapd->driver->set_cbs(hapd->drv_priv,
@@ -288,6 +290,7 @@ int hostapd_cbs_handle_single_channel_survey(struct hostapd_iface *iface,
 		dl_list_del(&survey->list);
 		dl_list_add_tail(&chan->survey_list, &survey->list);
 		hostapd_update_nf(iface, chan, survey);
+		iface->chans_surveyed++;
 		return 0;
 	}
 
@@ -314,21 +317,28 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 	if (!cbs_evt->scan_complete_freq)
 		return -1;
 
+	/* Pre processing of scan results per channel */
 	if (cbs_evt->status == VENDOR_SCAN_STATUS_NEW_RESULTS ||
 	    cbs_evt->status == VENDOR_SPLIT_SCAN_COMPLETE_PER_CHANNEL) {
 		if (hostapd_drv_get_survey(hapd, cbs_evt->scan_complete_freq))
 			wpa_printf(MSG_ERROR, "CBS: survey results failed");
-		acs_process_hostapd_scan_data_per_freq(
+		if (conf_extn->qacs_enable)
+			acs_process_hostapd_scan_data_per_freq(
 				iface, cbs_evt->scan_complete_freq);
 	}
 
 	if (cbs_evt->status == VENDOR_SCAN_STATUS_NEW_RESULTS) {
-		if (conf_extn->qacs_enable)
+		if (conf_extn->qacs_enable) {
 			conf_extn->cbs_params.best_chan =
 				qacs_find_ideal_chan(iface);
-		else
+		} else {
+			acs_study_options(iface);
 			conf_extn->cbs_params.best_chan =
 				acs_find_ideal_chan(iface);
+		}
+
+		if (conf_extn->cbs_params.cbs_enable == 1)
+			conf_extn->cbs_params.cbs_enable = 0;
 	}
 
 	return 0;

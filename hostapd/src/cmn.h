@@ -1770,6 +1770,7 @@ void hostapd_iface_set_supplicant_channel_extn(struct hostapd_iface *hapd_iface)
 int acs_get_bw_center_chan(int freq, enum bw_type bw);
 struct hostapd_channel_data *
 acs_find_ideal_chan(struct hostapd_iface *iface);
+int acs_study_options(struct hostapd_iface *iface);
 void hostapd_update_nf(struct hostapd_iface *iface,
 		       struct hostapd_channel_data *chan,
 		       struct freq_survey *survey);
