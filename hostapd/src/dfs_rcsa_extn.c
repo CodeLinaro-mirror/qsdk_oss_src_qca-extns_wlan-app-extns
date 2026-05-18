@@ -39,7 +39,7 @@
 #define HOSTAPD_RCSA_TX_COUNT 5
 #define HOSTAPD_RCSA_SWITCH_MODE 1
 #define HAPD_DFS_WAIT_FOR_RCSA_FROM_ROOT_DUR_US(bcn_intval) (HOSTAPD_RCSA_TX_COUNT * (bcn_intval) * 2)
-#define HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_SEC 3
+#define HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_US 1000
 #define HOSTAPD_RCSA_INTVAL_US (100 * 1000)
 
 /* RCSA config to be revisited once cswopt is introduced.
@@ -274,24 +274,24 @@ static int hostapd_ucode_notify_rcsa_tx(struct hostapd_iface *iface, u8 channel,
 	ucv_put(wpa_ucode_call(5));
 	ucv_gc(vm);
 
-	hostapd_set_rcsa_inprogress(iface, true);
-	if (!eloop_is_timeout_registered(hostapd_trigger_backhaul_sta_disconnect,
+	if (!hostapd_is_rcsa_inprogress(iface) &&
+	    !eloop_is_timeout_registered(hostapd_trigger_backhaul_sta_disconnect,
 					 iface, NULL)) {
 		eloop_register_timeout(1, HAPD_DFS_WAIT_FOR_RCSA_FROM_ROOT_DUR_US(100000),
 				       hostapd_trigger_backhaul_sta_disconnect,
 				       iface, NULL);
 	}
 	rcsa_ctx = &iface->iface_extn.rcsa_ctx;
-	if (!rcsa_ctx->rcsa_tx_cnt &&
+	if (!hostapd_is_rcsa_inprogress(iface) &&
 	    !eloop_is_timeout_registered(hostapd_trigger_rcsa_tx,
 					 iface, NULL)) {
-		rcsa_ctx->rcsa_tx_cnt = HOSTAPD_RCSA_TX_COUNT;
+		rcsa_ctx->rcsa_tx_cnt = HOSTAPD_RCSA_TX_COUNT - 1;
 		eloop_register_timeout(0, HOSTAPD_RCSA_INTVAL_US,
 				       hostapd_trigger_rcsa_tx,
 				       iface, NULL);
 	}
-	rcsa_ctx->rcsa_tx_cnt--;
 
+	hostapd_set_rcsa_inprogress(iface, true);
 	return 0;
 }
 
@@ -479,18 +479,20 @@ void hostapd_trigger_rcsa_tx(void *eloop_data, void *user_data)
 	if (hostapd_csa_in_progress(iface))
 		return;
 
-	if (!rcsa_ctx->rcsa_tx_cnt)
+	if (rcsa_ctx->rcsa_tx_cnt <= 0)
 		return;
 
+	rcsa_ctx->rcsa_tx_cnt--;
 	ieee80211_freq_to_chan(iface->freq, &chan);
 	hostapd_ucode_notify_rcsa_tx(iface, chan, iface->freq,
 				     IEEE80211_CSA_IE_MODE_OFFSET,
 				     rcsa_ctx->optional_ie_len ? rcsa_ctx->optional_ie : NULL,
 				     rcsa_ctx->optional_ie_len);
 
-	eloop_register_timeout(0, HOSTAPD_RCSA_INTVAL_US,
-			       hostapd_trigger_rcsa_tx,
-			       iface, NULL);
+	if (rcsa_ctx->rcsa_tx_cnt >= 0)
+		eloop_register_timeout(0, HOSTAPD_RCSA_INTVAL_US,
+				       hostapd_trigger_rcsa_tx,
+				       iface, NULL);
 }
 
 int hostapd_send_rcsa_extn(struct hostapd_iface *iface,
@@ -714,7 +716,7 @@ void hostapd_rcsa_trigger_channal_change(void *eloop_data, void *user_data)
 
 	rcsa_ctx->bh_discon_wait_cnt--;
 	if (hostapd_is_backhaul_sta_configured(iface)) {
-		eloop_register_timeout(HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_SEC, 0,
+		eloop_register_timeout(0, HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_US,
 				       hostapd_rcsa_trigger_channal_change,
 				       iface, NULL);
 		return;
@@ -745,7 +747,7 @@ void hostapd_rcsa_handle_csa_timeout(struct hostapd_iface *iface)
 	 */
 	if (!eloop_is_timeout_registered(hostapd_rcsa_trigger_channal_change,
 					 iface, NULL)) {
-		eloop_register_timeout(HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_SEC, 0,
+		eloop_register_timeout(0, HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_US,
 				       hostapd_rcsa_trigger_channal_change,
 				       iface, NULL);
 	}
