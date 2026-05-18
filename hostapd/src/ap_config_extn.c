@@ -36,7 +36,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->cswopts = 0;
 
 	/*configure qacs_default here*/
-	conf_extn->qacs_enable = 0;                 /* QACS disabled */
+	conf_extn->qacs_enable = 1;                 /* QACS enabled */
 	conf_extn->qacs_conf.wradar = 1;            /* wradar reject enabled */
 	conf_extn->qacs_conf.rep_txpower_policy = 0;/* Option pwr disabled */
 	conf_extn->qacs_conf.rank_en = 1;           /* rank enabled */
