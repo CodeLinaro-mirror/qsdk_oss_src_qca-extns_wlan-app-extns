@@ -20,6 +20,7 @@
 #include "cmn.h"
 #include "dcs.h"
 #include "common/hw_features_common.h"
+#include "cbs.h"
 
 static void hostapd_dcs_reenable_timeout(void *eloop_ctx, void *timeout_ctx);
 static void hostapd_dcs_apply_enable_bitmap(struct hostapd_iface *iface,
@@ -1481,9 +1482,13 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 
 		if (!hostapd_dcs_set_in_progress(iface, type))
 			return;
-		acs_ret = hostapd_trigger_dynamic_acs(link_hapd,
-						      CHANNEL_CHANGE_CSA);
-		if (acs_ret < 0) {
+
+		acs_ret = hostapd_cbs_trigger_csa(link_hapd);
+		if (acs_ret)
+			acs_ret = hostapd_trigger_dynamic_acs(link_hapd,
+				CHANNEL_CHANGE_CSA);
+
+		if (acs_ret) {
 			hostapd_dcs_restore_extn(iface,
 						 "dynamic ACS start failed");
 			return;

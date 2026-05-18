@@ -803,9 +803,9 @@ void acs_modify_scan_params_extn(struct hostapd_iface *iface,
 	}
 }
 
-static int
-hostapd_trigger_channel_switch_for_acs(struct hostapd_iface *iface,
-                                       struct hostapd_channel_data *chan)
+int
+hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
+				    struct hostapd_channel_data *chan)
 {
 	struct csa_settings settings;
 	int i;
@@ -991,7 +991,7 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 		return 0;
 	}
 
-	cs_err = hostapd_trigger_channel_switch_for_acs(iface, chan);
+	cs_err = hostapd_trigger_channel_switch_extn(iface, chan);
 	if (cs_err) {
 		wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
 			   cs_err);
