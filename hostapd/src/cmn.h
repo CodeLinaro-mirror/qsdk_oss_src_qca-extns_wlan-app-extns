@@ -441,6 +441,11 @@ enum dynamic_acs_action_extn {
 
 #define HOSTAPD_DCS_REENABLE_TIME_SEC DCS_ENABLE_TIME
 
+struct hostapd_rcsa_ctx {
+	bool rcsa_inprogress;
+	s8 bh_discon_wait_cnt;
+};
+
 struct hostapd_iface_extn {
 	struct esp_extn esp;
 	u16 csa_bitmap;
@@ -477,6 +482,7 @@ struct hostapd_iface_extn {
 	struct hostapd_hw_blocklist_info *hw_blocklist_info;
 	unsigned int num_hw_blocklist;
 	bool check_hw_blocklist;
+	struct hostapd_rcsa_ctx rcsa_ctx;
 };
 
 struct hostapd_channel_data_extn {

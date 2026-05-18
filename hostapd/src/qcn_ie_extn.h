@@ -44,5 +44,5 @@
 #define QCN_HE_MCS_12_13_MASK			0xff
 #define QCN_HE_MCS_12_13_EXTRACT_NSS(c, s)	(((c) >> (s)) & QCN_HE_MCS_12_13_MASK)
 
-
+#define OUI_QCOM				0x00037f
 #endif /* QCN_IE_EXTN_H */
