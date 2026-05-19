@@ -754,8 +754,16 @@ int wpa_supplicant_ctrl_iface_set_cswopts_extn(struct wpa_supplicant *wpa_s,
 
 	if (val == 0)
 		wpa_s->conf->cswopts = 0;
-	else
+	else {
+		if ((IS_CSH_RCSA_TO_UPLINK_ENABLED(*value) ||
+		     IS_CSH_PROCESS_RCSA_ENABLED(*value)) &&
+		    wpa_s->conf->uplink_csa) {
+			wpa_printf(MSG_INFO, "RCSA and Uplink CSA cann't co-exists! disabling");
+			return -1;
+		}
+
 		wpa_s->conf->cswopts |= (unsigned int)val;
+	}
 
 	wpa_printf(MSG_INFO, "Updated CSwOpts to 0x%x", wpa_s->conf->cswopts);
 	if (IS_CSH_APRIORI_NEXT_CHANNEL_ENABLED(wpa_s->conf->cswopts))
