@@ -18,6 +18,7 @@
 #include "ap/hw_features.h"
 #include "ap/ap_drv_ops.h"
 #include "hostapd_rptr_extn.h"
+#include "block_channel.h"
 #include "cmn.h"
 #include "cbs.h"
 #include "ap/ieee802_11.h"

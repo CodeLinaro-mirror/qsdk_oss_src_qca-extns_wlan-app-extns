@@ -301,6 +301,13 @@ union wpa_event_data_extn {
 	struct scan_results_event scan_results_event;
 };
 
+#define EXTN_MAX_BLOCK_CHAN_LIST 255
+
+struct hostapd_extn_block_chan_list {
+	u8 n_chan;
+	u8 chans[EXTN_MAX_BLOCK_CHAN_LIST];
+};
+
 struct ieee802_11_elems_extn {
 	const u8 *eht_240mhz_capab;
 	u8 eht_240mhz_capab_len;
@@ -437,6 +444,7 @@ struct hostapd_config_extn {
 	struct qacs_conf_extn qacs_conf;
 	struct chan_params cur_chan_params;
 	struct dcs_conf_extn dcs_conf;
+	struct hostapd_extn_block_chan_list block_chan_list;
 
 	/*
 	 * Primary channel list – restricts ACS, DFS channel hopping, and
