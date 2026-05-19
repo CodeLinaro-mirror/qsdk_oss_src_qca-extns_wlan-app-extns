@@ -1521,7 +1521,9 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 	}
 
 	if (type != DCS_OBSS_INTF) {
-		intf_bitmap = DCS_SEG_PRI20;
+		intf_bitmap = dcs_intf_event->chan_bw_interference_bitmap ?
+			      dcs_intf_event->chan_bw_interference_bitmap :
+			      DCS_SEG_PRI20;
 
 		ret = find_random_channel(iface, &new_freq, freq, cf1, cf2,
 					  intf_bitmap, ch_width, &new_chan_width,
