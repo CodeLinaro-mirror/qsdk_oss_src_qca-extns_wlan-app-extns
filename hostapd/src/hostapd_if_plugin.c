@@ -26,6 +26,14 @@
 #include "utils/bitfield.h"
 #include "common/wpa_ctrl.h"
 #include "ap/hostapd.h"
+#include "ap/wpa_auth.h"
+#include "ap/wpa_auth_i.h"
+#include "common/ieee802_11_defs.h"
+#include "common/ieee802_11_common.h"
+#include "common/wpa_common.h"
+#include "crypto/sha256.h"
+#include "crypto/sha384.h"
+#include "crypto/sha512.h"
 #include "hostapd_if_plugin.h"
 
 #define MAX_SIZE 100
@@ -94,6 +102,11 @@ static const struct hostapd_if_action_policy_entry hostapd_if_action_policy_map[
 	  "external_plugin_action_policy_vendor" },
 };
 
+static struct dl_list plugin_hapd_iface_list = {
+	.next = &plugin_hapd_iface_list,
+	.prev = &plugin_hapd_iface_list,
+};
+
 /* Defining the deque structure */
 struct deque {
     struct invoke_plugin_datablock *datablocks[MAX_SIZE];
@@ -119,6 +132,7 @@ struct invoke_plugin_datablock {
 				HOSTAPD_IF_EVENT_ASSOC_REQ,
 				HOSTAPD_IF_EVENT_M2_NOTIFY,
 				HOSTAPD_IF_EVENT_ACTION_REQ,
+				HOSTAPD_IF_EVENT_REMOTE_AUTH_REQ,
 			} req_type;
 		} request;
 	} data;
@@ -400,6 +414,32 @@ static void invoke_auth(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 	return;
 }
 
+static void invoke_remote_auth(char *ifname, uint8_t *sta_mac,
+			       const uint8_t *ies, uint16_t ies_len,
+			       struct hostapd_if_frame_ctx *ctx)
+{
+	/* prepare datablock to push to deque for secondary thread */
+	struct invoke_plugin_datablock *datablock;
+	struct hostapd_if_frame_ctx *ctx_copy;
+
+	datablock = calloc(sizeof(*datablock), 1);
+	ctx_copy = calloc(sizeof(*ctx_copy), 1);
+	*ctx_copy = *ctx;
+
+	os_strlcpy(datablock->ifname, ifname, sizeof(datablock->ifname));
+	os_memcpy(datablock->sta_mac, sta_mac, sizeof(datablock->sta_mac));
+	datablock->data.request.frame = ies;
+	datablock->data.request.frame_len = ies_len;
+	datablock->data.request.ctx = ctx_copy;
+	datablock->data.request.req_type = HOSTAPD_IF_EVENT_REMOTE_AUTH_REQ;
+
+	/* push datablock to deque */
+	enqueue_rear(datablock_deque, datablock);
+	wpa_printf(MSG_DEBUG, "queued remote auth request for STA " MACSTR "\n",
+		   MAC2STR(datablock->sta_mac));
+	return;
+}
+
 static void notify_assoc(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 			 uint16_t frame_len, struct hostapd_if_frame_ctx *ctx)
 {
@@ -521,25 +561,182 @@ static void notify_disassoc(char *ifname, uint8_t *sta_mac, const void *frame,
 		   reason, frame_len);
 }
 
+struct wpa_ft_pmk_r1_sa {
+        struct dl_list list;
+        u8 pmk_r1[PMK_LEN_MAX];
+        size_t pmk_r1_len;
+        u8 pmk_r1_name[WPA_PMK_NAME_LEN];
+        u8 spa[ETH_ALEN];
+        int pairwise; /* Pairwise cipher suite, WPA_CIPHER_* */
+        struct vlan_description *vlan;
+        u8 *identity;
+        size_t identity_len;
+        u8 *radius_cui;
+        size_t radius_cui_len;
+        os_time_t session_timeout; /* 0 for no expiration */
+        /* TODO: radius_class, EAP type */
+};
+
+struct wpa_ft_pmk_cache {
+        struct dl_list pmk_r1; /* struct wpa_ft_pmk_r1_sa */
+        unsigned int ref_count;
+};
+
+
+struct plugin_hapd_iface
+{
+	struct dl_list list;
+	char ifname[IFNAMSIZ+1];
+	struct hostapd_data *hapd;
+	struct wpa_ft_pmk_cache ft_pmk_cache;
+};
+
+static struct plugin_hapd_iface *plugin_hapd_iface_get(const char *ifname)
+{
+	struct plugin_hapd_iface *iface;
+
+	dl_list_for_each(iface, &plugin_hapd_iface_list,
+			 struct plugin_hapd_iface, list) {
+		if (os_strcmp(iface->ifname, ifname) == 0)
+			return iface;
+	}
+	return NULL;
+}
+
+static int pull_pmk_r1(char *ifname, uint8_t *sta_mac,
+		       uint8_t pmk_r1_name[WPA_PMK_NAME_LEN],
+		       uint8_t pmk_r1[PMK_LEN_MAX], size_t *pmk_r1_len,
+		       int *pairwise, int *session_timeout,
+		       uint8_t identity[MAX_RADIUS_CUI_LEN],
+		       size_t *identity_len,
+		       uint8_t radius_cui[MAX_RADIUS_CUI_LEN],
+		       size_t *radius_cui_len)
+{
+	struct plugin_hapd_iface *iface;
+	struct wpa_ft_pmk_r1_sa *r1;
+	struct os_reltime now;
+
+	if (!ifname || !sta_mac || !pmk_r1_name)
+		return -1;
+
+	iface = plugin_hapd_iface_get(ifname);
+	if (!iface) {
+		wpa_printf(MSG_DEBUG,
+			   "plugin: pull_pmk_r1: no iface found for %s\n",
+			   ifname);
+		return -1;
+	}
+
+	os_get_reltime(&now);
+
+	dl_list_for_each(r1, &iface->ft_pmk_cache.pmk_r1,
+			 struct wpa_ft_pmk_r1_sa, list) {
+		if (os_memcmp(r1->spa, sta_mac, ETH_ALEN) != 0)
+			continue;
+		if (os_memcmp(r1->pmk_r1_name, pmk_r1_name,
+			      WPA_PMK_NAME_LEN) != 0)
+			continue;
+
+		/* Skip expired entries */
+		if (r1->session_timeout > 0 &&
+		    r1->session_timeout < now.sec) {
+			wpa_printf(MSG_DEBUG,
+				   "plugin: pull_pmk_r1: entry expired for "
+				   MACSTR "\n", MAC2STR(sta_mac));
+			continue;
+		}
+
+		os_memcpy(pmk_r1, r1->pmk_r1, r1->pmk_r1_len);
+		*pmk_r1_len = r1->pmk_r1_len;
+		*pairwise = r1->pairwise;
+
+		if (r1->session_timeout > 0)
+			*session_timeout = (int)(r1->session_timeout - now.sec);
+		else
+			*session_timeout = 0;
+
+		if (identity && identity_len) {
+			if (r1->identity && r1->identity_len > 0) {
+				size_t copy_len = r1->identity_len;
+
+				if (copy_len > MAX_RADIUS_CUI_LEN)
+					copy_len = MAX_RADIUS_CUI_LEN;
+				os_memcpy(identity, r1->identity, copy_len);
+				*identity_len = copy_len;
+			} else {
+				*identity_len = 0;
+			}
+		}
+
+		if (radius_cui && radius_cui_len) {
+			if (r1->radius_cui && r1->radius_cui_len > 0) {
+				size_t copy_len = r1->radius_cui_len;
+
+				if (copy_len > MAX_RADIUS_CUI_LEN)
+					copy_len = MAX_RADIUS_CUI_LEN;
+				os_memcpy(radius_cui, r1->radius_cui, copy_len);
+				*radius_cui_len = copy_len;
+			} else {
+				*radius_cui_len = 0;
+			}
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "plugin: pull_pmk_r1: found entry for " MACSTR
+			   " on iface %s\n", MAC2STR(sta_mac), ifname);
+		return 0;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "plugin: pull_pmk_r1: no entry found for " MACSTR
+		   " on iface %s\n", MAC2STR(sta_mac), ifname);
+	return -1;
+}
+
 static void interface_create(char *ifname, void *ctx)
 {
+	struct plugin_hapd_iface *iface;
+
 
 	size_t i;
 	struct hostapd_data *hapd;
 	struct hostapd_if_frame_category cat;
 	enum hostapd_if_frame_policy auth_policy, deauth_policy,
 				     disassoc_policy, assoc_policy,
-				     action_policy;
+				     action_policy, remote_auth_policy;
 
+	hapd = ctx;
 	if (!ifname)
 		return;
 
 	if (!test_plugin.register_frame)
 		return;
 
-	hapd = ctx;
+	iface = plugin_hapd_iface_get(ifname);
+	if (!iface) {
+		iface = os_zalloc(sizeof(*iface));
+		if (!iface) {
+			wpa_printf(MSG_ERROR,
+				   "plugin: failed to alloc iface for %s\n",
+				   ifname);
+			return;
+		}
+		os_strlcpy(iface->ifname, ifname, sizeof(iface->ifname));
+		iface->hapd = hapd;
+		dl_list_init(&iface->ft_pmk_cache.pmk_r1);
+		dl_list_add_tail(&plugin_hapd_iface_list, &iface->list);
+		wpa_printf(MSG_DEBUG,
+			   "plugin: created plugin_hapd_iface for %s\n",
+			   ifname);
+	} else {
+		wpa_printf(MSG_DEBUG,
+			   "plugin: plugin_hapd_iface for %s already exists\n",
+			   ifname);
+	}
+
 
 	auth_policy = hapd->conf->plugin.external_plugin_auth_policy;
+	remote_auth_policy = hapd->conf->plugin.external_plugin_remote_auth_policy;
 	deauth_policy = hapd->conf->plugin.external_plugin_deauth_policy;
 	disassoc_policy = hapd->conf->plugin.external_plugin_disassoc_policy;
 	assoc_policy = hapd->conf->plugin.external_plugin_assoc_policy;
@@ -586,6 +783,17 @@ static void interface_create(char *ifname, void *ctx)
 		test_plugin.register_frame(ctx, &cat, disassoc_policy);
 		wpa_printf(MSG_DEBUG, "registered DISASSOC policy %d\n",
 			   disassoc_policy);
+	}
+
+	if (((uint32_t)remote_auth_policy) > HOSTAPD_IF_FRAME_INVOKE) {
+		wpa_printf(MSG_ERROR, "ERROR!! remote_auth_policy error %d\n",
+			   remote_auth_policy);
+	} else {
+		memset(&cat, 0, sizeof(cat));
+		cat.type = HOSTAPD_IF_FRAME_TYPE_REMOTE_AUTH;
+		test_plugin.register_frame(ctx, &cat, remote_auth_policy);
+		wpa_printf(MSG_ERROR, "registered REMOTE-AUTH policy %d\n",
+			   remote_auth_policy);
 	}
 
 	for (i = 0; i < ARRAY_SIZE(hostapd_if_action_policy_map); i++) {
@@ -691,6 +899,110 @@ void process_assoc_request(struct invoke_plugin_datablock *datablock,
 	}
 }
 
+/*
+ * process_ft_pmk_r1 - Given raw IEs, derive PMK-R1-Name from the PMKID
+ * (PMK-R0-Name) using wpa_derive_pmk_r1_name, look up the matching PMK-R1
+ * in the plugin cache, and return an allocated hostapd_if_pmk_r1 on success
+ * (caller must assign and eventually free), or NULL if not found.
+ *
+ * Used by both FT-over-Air (process_auth_request) and FT-over-DS
+ * (process_remote_auth_request).  The caller is responsible for extracting
+ * the IEs from the frame (if needed) and for writing the returned pointer
+ * into the appropriate resp_ctx field.
+ */
+static struct hostapd_if_pmk_r1 *
+process_ft_pmk_r1(const char *ifname, const u8 *sta_mac,
+		  const u8 *ies, size_t ies_len)
+{
+	const u8 *rsn_ie, *pmk_r0_name;
+	size_t pmk_len;
+	struct wpa_ie_data ie_data;
+	struct plugin_hapd_iface *iface;
+	struct wpa_ft_pmk_r1_sa *r1 = NULL, *tmp;
+	struct hostapd_if_pmk_r1 *pmk_r1_info;
+	u8 pmk_r1_name[WPA_PMK_NAME_LEN];
+	const u8 *r1kh_id;
+
+	rsn_ie = get_ie(ies, ies_len, WLAN_EID_RSN);
+	if (!rsn_ie)
+		return NULL;
+
+	if (wpa_parse_wpa_ie_rsn(rsn_ie, 2 + rsn_ie[1], &ie_data) != 0)
+		return NULL;
+
+	if (!ie_data.num_pmkid || !ie_data.pmkid)
+		return NULL;
+
+	/* ie_data.pmkid is the PMK-R0-Name, not the PMK-R1-Name */
+	pmk_r0_name = ie_data.pmkid;
+	wpa_printf(MSG_DEBUG, "FT: RSN IE contains PMKID (PMK-R0-Name) for STA "
+		   MACSTR, MAC2STR(sta_mac));
+
+	iface = plugin_hapd_iface_get(ifname);
+	if (!iface || !iface->hapd || !iface->hapd->wpa_auth)
+		return NULL;
+
+	r1kh_id = iface->hapd->wpa_auth->conf.r1_key_holder;
+
+	/*
+	 * Derive PMK-R1-Name from PMK-R0-Name, R1KH-ID and STA MAC.
+	 * Try all possible PMK lengths (SHA-256/384/512) as done in
+	 * wpa_ft_process_auth_req.
+	 */
+	for (pmk_len = SHA256_MAC_LEN;
+	     pmk_len <= SHA512_MAC_LEN;
+	     pmk_len += 16) {
+		if (wpa_derive_pmk_r1_name(pmk_r0_name, r1kh_id,
+					   sta_mac,
+					   pmk_r1_name, pmk_len) < 0)
+			continue;
+
+		dl_list_for_each(tmp, &iface->ft_pmk_cache.pmk_r1,
+				 struct wpa_ft_pmk_r1_sa, list) {
+			if (os_memcmp(tmp->pmk_r1_name, pmk_r1_name,
+				      WPA_PMK_NAME_LEN) == 0) {
+				r1 = tmp;
+				break;
+			}
+		}
+
+		if (r1)
+			break;
+	}
+
+	if (!r1)
+		return NULL;
+
+	wpa_printf(MSG_DEBUG, "FT: found PMK-R1 in plugin cache for STA " MACSTR,
+		   MAC2STR(sta_mac));
+
+	pmk_r1_info = os_zalloc(sizeof(*pmk_r1_info));
+	if (!pmk_r1_info)
+		return NULL;
+
+	os_memcpy(pmk_r1_info->pmk_r1, r1->pmk_r1, r1->pmk_r1_len);
+	pmk_r1_info->pmk_r1_len = r1->pmk_r1_len;
+	os_memcpy(pmk_r1_info->pmk_r1_name, r1->pmk_r1_name, PMK_R1_NAME_LEN);
+	pmk_r1_info->pairwise = r1->pairwise;
+
+	if (r1->identity && r1->identity_len > 0) {
+		size_t len = MIN(r1->identity_len, MAX_IDENTITY_LEN);
+
+		os_memcpy(pmk_r1_info->identity, r1->identity, len);
+		pmk_r1_info->identity_len = len;
+	}
+
+	if (r1->radius_cui && r1->radius_cui_len > 0) {
+		size_t len = MIN(r1->radius_cui_len, MAX_RADIUS_CUI_LEN);
+
+		os_memcpy(pmk_r1_info->radius_cui, r1->radius_cui, len);
+		pmk_r1_info->radius_cui_len = len;
+	}
+
+	return pmk_r1_info;
+}
+
+
 static
 void process_auth_request(struct invoke_plugin_datablock *datablock,
 			  struct hostapd_if_frame_ctx *ctx,
@@ -735,6 +1047,26 @@ void process_auth_request(struct invoke_plugin_datablock *datablock,
 			   auth_resp_ies_len,
 			   MAC2STR(datablock->sta_mac));
 	}
+
+	/* FT-over-Air: extract IEs from the 802.11 auth frame and look up
+	 * PMK-R1 in the plugin cache; write result into auth_resp. */
+	if (ctx->data.auth_req.auth_alg == WLAN_AUTH_FT &&
+	    datablock->data.request.frame &&
+	    datablock->data.request.frame_len >
+	    offsetof(struct ieee80211_mgmt, u.auth.variable)) {
+		const struct ieee80211_mgmt *mgmt =
+			(const struct ieee80211_mgmt *)
+			datablock->data.request.frame;
+		const u8 *ies = mgmt->u.auth.variable;
+		size_t ies_len = datablock->data.request.frame_len -
+			offsetof(struct ieee80211_mgmt, u.auth.variable);
+
+		resp_ctx->data.auth_resp.pmk_r1 =
+			process_ft_pmk_r1(datablock->ifname,
+					   datablock->sta_mac,
+					   ies, ies_len);
+	}
+
 	if (global_conf.auth.send_response) {
 		wpa_printf(MSG_DEBUG,
 			   "sending auth response for STA " MACSTR " with status_code=%d (%s)\n",
@@ -744,6 +1076,35 @@ void process_auth_request(struct invoke_plugin_datablock *datablock,
 		test_plugin.auth_response(datablock->ifname,
 					    datablock->sta_mac, resp_ctx);
 	}
+}
+
+static void
+process_remote_auth_request(struct invoke_plugin_datablock *datablock,
+			     struct hostapd_if_frame_ctx *ctx,
+			     struct hostapd_if_frame_ctx *resp_ctx)
+{
+	memset(resp_ctx, 0, sizeof(*resp_ctx));
+	resp_ctx->rx_link_id = ctx->rx_link_id;
+	resp_ctx->status_code = ctx->status_code;
+	resp_ctx->data.remote_auth_resp.is_ml_sta =
+		ctx->data.remote_auth_req.is_ml_sta;
+
+	/* FT-over-DS: IEs are passed directly (no 802.11 frame header).
+	 * Reuse process_ft_pmk_r1 and write result into remote_auth_resp. */
+	if (datablock->data.request.frame &&
+	    datablock->data.request.frame_len > 0) {
+		resp_ctx->data.remote_auth_resp.pmk_r1 =
+			process_ft_pmk_r1(datablock->ifname,
+					   datablock->sta_mac,
+					   datablock->data.request.frame,
+					   datablock->data.request.frame_len);
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "sending remote auth response for STA " MACSTR "\n",
+		   MAC2STR(datablock->sta_mac));
+	test_plugin.remote_auth_response(datablock->ifname,
+					 datablock->sta_mac, resp_ctx);
 }
 
 static
@@ -767,6 +1128,10 @@ void process_request(struct invoke_plugin_datablock *datablock,
 				   MAC2STR(datablock->sta_mac));
 			test_plugin.trigger_eapol_m3(datablock->ifname,
 						     datablock->sta_mac);
+			break;
+
+		case HOSTAPD_IF_EVENT_REMOTE_AUTH_REQ:
+			process_remote_auth_request(datablock, ctx, resp_ctx);
 			break;
 
 		default:
@@ -918,6 +1283,7 @@ enum hostapd_if_eloop_type hostapd_if_plugin_init(void *arg)
 	 */
 	test_plugin.invoke_assoc         = invoke_assoc,
 	test_plugin.invoke_auth          = invoke_auth,
+	test_plugin.invoke_remote_auth   = invoke_remote_auth,
 	test_plugin.notify_assoc         = notify_assoc,
 	test_plugin.notify_auth          = notify_auth,
 	test_plugin.notify_disassoc      = notify_disassoc,
@@ -926,6 +1292,7 @@ enum hostapd_if_eloop_type hostapd_if_plugin_init(void *arg)
 	test_plugin.offload_action       = offload_action,
 	test_plugin.notify_event         = notify_event,
 	test_plugin.interface_create     = interface_create,
+	test_plugin.pull_pmk_r1          = pull_pmk_r1;
 
 	hostapd_plugin_register(&test_plugin);
 	return HOSTAPD_IF_ELOOP_ROUTING;
@@ -1684,6 +2051,77 @@ int hostapd_ctrl_iface_configure_plugin(struct hostapd_data *hapd,
 	}
 }
 
+void hostapd_if_plugin_store_pmk_r1(const char *ifname, const u8 *spa,
+				    const u8 *pmk_r1, size_t pmk_r1_len,
+				    const u8 *pmk_r1_name, int pairwise,
+				    int expires_in, int session_timeout,
+				    const u8 *identity, size_t identity_len,
+				    const u8 *radius_cui,
+				    size_t radius_cui_len)
+{
+	struct plugin_hapd_iface *iface;
+	struct wpa_ft_pmk_r1_sa *r1;
+	struct os_reltime now;
+
+	if (!test_harness_thread_running)
+		return;
+
+	if (!ifname) {
+		wpa_printf(MSG_ERROR, "plugin: store_pmk_r1 called with NULL ifname\n");
+		return;
+	}
+
+	iface = plugin_hapd_iface_get(ifname);
+	if (!iface) {
+		wpa_printf(MSG_ERROR,
+			   "plugin: store_pmk_r1: no iface found for %s\n",
+			   ifname);
+		return;
+	}
+
+	os_get_reltime(&now);
+
+	r1 = os_zalloc(sizeof(*r1));
+	if (!r1) {
+		wpa_printf(MSG_ERROR,
+			   "plugin: failed to alloc PMK-R1 entry for %s\n",
+			   ifname);
+		return;
+	}
+
+	os_memcpy(r1->pmk_r1, pmk_r1, pmk_r1_len);
+	r1->pmk_r1_len = pmk_r1_len;
+	os_memcpy(r1->pmk_r1_name, pmk_r1_name, WPA_PMK_NAME_LEN);
+	r1->pairwise = pairwise;
+	os_memcpy(r1->spa, spa, ETH_ALEN);
+
+	if (identity && identity_len > 0) {
+		r1->identity = os_malloc(identity_len);
+		if (r1->identity) {
+			os_memcpy(r1->identity, identity, identity_len);
+			r1->identity_len = identity_len;
+		}
+	}
+
+	if (radius_cui && radius_cui_len > 0) {
+		r1->radius_cui = os_malloc(radius_cui_len);
+		if (r1->radius_cui) {
+			os_memcpy(r1->radius_cui, radius_cui, radius_cui_len);
+			r1->radius_cui_len = radius_cui_len;
+		}
+	}
+
+	if (session_timeout > 0)
+		r1->session_timeout = now.sec + session_timeout;
+
+	dl_list_add(&iface->ft_pmk_cache.pmk_r1, &r1->list);
+	wpa_ft_clear_pmk_r1(iface->hapd->wpa_auth, spa, pmk_r1_name);
+
+	wpa_printf(MSG_DEBUG,
+		   "plugin: stored PMK-R1 in cache for iface %s (pairwise=%d expires_in=%d)\n",
+		   ifname, pairwise, expires_in);
+}
+
 int hostapd_config_fill_plugin(struct hostapd_bss_config *bss, const char *buf,
 			       char *pos)
 {
@@ -1691,6 +2129,8 @@ int hostapd_config_fill_plugin(struct hostapd_bss_config *bss, const char *buf,
 
 	if (os_strcmp(buf, "external_plugin_auth_policy") == 0) {
 		bss->plugin.external_plugin_auth_policy = atoi(pos);
+	} else if (os_strcmp(buf, "external_plugin_remote_auth_policy") == 0) {
+		bss->plugin.external_plugin_remote_auth_policy = atoi(pos);
 	} else if (os_strcmp(buf, "external_plugin_assoc_policy") == 0) {
 		bss->plugin.external_plugin_assoc_policy = atoi(pos);
 	} else if (os_strcmp(buf, "external_plugin_deauth_policy") == 0) {
