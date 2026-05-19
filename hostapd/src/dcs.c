@@ -544,6 +544,7 @@ static int hostapd_ctrl_iface_set_wlan_intr_params(struct hostapd_data *hapd,
 
 	os_memset(&conf, 0, sizeof(conf));
 	conf.cmd_type = SET_DCS_CONFIG;
+	conf.dcs_enable = conf_extn->dcs_conf.enable_bitmap;
 
 	/* No defaults here; only send user-configured overrides via valid_mask */
 
