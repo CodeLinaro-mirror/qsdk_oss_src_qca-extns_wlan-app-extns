@@ -559,7 +559,7 @@ struct hostapd_rcsa_ctx {
 	s8 bh_discon_wait_cnt;
 	u8 optional_ie[RCSA_MAX_OPTIONAL_IE_LEN];
 	u8 optional_ie_len;
-	u8 rcsa_tx_cnt;
+	s8 rcsa_tx_cnt;
 };
 
 struct hostapd_iface_extn {
