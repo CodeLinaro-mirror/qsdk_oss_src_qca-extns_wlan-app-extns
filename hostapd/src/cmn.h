@@ -434,6 +434,7 @@ struct hostapd_config_extn {
 	int ind_rptr;    /* 1 - Independent Rep; 0 - Dependent */
 	bool qacs_enable;
 	bool uplink_csa;
+	bool rpt_max_phy;
 
 	/* Indicates whether HE MCS 12/13 support is enabled
 	 * (the support is enabled by default)
