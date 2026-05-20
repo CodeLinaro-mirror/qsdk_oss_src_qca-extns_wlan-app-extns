@@ -116,7 +116,9 @@ int hostapd_cli_cmd_get_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *ar
 		"get_txpwr_opt        : get tx power optimization state\n" \
 		"6g_only_psc <1|0>    : restrict 6 GHz to PSC channels only\n" \
 		"get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n" \
-		"acs invoke <0|1>     : invoke ACS (0=dynamicACS+CSA)|(1=DynamicACS)\n"}, \
+		"acs invoke <0|1>     : invoke ACS (0=dynamicACS+CSA)|(1=DynamicACS)\n" \
+		"show_neighbor_report : print ACS neighbor report\n" \
+	}, \
 	{ "cbs", hostapd_cli_cbs_extn, NULL, \
 		"enable <0|1|2>       : enable/disable cbs scan (0:disable | 1:enable CBS scan once | 2:enable cbs scan to run continuously)\n" \
 		"g_enable             : get continuous background scan enable state\n" \

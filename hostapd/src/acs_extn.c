@@ -153,6 +153,7 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs set_block_chan_list  : set the channels to blocked state\n"
 		"  acs get_block_chan_list  : get the blocked channels\n"
 		"  acs clear_block_chan_list: clear the blocked channels \n"
+		"  acs show_neighbor_report : print ACS neighbor report\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -339,10 +340,110 @@ static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
 	free(acs_report);
 	return len;
 }
+
+static int print_buf_neighbor_report(const struct qacs_neighbor_report *report,
+				     u8 nentries,
+				     char *reply, size_t reply_size)
+{
+	char *pos = reply;
+	char *end = reply + reply_size;
+	int ret;
+	u8 i;
+
+	ret = os_snprintf(pos, end - pos,
+			  "Index | Band | Channel | NBSS | SSID             | BSSID             | SNR | PHYTYPE | CHANWIDTH | Power info\n"
+			  "----------------------------------------------------------------------------------------------------------------\n");
+	if (os_snprintf_error(end - pos, ret))
+		return -1;
+	pos += ret;
+
+	for (i = 0; i < nentries; i++) {
+		const struct qacs_neighbor_report *nr = &report[i];
+		char ssid_buf[MAX_SSID_LEN + 1];
+		char bssid_buf[18];
+		const char *ssid;
+		const char *band;
+		const char *phytype = nr->phytype_disp ? nr->phytype_disp : "UNSPEC";
+		const char *chanwidth = nr->chan_width_disp[0] ? nr->chan_width_disp : "UNSPEC";
+
+		switch (nr->band) {
+		case ICM_BAND_2_4G:
+			band = "2.4G";
+			break;
+		case ICM_BAND_5G:
+			band = "5G";
+			break;
+		case ICM_BAND_6G:
+			band = "6G";
+			break;
+		default:
+			band = "UNK";
+			break;
+		}
+
+		os_memcpy(ssid_buf, nr->ssid, MAX_SSID_LEN);
+		ssid_buf[MAX_SSID_LEN] = '\0';
+		ssid = ssid_buf[0] ? ssid_buf : "<hidden>";
+
+		os_snprintf(bssid_buf, sizeof(bssid_buf), "%02x:%02x:%02x:%02x:%02x:%02x",
+			    nr->bssid[0], nr->bssid[1], nr->bssid[2],
+			    nr->bssid[3], nr->bssid[4], nr->bssid[5]);
+
+		ret = os_snprintf(pos, end - pos,
+				  "%5u | %-4.4s | %7u | %4u | %-16.16s | %-17.17s | %3d | %-7.7s | %-9.9s | %10d\n",
+				  (unsigned int) (i + 1), band,
+				  (unsigned int) nr->chan, (unsigned int) nr->nbss,
+				  ssid, bssid_buf, nr->snr, phytype, chanwidth,
+				  (int) nr->power_info);
+		if (os_snprintf_error(end - pos, ret))
+			return -1;
+		pos += ret;
+	}
+
+	if (nentries == 0)
+		return os_snprintf(reply, reply_size, "No matching scan entries found\n");
+
+	return (int) (pos - reply);
+}
+
+static int hostapd_acs_show_neighbor_report_extn(struct hostapd_data *hapd,
+						 const char *pos,
+						 char *reply, size_t reply_size)
+{
+	struct hostapd_hw_modes *mode;
+	struct qacs_data_extn *data_extn;
+
+	(void) pos;
+
+	if (!hapd || !hapd->iface || !reply || !reply_size)
+		return -1;
+
+	mode = hapd->iface->current_mode;
+	if (!mode)
+		return os_snprintf(reply, reply_size,
+				   "No current mode selected\n");
+
+	data_extn = ICM_GET_EXTN_DATA_PTR(mode);
+	if (!data_extn || !data_extn->neighbor_report ||
+	    !data_extn->num_neighbor_entries)
+		return os_snprintf(reply, reply_size,
+				   "No neighbor report available\n");
+
+	return print_buf_neighbor_report(data_extn->neighbor_report,
+					 data_extn->num_neighbor_entries, reply, reply_size);
+}
+
 #else
 static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
 		const char *pos,
 		char *reply, size_t reply_size)
+{
+	return -1;
+}
+
+static int hostapd_acs_show_neighbor_report_extn(struct hostapd_data *hapd,
+						 const char *pos,
+						 char *reply, size_t reply_size)
 {
 	return -1;
 }
@@ -807,6 +908,9 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 
 	} else if (os_strcmp(pos, "get_block_chan_list") == 0) {
 		return hostapd_acs_get_block_chanlist(hapd, buf, buflen);
+
+	} else if (os_strncmp(pos, "show_neighbor_report", 20) == 0) {
+		return hostapd_acs_show_neighbor_report_extn(hapd, pos, buf, buflen);
 
 	} else {
 		return acs_print_usage_extn(buf, buflen);
