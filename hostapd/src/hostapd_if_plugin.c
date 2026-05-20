@@ -430,18 +430,39 @@ static void notify_assoc(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 static void notify_action(char *ifname, const uint8_t *sta_mac, const uint8_t *frame,
 			  uint16_t frame_len, int link_id, struct hostapd_if_frame_ctx *ctx)
 {
+	int category = 0;
+	int action_code = 0;
+	int rssi = 0;
+
+	if (ctx) {
+		category = ctx->data.action.category;
+		action_code = ctx->data.action.action_code;
+		rssi = ctx->data.action.rssi;
+	}
 
 	wpa_printf(MSG_DEBUG,
-		   "Notified Action for STA " MACSTR " on link_id=%d, frame_len=%u\n",
-		   MAC2STR(sta_mac), link_id, frame_len);
+		   "Notified Action for STA " MACSTR " on link_id=%d, frame_len=%u%s category=%d action_code=%d RSSI %d\n",
+		   MAC2STR(sta_mac), link_id, frame_len, ctx ? "" : " Frame ctx null",
+		   category, action_code, rssi);
 }
 
 static void offload_action(char *ifname, const uint8_t *sta_mac, const uint8_t *frame,
 			   uint16_t frame_len, uint8_t link_id, struct hostapd_if_frame_ctx *ctx)
 {
+	int category = 0;
+	int action_code = 0;
+	int rssi = 0;
+
+	if (ctx) {
+		category = ctx->data.action.category;
+		action_code = ctx->data.action.action_code;
+		rssi = ctx->data.action.rssi;
+	}
+
 	wpa_printf(MSG_DEBUG,
-		   "Offload Action for STA " MACSTR " on link_id=%d, frame_len=%u\n",
-		   MAC2STR(sta_mac), link_id, frame_len);
+		   "Offload Action for STA " MACSTR " on link_id=%d, frame_len=%u%s category=%d action_code=%d RSSI %d\n",
+		   MAC2STR(sta_mac), link_id, frame_len, ctx ? "" : " Frame ctx null",
+		   category, action_code, rssi);
 }
 
 static void notify_auth(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
