@@ -550,6 +550,11 @@ static inline void hostapd_dcs_restore_extn(struct hostapd_iface *iface,
 	return;
 }
 
+static inline void hostapd_dcs_iface_deinit_extn(struct hostapd_iface *iface)
+{
+	return;
+}
+
 static inline int
 hostapd_get_n_chans_and_frequency_extn(enum oper_chan_width oper_chwidth,
 				       int cf1,
@@ -1705,6 +1710,7 @@ void update_chan_params(struct hostapd_data *hapd, int cf1, int cf2,
 			enum chan_width chwidth);
 bool dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf, u16 dcs_intf_type);
 void hostapd_dcs_restore_extn(struct hostapd_iface *iface, const char *reason);
+void hostapd_dcs_iface_deinit_extn(struct hostapd_iface *iface);
 struct hostapd_channel_data *
 get_chan_data_by_freq(struct hostapd_hw_modes *mode, int freq);
 int is_chan_range_available(struct hostapd_hw_modes *mode,
