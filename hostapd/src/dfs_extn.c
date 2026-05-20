@@ -752,6 +752,16 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 		sec_chan = 0;
 	}
 
+	if (ch_width == CONF_OPER_CHWIDTH_160MHZ) {
+		/*
+		 * Convert the WB IE CCFS0/CCFS1 representation back to the
+		 * internal hostapd 160 MHz oper seg representation expected by
+		 * hostapd_set_freq_params().
+		 */
+		cf0 = cf1;
+		cf1 = 0;
+	}
+
 	wpa_printf(MSG_DEBUG, "uplink_csa: channel change prams: cf0 %u cf1 %u sec %d chwidth %u",
 		   cf0, cf1, sec_chan, ch_width);
 
