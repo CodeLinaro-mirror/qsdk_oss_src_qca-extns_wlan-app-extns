@@ -1797,6 +1797,7 @@ int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 int wpa_supplicant_event_extn(struct wpa_supplicant *wpa_s,
 			      enum wpa_event_type event,
 			      union wpa_event_data *data);
+void hostapd_sync_country_from_driver(struct hostapd_data *hapd);
 int hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
 				   size_t buflen, size_t curr_len);
 int hostapd_set_he_mcs_12_13_peer_cap_extn(struct hostapd_data *hapd);
