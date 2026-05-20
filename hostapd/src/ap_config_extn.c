@@ -149,6 +149,13 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		conf_extn->ignorecac = atoi(pos);
 		return 0;
 	} else if (os_strcmp(buf, "uplink_csa") == 0) {
+		if ((IS_CSH_RCSA_TO_UPLINK_ENABLED(conf_extn->cswopts) ||
+		     IS_CSH_PROCESS_RCSA_ENABLED(conf_extn->cswopts)) &&
+		     atoi(pos)) {
+			wpa_printf(MSG_ERROR,
+				   "Rejecting uplink_csa config, RCSA is already enabled");
+			return 0;
+		}
 		conf_extn->uplink_csa = atoi(pos);
 		return 0;
 	} else if (os_strcmp(buf, "qacs_enable") == 0) {

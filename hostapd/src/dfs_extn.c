@@ -298,7 +298,7 @@ bool hostapd_is_ml_info_ie(const u8 *ie, size_t rem_len)
 
 	if (ie[0] != WLAN_EID_EXT_CAPAB && ie[0] != WLAN_EID_EXTENSION)
 		return false;
-	if (ie[2] == WLAN_EID_EXT_MULTI_LINK)
+	if (ie[2] == WLAN_EID_EXT_MLO_LINK_INFO)
 		return true;
 
 	return false;
@@ -321,7 +321,7 @@ u8 *add_ml_link_info_ie(u8 *buf, size_t buf_len,
 	 */
 	*pos++ = WLAN_EID_EXTENSION;
 	*pos++ = 3;
-	*pos++ = WLAN_EID_EXT_MULTI_LINK;
+	*pos++ = WLAN_EID_EXT_MLO_LINK_INFO;
 	WPA_PUT_LE16(pos, link_id_bitmap);
 	pos += 2;
 

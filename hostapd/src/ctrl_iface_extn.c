@@ -1597,8 +1597,15 @@ int hostapd_set_cswopts_extn(struct hostapd_config_extn *conf_extn,
 
 	if (val == 0)
 		*cswopts = 0;
-	else
+	else {
+		if ((IS_CSH_RCSA_TO_UPLINK_ENABLED(*value) ||
+		     IS_CSH_PROCESS_RCSA_ENABLED(*value)) &&
+		    conf_extn->uplink_csa) {
+			wpa_printf(MSG_INFO, "RCSA and Uplink CSA cann't co-exists");
+			return -1;
+		}
 		*cswopts |= (unsigned int)val;
+	}
 	wpa_printf(MSG_INFO, "CSwOpts updated to 0x%x", *cswopts);
 
 	if (IS_CSH_APRIORI_NEXT_CHANNEL_ENABLED(*cswopts))
