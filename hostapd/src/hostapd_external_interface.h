@@ -365,7 +365,6 @@ struct hostapd_if_mld_link_info {
  * Populated from sta_info::mld_info when the station is an MLD.
  */
 struct hostapd_if_mld_info {
-	bool is_mld_sta;             /* true if the station is an MLD */
 	uint8_t mld_addr[ETH_ALEN];         /* MLD MAC address */
 	uint16_t eml_capa;           /* EML Capabilities field */
 	uint16_t mld_capa;           /* MLD Capabilities and Operations field */
@@ -406,6 +405,7 @@ struct hostapd_if_sta_info {
 	uint8_t eht_caps_len;        /* 0 if EHT not supported */
 
 	/* ---- Radio/channel/signal information (union based on MLD status) ---- */
+	bool is_mld_sta;             /* true if the station is an MLD */
 	union {
 		/* For MLD stations: per-link information including radio/signal */
 		struct hostapd_if_mld_info mld_info;
