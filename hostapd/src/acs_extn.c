@@ -465,11 +465,16 @@ int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd, enum dynamic_acs_acti
 
         iface->iface_extn.dynamic_acs_action = acs_action;
         qacs_reset_scan_stats(iface, hapd->iface->current_mode);
+	/* Notify wpa_supplicant to abort scans before starting ACS */
+	if (!hostapd_is_bh_sta_connecting_or_connected_extn(iface))
+		hostapd_ucode_notify_acs_start(iface);
 
         status = acs_init(iface);
         if (status != HOSTAPD_CHAN_ACS) {
                 wpa_printf(MSG_ERROR, "Could not start ACS, error: %d", status);
                 iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+		/* Notify wpa_supplicant to resume scans on failure */
+		hostapd_ml_acs_check_and_notify(iface, 0);
                 return -1;
         }
 
@@ -1113,6 +1118,8 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 
 	if (iface->iface_extn.dynamic_acs_action == NO_CHANNEL_CHANGE) {
 		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+		/* Notify wpa_supplicant to resume scans on success but no channel change requested */
+		hostapd_ml_acs_check_and_notify(iface, 1);
 		return 0;
 	}
 
@@ -1124,8 +1131,13 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			   err);
 		hostapd_dcs_restore_extn(iface, "ACS failed");
 		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+		/* Notify wpa_supplicant to resume scans on failure */
+		hostapd_ml_acs_check_and_notify(iface, 0);
 		return 0;
 	}
+
+	/* Notify wpa_supplicant to resume scans on success and channel change requested */
+	hostapd_ml_acs_check_and_notify(iface, 1);
 
 	cs_err = hostapd_trigger_channel_switch_extn(iface, chan);
 	if (cs_err) {
@@ -1146,6 +1158,8 @@ acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
 
 	wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
 		   err);
+	/* Notify wpa_supplicant to resume scans on failure */
+	hostapd_ml_acs_check_and_notify(iface, 0);
 	hostapd_dcs_restore_extn(iface, "ACS failed");
 	iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
 
