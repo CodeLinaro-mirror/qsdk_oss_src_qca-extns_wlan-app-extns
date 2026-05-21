@@ -1484,7 +1484,7 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 									       reply,
 									       reply_size);
 	} else if (os_strncmp(buf, "SET_TPE_PUNCT_CHANNEL_TX_PWR ", 29) == 0) {
-		if (hostapd_ctrl_iface_set_tpe_punct_channel_tx_pwr_extn(hapd, buf + 22))
+		if (hostapd_ctrl_iface_set_tpe_punct_channel_tx_pwr_extn(hapd, buf + 29))
 			reply_len_extn = -1;
 	} else if (os_strcmp(buf, "GET_TPE_PUNCT_CHANNEL_TX_PWR") == 0) {
 		reply_len_extn =
