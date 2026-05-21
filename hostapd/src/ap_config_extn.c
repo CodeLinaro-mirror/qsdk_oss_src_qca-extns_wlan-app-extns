@@ -158,6 +158,9 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		}
 		conf_extn->uplink_csa = atoi(pos);
 		return 0;
+	} else if (os_strcmp(buf, "rpt_max_phy") == 0) {
+		conf_extn->rpt_max_phy = atoi(pos);
+		return 0;
 	} else if (os_strcmp(buf, "qacs_enable") == 0) {
 		conf_extn->qacs_enable = atoi(pos);
 	} else if (os_strcasecmp(buf, "nontx_profile_elem_size") == 0) {
