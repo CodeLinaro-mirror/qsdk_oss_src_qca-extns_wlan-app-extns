@@ -15,6 +15,7 @@
 #include "../wpa_supplicant/wpa_supplicant_i.h"
 #include "../wpa_supplicant/bss.h"
 #include "reg_extn.h"
+#include "ap/ap_drv_ops.h"
 
 static inline bool
 hostapd_is_freq_in_between_extn(int freq, int start_freq, int end_freq)
@@ -138,10 +139,55 @@ void wpas_query_hw_blocklist_extn(struct wpa_supplicant *wpa_s)
 	if (!wpa_s->driver->is_6ghz_hw_blocked_chans_supported(wpa_s->drv_priv))
 		return;
 
-	if (wpa_s->assoc_freq)
+	/* For MLO connections, query HWBL for each unique radio across all
+	 * active links. For SLO, fall back to assoc_freq/current_bss. */
+	if (wpa_s->valid_links) {
+		u32 queried_mask = 0;
+		int i;
+
+		for_each_link(wpa_s->valid_links, i) {
+			unsigned int freq = wpa_s->links[i].freq;
+
+			if (!freq)
+				continue;
+			/* HWBL is 6 GHz only — skip 2.4/5 GHz links */
+			if (!is_6ghz_freq(freq))
+				continue;
+			hw_info = wpas_get_current_hw_info_extn(wpa_s, freq);
+			if (!hw_info)
+				continue;
+			if (queried_mask & BIT(hw_info->hw_idx))
+				continue;
+			queried_mask |= BIT(hw_info->hw_idx);
+
+			wpa_printf(MSG_DEBUG,
+				   "Query HW blocklist for ML link=%d freq=%d hw_idx=%u",
+				   i, freq, hw_info->hw_idx);
+			ret = wpa_s->driver->fetch_hw_blocked_chans(
+				wpa_s->drv_priv, hw_info->hw_idx);
+			if (ret)
+				wpa_printf(MSG_DEBUG,
+					   "wpas: Failed to fetch HW blocklist (ifname=%s link=%d radio_idx=%u ret=%d)",
+					   wpa_s->ifname, i, hw_info->hw_idx,
+					   ret);
+		}
+		return;
+	}
+
+	if (wpa_s->assoc_freq) {
 		query_freq = wpa_s->assoc_freq;
-	else if (wpa_s->current_bss)
+		wpa_printf(MSG_DEBUG,
+			   "Query HW blocklist for assoc_freq=%d",
+			   wpa_s->assoc_freq);
+	} else if (wpa_s->current_bss) {
 		query_freq = wpa_s->current_bss->freq;
+		wpa_printf(MSG_DEBUG,
+			   "Query HW blocklist for current_bss freq=%d",
+			   wpa_s->current_bss->freq);
+	} else {
+		wpa_printf(MSG_DEBUG,
+			   "No assoc_freq or current_bss, query HW blocklist for all radios");
+	}
 
 	hw_info = wpas_get_current_hw_info_extn(wpa_s, query_freq);
 	if (query_freq && hw_info)
@@ -285,29 +331,56 @@ void wpas_event_hw_blocklist_notify_extn(
 	struct wpa_supplicant *wpa_s,
 	const struct hostapd_hw_blocklist_info *hw_blocklist_info)
 {
-	struct wpa_supplicant_extn *wpas_extn;
-	int ret;
+	struct wpa_supplicant *w;
 
 	if (!wpa_s || !hw_blocklist_info)
 		return;
 
-	wpas_extn = &wpa_s->wpas_extn;
+	wpa_printf(MSG_DEBUG, "Received HW blocklist update event for hw_idx=%u modes=%u ifaces %p",
+		   hw_blocklist_info->hw_idx, hw_blocklist_info->num_pwr_modes, wpa_s->global->ifaces);
 
-	ret = hw_blocklist_update_list_extn(&wpas_extn->hw_blocklist_info,
-					    &wpas_extn->num_hw_blocklist,
-					    hw_blocklist_info);
-	if (ret) {
+	if (!wpa_s->global->ifaces) {
 		wpa_printf(MSG_ERROR,
-			   "wpas: Failed to store HW blocklist info for ifname=%s hw_idx=%u ret=%d",
-			   wpa_s->ifname, hw_blocklist_info->hw_idx, ret);
+			   "wpas: No ifaces available to store HW BL for hw_idx=%u, store in wpa_s context",
+			   hw_blocklist_info->hw_idx);
+		if (hw_blocklist_update_list_extn(&wpa_s->wpas_extn.hw_blocklist_info,
+						  &wpa_s->wpas_extn.num_hw_blocklist,
+						  hw_blocklist_info)) {
+			wpa_printf(MSG_ERROR,
+				   "wpas: Failed to store HW blocklist info for hw_idx=%u",
+				   hw_blocklist_info->hw_idx);
+			return;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "wpas: Stored HW blocklist info for ifname=%s hw_idx=%u modes=%u total_hw=%u",
+			   wpa_s->ifname, hw_blocklist_info->hw_idx, hw_blocklist_info->num_pwr_modes,
+			   wpa_s->wpas_extn.num_hw_blocklist);
 		return;
 	}
 
-	wpa_printf(MSG_DEBUG,
-		   "wpas: Stored HW blocklist info for ifname=%s hw_idx=%u modes=%u total_hw=%u",
-		   wpa_s->ifname, hw_blocklist_info->hw_idx,
-		   hw_blocklist_info->num_pwr_modes,
-		   wpas_extn->num_hw_blocklist);
+	/* multi_hw_info is wiphy-wide: all wpa_s instances share the same
+	 * physical radios. Store the blocklist in every interface so that
+	 * whichever wpa_s later performs 6 GHz BSS filtering finds the data. */
+	for (w = wpa_s->global->ifaces; w; w = w->next) {
+		int ret;
+
+		ret = hw_blocklist_update_list_extn(&w->wpas_extn.hw_blocklist_info,
+						    &w->wpas_extn.num_hw_blocklist,
+						    hw_blocklist_info);
+		if (ret) {
+			wpa_printf(MSG_ERROR,
+				   "wpas: Failed to store HW blocklist info for ifname=%s hw_idx=%u ret=%d",
+				   w->ifname, hw_blocklist_info->hw_idx, ret);
+			continue;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "wpas: Stored HW blocklist info for ifname=%s hw_idx=%u modes=%u total_hw=%u",
+			   w->ifname, hw_blocklist_info->hw_idx,
+			   hw_blocklist_info->num_pwr_modes,
+			   w->wpas_extn.num_hw_blocklist);
+	}
 }
 
 static void hostapd_reg_dump_hw_blocklist_extn(struct hostapd_iface *iface)
@@ -373,12 +446,45 @@ void hostapd_event_hw_blocklist_notify_extn(
 	struct hostapd_data *hapd,
 	const struct hostapd_hw_blocklist_info *hw_blocklist_info)
 {
+	struct hostapd_iface *iface = NULL;
+	int i;
+
 	if (!hapd || !hapd->iface || !hw_blocklist_info)
 		return;
 
+	/* Find the iface whose radio matches the payload's hw_idx.
+	 * First filter by phy_name (same as AFC pattern) to skip unrelated
+	 * phys, then match by current_hw_info->hw_idx within the same phy. */
+	const char *phy_name = hostapd_drv_get_radio_name(hapd);
+
+	if (!phy_name)
+		return;
+
+	for (i = 0; i < hapd->iface->interfaces->count; i++) {
+		struct hostapd_iface *h = hapd->iface->interfaces->iface[i];
+		const char *h_phy_name;
+
+		h_phy_name = hostapd_drv_get_radio_name(h->bss[0]);
+		if (!h_phy_name || os_strcmp(h_phy_name, phy_name) != 0)
+			continue;
+		if (!h->current_hw_info)
+			continue;
+		if (h->current_hw_info->hw_idx != hw_blocklist_info->hw_idx)
+			continue;
+		iface = h;
+		break;
+	}
+
+	if (!iface) {
+		wpa_printf(MSG_ERROR,
+			   "HWBL: No iface matched phy=%s hw_idx=%u, store on the receiving iface by default",
+			   phy_name, hw_blocklist_info->hw_idx);
+		iface = hapd->iface;
+	}
+
 	if (hw_blocklist_update_list_extn(
-		    &hapd->iface->iface_extn.hw_blocklist_info,
-		    &hapd->iface->iface_extn.num_hw_blocklist,
+		    &iface->iface_extn.hw_blocklist_info,
+		    &iface->iface_extn.num_hw_blocklist,
 		    hw_blocklist_info)) {
 		wpa_printf(MSG_ERROR,
 			   "Failed to store HW blocklist info for hw_idx=%u",
@@ -388,11 +494,11 @@ void hostapd_event_hw_blocklist_notify_extn(
 
 	wpa_printf(MSG_DEBUG,
 		   "Stored HW blocklist info for hw_idx=%u on %s (modes=%u, total_hw=%u)",
-		   hw_blocklist_info->hw_idx, hapd->conf->iface,
+		   hw_blocklist_info->hw_idx, iface->phy,
 		   hw_blocklist_info->num_pwr_modes,
-		   hapd->iface->iface_extn.num_hw_blocklist);
+		   iface->iface_extn.num_hw_blocklist);
 
-	hostapd_reg_dump_hw_blocklist_extn(hapd->iface);
+	hostapd_reg_dump_hw_blocklist_extn(iface);
 }
 
 static u16 hw_features_hw_blocklist_bw_to_mhz_extn(u32 max_bw)
