@@ -1788,3 +1788,72 @@ fail:
 	nlmsg_free(msg);
 	return -ENOBUFS;
 }
+
+int nl80211_disable_opclass_chans_extn(void *priv, u8 link_id, u8 is_disable, u8 opclass,
+				       const u8 *chan_list, size_t chan_count)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	struct nlattr *params, *chan_attr;
+	size_t idx;
+	int ret;
+
+	if (!bss || !bss->drv || !chan_list || !chan_count ||
+	    (is_disable != 0 && is_disable != 1) || !opclass)
+		return -EINVAL;
+
+	drv = bss->drv;
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_REG_PARAMS))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_REG_PARAMS_CMD_EXTN,
+		       QCA_WLAN_VENDOR_REG_PARAMS_DISABLE_OPCLASS_CHANS_EXTN) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_REG_PARAMS_LINKID_EXTN, link_id) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_REG_PARAMS_DISABLE_EXTN, is_disable) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_REG_PARAMS_OPCLASS_EXTN, opclass))
+		goto fail_params;
+
+	chan_attr = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_REG_PARAMS_CHAN_LIST_EXTN);
+	if (!chan_attr)
+		goto fail_params;
+
+	for (idx = 0; idx < chan_count; idx++) {
+		if (nla_put_u8(msg, idx + 1, chan_list[idx]))
+			goto fail_chan;
+	}
+
+	nla_nest_end(msg, chan_attr);
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: DISABLE_OPCLASS_CHANS failed: %d (%s) disable=%u opclass=%u count=%zu",
+			   ret, strerror(-ret), is_disable, opclass, chan_count);
+		return ret;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: DISABLE_OPCLASS_CHANS sent disable=%u opclass=%u count=%zu",
+		   is_disable, opclass, chan_count);
+	return 0;
+
+fail_chan:
+	nla_nest_end(msg, chan_attr);
+fail_params:
+	nla_nest_end(msg, params);
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}

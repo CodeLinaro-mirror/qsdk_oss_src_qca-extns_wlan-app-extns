@@ -40,6 +40,7 @@ int hostapd_cli_cmd_set_primary_chans(struct wpa_ctrl *ctrl, int argc,
 				      char *argv[]);
 int hostapd_cli_cmd_get_primary_chans(struct wpa_ctrl *ctrl, int argc,
 				      char *argv[]);
+int hostapd_cli_cmd_disable_opclass_chans(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_obss_snr_threshold_extn(struct wpa_ctrl *ctrl, int argc,
 						char *argv[]);
 int hostapd_cli_cmd_get_obss_snr_threshold_extn(struct wpa_ctrl *ctrl, int argc,
@@ -180,6 +181,8 @@ int hostapd_cli_cmd_get_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *ar
 	  " no args clears list" }, \
 	{ "get_primary_chans", hostapd_cli_cmd_get_primary_chans, NULL, \
 	  "= get current primary channel list" }, \
+	{ "disable_opclass_chans", hostapd_cli_cmd_disable_opclass_chans, NULL, \
+	  "<0|1> <opclass> <ch1> [<ch2> ...] = enable/disable channels in opclass" }, \
 	{ "set_ht40intol", hostapd_cli_cmd_set_ht40intol, NULL, \
 		"<value 0|1> = set ht40 intolerant bit" }, \
 	{ "get_ht40intol", hostapd_cli_cmd_get_ht40intol, NULL, \
