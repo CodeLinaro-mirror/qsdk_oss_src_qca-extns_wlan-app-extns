@@ -1997,6 +1997,172 @@ static int hostapd_ctrl_iface_configure_plugin_config(struct hostapd_data *hapd,
 }
 
 /*
+ * Helper: return a human-readable band name for wpa_printf output.
+ */
+static const char *sta_info_band_str(enum hostapd_if_band band)
+{
+	switch (band) {
+	case HOSTAPD_IF_BAND_2GHZ:    return "2.4 GHz";
+	case HOSTAPD_IF_BAND_5GHZ:    return "5 GHz";
+	case HOSTAPD_IF_BAND_6GHZ:    return "6 GHz";
+	case HOSTAPD_IF_BAND_60GHZ:   return "60 GHz";
+	default:                       return "unknown";
+	}
+}
+
+/*
+ * Helper: dump a hostapd_if_radio_info block via wpa_printf.
+ * @prefix is prepended to each line (e.g. "  " or "  link[0] ").
+ */
+static void dump_radio_info(const char *prefix,
+			    const struct hostapd_if_radio_info *r)
+{
+	wpa_printf(MSG_INFO, "%sfreq=%d MHz  channel=%u  band=%s",
+		   prefix, r->freq, r->channel,
+		   sta_info_band_str(r->band));
+	wpa_printf(MSG_INFO,
+		   "%scap_flags=0x%08x [%s%s%s%s%s%s%s%s%s%s]",
+		   prefix, r->cap_flags,
+		   (r->cap_flags & HOSTAPD_IF_STA_CAP_OFDM) ? "OFDM "  : "",
+		   (r->cap_flags & HOSTAPD_IF_STA_CAP_11G)  ? "11G "   : "",
+		   (r->cap_flags & HOSTAPD_IF_STA_CAP_11N)  ? "11N "   : "",
+		   (r->cap_flags & HOSTAPD_IF_STA_CAP_HT)   ? "HT "    : "",
+		   (r->cap_flags & HOSTAPD_IF_STA_CAP_HT40) ? "HT40 "  : "",
+		   (r->cap_flags & HOSTAPD_IF_STA_CAP_VHT)  ? "VHT "   : "",
+		   (r->cap_flags & HOSTAPD_IF_STA_CAP_HE)   ? "HE "    : "",
+		   (r->cap_flags & HOSTAPD_IF_STA_CAP_EHT)  ? "EHT "   : "",
+		   (r->cap_flags & HOSTAPD_IF_STA_CAP_MLD)  ? "MLD "   : "",
+		   (r->cap_flags & HOSTAPD_IF_STA_CAP_6GHZ) ? "6GHZ "  : "");
+}
+
+/*
+ * TEST: exercise test_plugin.get_sta_info for a given STA MAC address and
+ * dump all returned fields via wpa_printf.
+ *
+ * Command syntax (as passed from the CONFIGURE-PLUGIN dispatcher):
+ *   GET_STA_INFO <MAC>
+ * e.g.:
+ *   hostapd_cli -i wlan0 CONFIGURE-PLUGIN GET_STA_INFO aa:bb:cc:dd:ee:ff
+ */
+static int hostapd_ctrl_iface_get_sta_info_plugin(struct hostapd_data *hapd,
+						  const char *txtaddr)
+{
+	u8 addr[ETH_ALEN];
+	struct hostapd_if_sta_info info;
+	int ret;
+	int i;
+
+	wpa_printf(MSG_INFO, "TEST get_sta_info: ifname=%s sta=%s",
+		   hapd->conf->iface, txtaddr);
+
+	if (hwaddr_aton(txtaddr, addr)) {
+		wpa_printf(MSG_ERROR,
+			   "TEST get_sta_info: invalid MAC address '%s'",
+			   txtaddr);
+		return -1;
+	}
+
+	if (!test_plugin.get_sta_info) {
+		wpa_printf(MSG_ERROR,
+			   "TEST get_sta_info: southbound get_sta_info not registered");
+		return -1;
+	}
+
+	os_memset(&info, 0, sizeof(info));
+
+	ret = test_plugin.get_sta_info((char *)hapd->conf->iface, addr, &info);
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR,
+			   "TEST get_sta_info: get_sta_info(" MACSTR ") failed: %d",
+			   MAC2STR(addr), ret);
+		return ret;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "TEST get_sta_info: result for " MACSTR,
+		   MAC2STR(addr));
+
+	/* ---- HT capabilities ---- */
+	if (info.ht_caps_len > 0) {
+		char hex[HOSTAPD_IF_HT_CAP_MAX_LEN * 2 + 1];
+		wpa_snprintf_hex(hex, sizeof(hex),
+				 info.ht_caps, info.ht_caps_len);
+		wpa_printf(MSG_INFO, "  ht_caps(%u bytes): %s",
+			   info.ht_caps_len, hex);
+	} else {
+		wpa_printf(MSG_INFO, "  ht_caps: not present");
+	}
+
+	/* ---- VHT capabilities ---- */
+	if (info.vht_caps_len > 0) {
+		char hex[HOSTAPD_IF_VHT_CAP_MAX_LEN * 2 + 1];
+		wpa_snprintf_hex(hex, sizeof(hex),
+				 info.vht_caps, info.vht_caps_len);
+		wpa_printf(MSG_INFO, "  vht_caps(%u bytes): %s",
+			   info.vht_caps_len, hex);
+	} else {
+		wpa_printf(MSG_INFO, "  vht_caps: not present");
+	}
+
+	/* ---- HE capabilities ---- */
+	if (info.he_caps_len > 0) {
+		char hex[HOSTAPD_IF_HE_CAP_MAX_LEN * 2 + 1];
+		wpa_snprintf_hex(hex, sizeof(hex),
+				 info.he_caps, info.he_caps_len);
+		wpa_printf(MSG_INFO, "  he_caps(%u bytes): %s",
+			   info.he_caps_len, hex);
+	} else {
+		wpa_printf(MSG_INFO, "  he_caps: not present");
+	}
+
+	/* ---- EHT capabilities ---- */
+	if (info.eht_caps_len > 0) {
+		char hex[HOSTAPD_IF_EHT_CAP_MAX_LEN * 2 + 1];
+		wpa_snprintf_hex(hex, sizeof(hex),
+				 info.eht_caps, info.eht_caps_len);
+		wpa_printf(MSG_INFO, "  eht_caps(%u bytes): %s",
+			   info.eht_caps_len, hex);
+	} else {
+		wpa_printf(MSG_INFO, "  eht_caps: not present");
+	}
+
+	/* ---- Radio / MLD information ---- */
+	if (info.is_mld_sta) {
+		const struct hostapd_if_mld_info *m = &info.u.mld_info;
+
+		wpa_printf(MSG_INFO,
+			   "  MLD station: mld_addr=" MACSTR
+			   "  eml_capa=0x%04x  mld_capa=0x%04x  num_links=%u",
+			   MAC2STR(m->mld_addr),
+			   m->eml_capa, m->mld_capa, m->num_links);
+
+		for (i = 0; i < MAX_MLO_LINKS; i++) {
+			const struct hostapd_if_mld_link_info *lnk =
+				&m->links[i];
+			char pfx[32];
+
+			if (!lnk->valid)
+				continue;
+
+			wpa_printf(MSG_INFO,
+				   "  link[%d]: local=" MACSTR
+				   "  peer=" MACSTR,
+				   i,
+				   MAC2STR(lnk->local_addr),
+				   MAC2STR(lnk->peer_addr));
+
+			os_snprintf(pfx, sizeof(pfx), "  link[%d] ", i);
+			dump_radio_info(pfx, &lnk->radio);
+		}
+	} else {
+		wpa_printf(MSG_INFO, "  non-MLD station radio info:");
+		dump_radio_info("  ", &info.u.non_mld);
+	}
+
+	return 0;
+}
+
+/*
  * Main dispatcher function for CONFIGURE-PLUGIN command
  * Routes to appropriate subcommand handler
  */
@@ -2042,6 +2208,8 @@ int hostapd_ctrl_iface_configure_plugin(struct hostapd_data *hapd,
 		return hostapd_ctrl_iface_set_assoc_ies(hapd, pos + 14);
 	} else if (os_strncmp(pos, "SET_AUTH_IES ", 13) == 0) {
 		return hostapd_ctrl_iface_set_auth_ies(hapd, pos + 13);
+	} else if (os_strncmp(pos, "GET_STA_INFO ", 13) == 0) {
+		return hostapd_ctrl_iface_get_sta_info_plugin(hapd, pos + 13);
 	} else if (os_strncmp(pos, "SEND_FRAME ",11) == 0) {
 		return hostapd_ctrl_iface_send_frame(hapd, pos + 11);
 	} else {
