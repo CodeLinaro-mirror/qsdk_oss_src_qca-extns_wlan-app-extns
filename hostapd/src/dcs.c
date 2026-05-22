@@ -1599,6 +1599,41 @@ bool dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf,
 	return false;
 }
 
+bool hostapd_dcs_awgn_handle_rand_chan_disabled_extn(struct hostapd_iface *iface)
+{
+	struct hostapd_data *link_hapd;
+	int acs_ret;
+
+	if (!iface || !iface->conf || !iface->bss || iface->num_bss < 1)
+		return false;
+
+	if (iface->conf->conf_extn.dcs_conf.dcs_random_chan_bitmap & DCS_AWGN_INTF)
+		return false;
+
+	link_hapd = iface->bss[0];
+
+	if (!link_hapd) {
+		wpa_printf(MSG_ERROR,
+			   "AWGN: random channel selection disabled but no link hapd available");
+		return false;
+	}
+
+	wpa_printf(MSG_DEBUG, "AWGN: triggering CSA/ACS");
+
+	acs_ret = hostapd_cbs_trigger_csa(link_hapd);
+	if (acs_ret)
+		acs_ret = hostapd_trigger_dynamic_acs(link_hapd,
+					     CHANNEL_CHANGE_CSA);
+
+	if (acs_ret) {
+		wpa_printf(MSG_ERROR,
+			   "AWGN: failed to start CSA/ACS when random channel selection disabled");
+		return false;
+	}
+
+	return true;
+}
+
 struct hostapd_channel_data *
 get_chan_data_by_freq(struct hostapd_hw_modes *mode, int freq)
 {
