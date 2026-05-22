@@ -94,6 +94,10 @@
 #define MAX_RADIUS_CUI_LEN 253
 #endif
 
+#ifndef WPA_PMK_NAME_LEN
+#define WPA_PMK_NAME_LEN 16
+#endif
+
 enum hostapd_if_frame_policy {
 	HOSTAPD_IF_FRAME_DO_NOTHING,
 	HOSTAPD_IF_FRAME_NOTIFY,
@@ -549,6 +553,20 @@ struct hostapd_external_app_object {
 				   const uint8_t *ies,
 				   uint16_t ies_len,
 				   struct hostapd_if_frame_ctx *ctx);
+
+	int (*pull_pmk_r1)(char *ifname, uint8_t *sta_mac,
+			   uint8_t pmk_r1_name[WPA_PMK_NAME_LEN],
+			   uint8_t pmk_r1[PMK_LEN_MAX], size_t *pmk_r1_len,
+			   int *pairwise, int *session_timeout,
+			   uint8_t identity[MAX_RADIUS_CUI_LEN],
+			   size_t *identity_len,
+			   uint8_t radius_cui[MAX_RADIUS_CUI_LEN],
+			   size_t *radius_cui_len);
+
+	int (*pull_pmk)(char *ifname, uint8_t *sta_mac,
+			uint8_t pmk[PMK_LEN_MAX],
+			size_t *pmk_len, uint8_t pmkid[PMKID_LEN],
+			int *session_timeout);
 
 	/*
 	 * Southbound
