@@ -49,6 +49,8 @@ enum hostapd_if_eloop_opcode {
 	HOSTAPD_IF_ASYNC_TRIGGER_EAPOL_M3 = 9,
 	HOSTAPD_IF_ASYNC_EAPOL_TX = 10,
 	HOSTAPD_IF_ASYNC_SEND_FRAME = 11,
+	HOSTAPD_IF_ASYNC_EAPOL_KEY_TX = 12,
+	HOSTAPD_IF_ASYNC_SET_AUTHORIZED = 13,
 	HOSTAPD_IF_ASYNC_OP_MAX
 };
 
@@ -109,6 +111,7 @@ struct hostapd_if_set_ptk_msg {
 	size_t kek_len;
 	uint8_t *tk;
 	size_t tk_len;
+	bool authorized;
 };
 
 struct hostapd_if_set_gtk_msg {
@@ -123,6 +126,12 @@ struct hostapd_if_start_sa_query_msg {
 	char ifname[IFNAMSIZ + 1];
 	uint8_t sta_mac[ETH_ALEN];
 	int link_id;
+};
+
+struct hostapd_if_set_authorized_msg {
+	char ifname[IFNAMSIZ + 1];
+	uint8_t sta_mac[ETH_ALEN];
+	int authorized;
 };
 
 struct hostapd_if_trigger_eapol_m3_msg {
@@ -146,6 +155,14 @@ struct hostapd_if_send_frame_msg {
 	uint16_t frame_len;
 };
 
+struct hostapd_if_eapol_key_tx_msg {
+	char ifname[IFNAMSIZ + 1];
+	uint8_t sta_mac[ETH_ALEN];
+	uint8_t link_id;
+	uint8_t *frame;
+	uint16_t frame_len;
+};
+
 union hostapd_if_eloop_msg_union {
 	struct hostapd_if_assoc_response_msg assoc_response;
 	struct hostapd_if_auth_response_msg auth_response;
@@ -156,7 +173,9 @@ union hostapd_if_eloop_msg_union {
 	struct hostapd_if_set_ptk_msg set_ptk;
 	struct hostapd_if_set_gtk_msg set_gtk;
 	struct hostapd_if_start_sa_query_msg start_sa_query;
+	struct hostapd_if_set_authorized_msg set_authorized;
 	struct hostapd_if_trigger_eapol_m3_msg trigger_eapol_m3;
+	struct hostapd_if_eapol_key_tx_msg eapol_key_tx;
 	struct hostapd_if_eapol_tx_msg eapol_tx;
 	struct hostapd_if_send_frame_msg send_frame;
 };
@@ -188,14 +207,21 @@ int hostapd_if_set_pmk_validate_inputs(char *ifname, uint8_t *sta_mac,
 int hostapd_if_set_ptk_validate_inputs(char *ifname, uint8_t *sta_mac,
 				       uint8_t *kck, size_t kck_len,
 				       uint8_t *kek, size_t kek_len,
-				       uint8_t *tk, size_t tk_len);
+				       uint8_t *tk, size_t tk_len,
+				       bool authorized);
 int hostapd_if_set_gtk_validate_inputs(char *ifname, int link_id,
 				       int gtk_idx, uint8_t *gtk,
 				       size_t gtk_len);
 int hostapd_if_start_sa_query_validate_inputs(char *ifname,
 					      uint8_t *sta_mac, int link_id);
+int hostapd_if_set_authorized_validate_inputs(char *ifname, uint8_t *sta_mac,
+					      int authorized);
 int hostapd_if_trigger_eapol_m3_validate_inputs(char *ifname,
 						uint8_t *sta_mac);
+int hostapd_if_eapol_key_tx_validate_inputs(char *ifname, uint8_t *sta_mac,
+                                           uint8_t link_id,
+                                           uint8_t *frame,
+                                           uint16_t frame_len);
 int hostapd_if_eapol_tx_validate_inputs(char *ifname, uint8_t *sta_mac,
 					int link_id, uint8_t *data,
 					uint16_t data_len);
@@ -222,14 +248,20 @@ void hostapd_if_set_pmk_dump_params(char *ifname, uint8_t *sta_mac,
 void hostapd_if_set_ptk_dump_params(char *ifname, uint8_t *sta_mac,
 				    uint8_t *kck, size_t kck_len,
 				    uint8_t *kek, size_t kek_len,
-				    uint8_t *tk, size_t tk_len);
+				    uint8_t *tk, size_t tk_len,
+				    bool authorized);
 void hostapd_if_set_gtk_dump_params(char *ifname, int link_id,
 				    int gtk_idx, uint8_t *gtk, size_t gtk_len);
 void hostapd_if_start_sa_query_dump_params(char *ifname, uint8_t *sta_mac, int link_id);
+void hostapd_if_set_authorized_dump_params(char *ifname, uint8_t *sta_mac,
+					   int authorized);
 void hostapd_if_trigger_eapol_m3_dump_params(char *ifname, uint8_t *sta_mac);
 void hostapd_if_send_frame_dump_params(char *ifname, int link_id,
 				       uint8_t *frame, uint16_t frame_len);
-
+void hostapd_if_eapol_key_tx_dump_params(char *ifname, uint8_t *sta_mac,
+                                        uint8_t link_id,
+                                        uint8_t *frame,
+                                        uint16_t frame_len);
 void __hostapd_if_trigger_eapol_m3(char *ifname, uint8_t *sta_mac);
 void __hostapd_if_assoc_response(char *ifname, uint8_t *sta_mac,
 				 struct hostapd_if_frame_ctx *ctx);
@@ -252,10 +284,13 @@ void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 void __hostapd_if_set_ptk(char *ifname, uint8_t *sta_mac,
 			  uint8_t *kck, size_t kck_len,
 			  uint8_t *kek, size_t kek_len,
-			  uint8_t *tk, size_t tk_len);
+			  uint8_t *tk, size_t tk_len, bool authorized);
 void __hostapd_if_set_gtk(char *ifname, int link_id,
 			  int gtk_idx, uint8_t *gtk, size_t gtk_len);
 void __hostapd_if_start_sa_query(char *ifname, uint8_t *sta_mac, int link_id);
+void __hostapd_if_set_authorized(char *ifname, uint8_t *sta_mac, int authorized);
+void __hostapd_if_eapol_key_tx(char *ifname, uint8_t *sta_mac, uint8_t link_id,
+                              uint8_t *frame, uint16_t frame_len);
 void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 			   uint8_t type, uint8_t *data, uint16_t data_len);
 void __hostapd_if_send_frame(char *ifname, int link_id,
@@ -439,12 +474,12 @@ static int hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 static int hostapd_if_set_ptk(char *ifname, uint8_t *sta_mac,
 			      uint8_t *kck, size_t kck_len,
 			      uint8_t *kek, size_t kek_len,
-			      uint8_t *tk, size_t tk_len)
+			      uint8_t *tk, size_t tk_len, bool authorized)
 {
 	int __validate_ret =
 		hostapd_if_set_ptk_validate_inputs(ifname, sta_mac, kck,
 						   kck_len, kek, kek_len,
-						   tk, tk_len);
+						   tk, tk_len, authorized);
 	struct hostapd_if_eloop_payload payload;
 
 	if (__validate_ret < 0)
@@ -459,14 +494,16 @@ static int hostapd_if_set_ptk(char *ifname, uint8_t *sta_mac,
 	payload.msg.set_ptk.kek_len = kek_len;
 	payload.msg.set_ptk.tk = tk;
 	payload.msg.set_ptk.tk_len = tk_len;
+	payload.msg.set_ptk.authorized = authorized;
 
 	hostapd_if_set_ptk_dump_params(ifname, sta_mac, kck, kck_len,
-				       kek, kek_len, tk, tk_len);
+				       kek, kek_len, tk, tk_len, authorized);
 
 	if (hostapd_if_eloop_sock >= 0)
 		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
 	else
-		__hostapd_if_set_ptk(ifname, sta_mac, kck, kck_len, kek, kek_len, tk, tk_len);
+		__hostapd_if_set_ptk(ifname, sta_mac, kck, kck_len, kek, kek_len, tk, tk_len,
+				     authorized);
 	return 0;
 }
 
@@ -571,6 +608,31 @@ static int hostapd_if_start_sa_query(char *ifname, uint8_t *sta_mac, int link_id
 	return 0;
 }
 
+
+static void hostapd_if_set_authorized(char *ifname, uint8_t *sta_mac, int authorized)
+{
+	struct hostapd_if_eloop_payload payload;
+
+	int __validate_ret =
+		hostapd_if_set_authorized_validate_inputs(ifname, sta_mac, authorized);
+
+	if (__validate_ret < 0)
+		return;
+
+	payload.opcode = HOSTAPD_IF_ASYNC_SET_AUTHORIZED;
+	os_strlcpy(payload.msg.set_authorized.ifname, ifname, IFNAMSIZ + 1);
+	os_memcpy(payload.msg.set_authorized.sta_mac, sta_mac, ETH_ALEN);
+	payload.msg.set_authorized.authorized = authorized;
+
+	hostapd_if_set_authorized_dump_params(ifname, sta_mac, authorized);
+
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_set_authorized(ifname, sta_mac, authorized);
+}
+
+
 static void hostapd_if_send_frame(char *ifname, int link_id,
 				  uint8_t *frame, uint16_t frame_len)
 {
@@ -594,6 +656,34 @@ static void hostapd_if_send_frame(char *ifname, int link_id,
 		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
 	else
 		__hostapd_if_send_frame(ifname, link_id, frame, frame_len);
+}
+
+
+static void hostapd_if_eapol_key_tx(char *ifname, uint8_t *sta_mac,uint8_t link_id,
+				    uint8_t *frame, uint16_t frame_len)
+{
+	struct hostapd_if_eloop_payload payload;
+
+	int __validate_ret =
+		hostapd_if_eapol_key_tx_validate_inputs(ifname, sta_mac, link_id,
+							frame, frame_len);
+
+	if (__validate_ret < 0)
+		return;
+	payload.opcode = HOSTAPD_IF_ASYNC_EAPOL_KEY_TX;
+	os_strlcpy(payload.msg.eapol_key_tx.ifname, ifname, IFNAMSIZ + 1);
+	os_memcpy(payload.msg.eapol_key_tx.sta_mac, sta_mac, ETH_ALEN);
+	payload.msg.eapol_key_tx.link_id = link_id;
+	payload.msg.eapol_key_tx.frame = frame;
+	payload.msg.eapol_key_tx.frame_len = frame_len;
+
+	hostapd_if_eapol_key_tx_dump_params(ifname, sta_mac, link_id, frame,
+					    frame_len);
+
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_eapol_key_tx(ifname, sta_mac, link_id, frame, frame_len);
 }
 
 static void hostapd_if_eloop_socket_read(int sock, void *eloop_ctx,
@@ -665,7 +755,8 @@ static void hostapd_if_eloop_socket_read(int sock, void *eloop_ctx,
 		__hostapd_if_set_ptk(msg->ifname, msg->sta_mac,
 				     msg->kck, msg->kck_len,
 				     msg->kek, msg->kek_len,
-				     msg->tk, msg->tk_len);
+				     msg->tk, msg->tk_len,
+				     msg->authorized);
 		break;
 	}
 	case HOSTAPD_IF_ASYNC_SET_GTK: {
@@ -680,6 +771,12 @@ static void hostapd_if_eloop_socket_read(int sock, void *eloop_ctx,
 			&payload->msg.start_sa_query;
 
 		__hostapd_if_start_sa_query(msg->ifname, msg->sta_mac, msg->link_id);
+		break;
+	}
+	case HOSTAPD_IF_ASYNC_SET_AUTHORIZED: {
+		struct hostapd_if_set_authorized_msg *msg = &payload->msg.set_authorized;
+
+		__hostapd_if_set_authorized(msg->ifname, msg->sta_mac, msg->authorized);
 		break;
 	}
 	case HOSTAPD_IF_ASYNC_TRIGGER_EAPOL_M3: {
@@ -701,6 +798,13 @@ static void hostapd_if_eloop_socket_read(int sock, void *eloop_ctx,
 
 		__hostapd_if_send_frame(msg->ifname, msg->link_id, msg->frame,
 					msg->frame_len);
+		break;
+	}
+	case HOSTAPD_IF_ASYNC_EAPOL_KEY_TX: {
+		struct hostapd_if_eapol_key_tx_msg *msg = &payload->msg.eapol_key_tx;
+
+		__hostapd_if_eapol_key_tx(msg->ifname, msg->sta_mac, msg->link_id,
+					  msg->frame, msg->frame_len);
 		break;
 	}
 	default:
@@ -879,7 +983,9 @@ void hostapd_if_eloop_inbound_handlers(
 	plugin->set_ptk = hostapd_if_set_ptk;
 	plugin->set_gtk = hostapd_if_set_gtk;
 	plugin->start_sa_query = hostapd_if_start_sa_query;
+	plugin->set_authorized = hostapd_if_set_authorized;
 	plugin->trigger_eapol_m3 = hostapd_if_trigger_eapol_m3;
+	plugin->eapol_key_tx = hostapd_if_eapol_key_tx;
 	plugin->eapol_tx = hostapd_if_eapol_tx;
 	plugin->send_frame = hostapd_if_send_frame;
 }

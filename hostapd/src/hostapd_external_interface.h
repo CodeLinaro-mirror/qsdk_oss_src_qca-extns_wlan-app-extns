@@ -332,6 +332,8 @@ struct hostapd_if_event {
 				HOSTAPD_IF_START_SA_QUERY_ERROR,
 				HOSTAPD_IF_EAPOL_TX_ERROR,
 				HOSTAPD_IF_SEND_FRAME_ERROR,
+				HOSTAPD_IF_EAPOL_KEY_TX_ERROR,
+				HOSTAPD_IF_SET_AUTHORIZED_ERROR,
 			} type;
 			const char *func;
 			int line_num;
@@ -508,7 +510,7 @@ struct hostapd_external_app_object {
 	void (*eapol_rx)(char *ifname, uint8_t link_id, const uint8_t *sa,
 			 uint8_t *frame, uint16_t frame_len);
 
-	void (*eapol_key_rx)(char *ifname, uint8_t link_id,
+	void (*eapol_key_rx)(char *ifname, uint8_t link_id, const uint8_t *sa,
 			     uint8_t *frame, uint16_t frame_len);
 
 	void (*offload_action)(char *ifname, const uint8_t *sta_mac,
@@ -604,7 +606,8 @@ struct hostapd_external_app_object {
 	int (*set_ptk)(char *ifname, uint8_t *sta_mac,
 		       uint8_t *kck, size_t kck_len,
 		       uint8_t *kek, size_t kek_len,
-		       uint8_t *tk, size_t tk_len);
+		       uint8_t *tk, size_t tk_len,
+		       bool authorized);
 
 	int (*get_ptk)(char *ifname, uint8_t *sta_mac,
 		       uint8_t kck[MAX_KCK_LEN], size_t *kck_len,
@@ -625,7 +628,10 @@ struct hostapd_external_app_object {
 	 */
 	int (*start_sa_query)(char *ifname, uint8_t *sta_mac, int link_id);
 
-	void (*set_authorized)(char *ifname, uint8_t *sta_mac);
+	/*
+	 * ASYNC: Set station authorized state
+	 */
+	void (*set_authorized)(char *ifname, uint8_t *sta_mac, int authorized);
 
 	/*
 	 * ASYNC: Send action frame
@@ -650,7 +656,7 @@ struct hostapd_external_app_object {
 	/*
 	 * ASYNC: EAPOL-Key Tx
 	 */
-	void (*eapol_key_tx)(char *ifname, uint8_t link_id,
+	void (*eapol_key_tx)(char *ifname,  uint8_t *sta_mac, uint8_t link_id,
 			     uint8_t *frame, uint16_t frame_len);
 
 	/*
