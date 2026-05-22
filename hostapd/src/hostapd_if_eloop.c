@@ -51,6 +51,7 @@ enum hostapd_if_eloop_opcode {
 	HOSTAPD_IF_ASYNC_SEND_FRAME = 11,
 	HOSTAPD_IF_ASYNC_EAPOL_KEY_TX = 12,
 	HOSTAPD_IF_ASYNC_SET_AUTHORIZED = 13,
+	HOSTAPD_IF_ASYNC_REMOTE_AUTH_RESPONSE = 14,
 	HOSTAPD_IF_ASYNC_OP_MAX
 };
 
@@ -163,6 +164,12 @@ struct hostapd_if_eapol_key_tx_msg {
 	uint16_t frame_len;
 };
 
+struct hostapd_if_remote_auth_response_msg {
+	char ifname[IFNAMSIZ + 1];
+	uint8_t sta_mac[ETH_ALEN];
+	struct hostapd_if_frame_ctx *ctx;
+};
+
 union hostapd_if_eloop_msg_union {
 	struct hostapd_if_assoc_response_msg assoc_response;
 	struct hostapd_if_auth_response_msg auth_response;
@@ -178,6 +185,7 @@ union hostapd_if_eloop_msg_union {
 	struct hostapd_if_eapol_key_tx_msg eapol_key_tx;
 	struct hostapd_if_eapol_tx_msg eapol_tx;
 	struct hostapd_if_send_frame_msg send_frame;
+	struct hostapd_if_remote_auth_response_msg remote_auth_response;
 };
 
 struct hostapd_if_eloop_payload {
@@ -227,6 +235,9 @@ int hostapd_if_eapol_tx_validate_inputs(char *ifname, uint8_t *sta_mac,
 					uint16_t data_len);
 int hostapd_if_send_frame_validate_inputs(char *ifname, int link_id,
 					  uint8_t *frame, uint16_t frame_len);
+int hostapd_if_remote_auth_response_validate_inputs(char *ifname,
+						    uint8_t *sta_mac,
+						    struct hostapd_if_frame_ctx *ctx);
 void hostapd_if_assoc_response_dump_params(char *ifname, uint8_t *sta_mac,
 					   struct hostapd_if_frame_ctx *ctx);
 void hostapd_if_auth_response_dump_params(char *ifname, uint8_t *sta_mac,
@@ -262,6 +273,8 @@ void hostapd_if_eapol_key_tx_dump_params(char *ifname, uint8_t *sta_mac,
                                         uint8_t link_id,
                                         uint8_t *frame,
                                         uint16_t frame_len);
+void hostapd_if_remote_auth_response_dump_params(char *ifname, uint8_t *sta_mac,
+						 struct hostapd_if_frame_ctx *ctx);
 void __hostapd_if_trigger_eapol_m3(char *ifname, uint8_t *sta_mac);
 void __hostapd_if_assoc_response(char *ifname, uint8_t *sta_mac,
 				 struct hostapd_if_frame_ctx *ctx);
@@ -295,6 +308,8 @@ void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 			   uint8_t type, uint8_t *data, uint16_t data_len);
 void __hostapd_if_send_frame(char *ifname, int link_id,
 			     uint8_t *frame, uint16_t frame_len);
+void __hostapd_if_remote_auth_response(char *ifname, uint8_t *sta_mac,
+				       struct hostapd_if_frame_ctx *ctx);
 
 
 static int hostapd_if_assoc_response(char *ifname, uint8_t *sta_mac,
@@ -608,7 +623,6 @@ static int hostapd_if_start_sa_query(char *ifname, uint8_t *sta_mac, int link_id
 	return 0;
 }
 
-
 static void hostapd_if_set_authorized(char *ifname, uint8_t *sta_mac, int authorized)
 {
 	struct hostapd_if_eloop_payload payload;
@@ -651,13 +665,35 @@ static void hostapd_if_send_frame(char *ifname, int link_id,
 	payload.msg.send_frame.frame_len = frame_len;
 
 	hostapd_if_send_frame_dump_params(ifname, link_id, frame, frame_len);
-
 	if (hostapd_if_eloop_sock >= 0)
 		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
 	else
 		__hostapd_if_send_frame(ifname, link_id, frame, frame_len);
 }
 
+static int hostapd_if_remote_auth_response(char *ifname, uint8_t *sta_mac,
+					   struct hostapd_if_frame_ctx *ctx)
+{
+	struct hostapd_if_eloop_payload payload;
+	int __validate_ret =
+		hostapd_if_remote_auth_response_validate_inputs(ifname, sta_mac, ctx);
+
+	if (__validate_ret < 0)
+		return __validate_ret;
+
+	payload.opcode = HOSTAPD_IF_ASYNC_REMOTE_AUTH_RESPONSE;
+	os_strlcpy(payload.msg.remote_auth_response.ifname, ifname, IFNAMSIZ + 1);
+	os_memcpy(payload.msg.remote_auth_response.sta_mac, sta_mac, ETH_ALEN);
+	payload.msg.remote_auth_response.ctx = ctx;
+
+	hostapd_if_remote_auth_response_dump_params(ifname, sta_mac, ctx);
+
+	if (hostapd_if_eloop_sock >= 0)
+		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
+	else
+		__hostapd_if_remote_auth_response(ifname, sta_mac, ctx);
+	return 0;
+}
 
 static void hostapd_if_eapol_key_tx(char *ifname, uint8_t *sta_mac,uint8_t link_id,
 				    uint8_t *frame, uint16_t frame_len)
@@ -805,6 +841,14 @@ static void hostapd_if_eloop_socket_read(int sock, void *eloop_ctx,
 
 		__hostapd_if_eapol_key_tx(msg->ifname, msg->sta_mac, msg->link_id,
 					  msg->frame, msg->frame_len);
+		break;
+	}
+	case HOSTAPD_IF_ASYNC_REMOTE_AUTH_RESPONSE: {
+		struct hostapd_if_remote_auth_response_msg *msg =
+			&payload->msg.remote_auth_response;
+
+		__hostapd_if_remote_auth_response(msg->ifname, msg->sta_mac,
+						  msg->ctx);
 		break;
 	}
 	default:
@@ -988,4 +1032,5 @@ void hostapd_if_eloop_inbound_handlers(
 	plugin->eapol_key_tx = hostapd_if_eapol_key_tx;
 	plugin->eapol_tx = hostapd_if_eapol_tx;
 	plugin->send_frame = hostapd_if_send_frame;
+	plugin->remote_auth_response = hostapd_if_remote_auth_response;
 }

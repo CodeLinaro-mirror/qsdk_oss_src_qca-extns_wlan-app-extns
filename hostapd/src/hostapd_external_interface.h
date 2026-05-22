@@ -108,7 +108,7 @@ enum hostapd_if_frame_reg_type {
 	HOSTAPD_IF_FRAME_TYPE_DEAUTH,
 	HOSTAPD_IF_FRAME_TYPE_DISASSOC,
 	HOSTAPD_IF_FRAME_TYPE_PROBE,
-	HOSTAPD_IF_FRAME_TYPE_RRB,
+	HOSTAPD_IF_FRAME_TYPE_REMOTE_AUTH,
 	HOSTAPD_IF_FRAME_TYPE_MAX
 };
 
@@ -254,6 +254,15 @@ struct hostapd_if_frame_ctx {
 				uint8_t *pmkid;
 			} pmk;
 		} assoc_resp;
+
+		struct {
+			bool is_ml_sta;
+		} remote_auth_req;
+
+		struct {
+			struct hostapd_if_pmk_r1 *pmk_r1;
+			bool is_ml_sta;
+		} remote_auth_resp;
 
 		struct {
 			uint8_t category;
@@ -527,8 +536,8 @@ struct hostapd_external_app_object {
 			       struct hostapd_if_frame_ctx *ctx);
 
 	void (*invoke_remote_auth)(char *ifname, uint8_t *sta_mac,
-				   uint8_t *auth_body,
-				   uint16_t auth_body_len,
+				   const uint8_t *ies,
+				   uint16_t ies_len,
 				   struct hostapd_if_frame_ctx *ctx);
 
 	void (*notify_action)(char *ifname, const uint8_t *sta_mac,
@@ -537,9 +546,9 @@ struct hostapd_external_app_object {
 			      struct hostapd_if_frame_ctx *ctx);
 
 	void (*notify_remote_auth)(char *ifname, uint8_t *sta_mac,
-				   uint8_t *auth_body,
-				   uint16_t auth_body_len,
-				   int link_id);
+				   const uint8_t *ies,
+				   uint16_t ies_len,
+				   struct hostapd_if_frame_ctx *ctx);
 
 	/*
 	 * Southbound
@@ -651,8 +660,8 @@ struct hostapd_external_app_object {
 	/*
 	 * ASYNC: Remote auth response
 	 */
-	void (*remote_auth_response)(char *ifname, uint8_t *sta_mac,
-				     struct hostapd_if_frame_ctx *ctx);
+	int (*remote_auth_response)(char *ifname, uint8_t *sta_mac,
+				    struct hostapd_if_frame_ctx *ctx);
 
 	/*
 	 * ASYNC: EAPOL Tx
