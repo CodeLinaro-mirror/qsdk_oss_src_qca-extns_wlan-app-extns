@@ -97,7 +97,8 @@
 enum hostapd_if_frame_policy {
 	HOSTAPD_IF_FRAME_DO_NOTHING,
 	HOSTAPD_IF_FRAME_NOTIFY,
-	HOSTAPD_IF_FRAME_INVOKE
+	HOSTAPD_IF_FRAME_INVOKE,
+	HOSTAPD_IF_FRAME_OFFLOAD
 };
 
 enum hostapd_if_frame_reg_type {
@@ -111,13 +112,68 @@ enum hostapd_if_frame_reg_type {
 	HOSTAPD_IF_FRAME_TYPE_MAX
 };
 
+
+enum hostapd_if_action_frame_type {
+	HOSTAPD_IF_FRAME_TYPE_ACTION_RADIO,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_RADIO_NEIGHBOUR_REQ,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_WNM,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_BTM_QUERY,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_BTM_RESP,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_DMS_REQ,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_DMS_RESP,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_WMM,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_WMM_ADDTS_REQ,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_WMM_DELTS,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_FT,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_FT_REQ,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_FT_RESP,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_VENDOR,
+	HOSTAPD_IF_FRAME_TYPE_ACTION_MAX
+};
+
+static inline const char *hostapd_if_action_frame_type_string(
+	enum hostapd_if_action_frame_type type)
+{
+	switch (type) {
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_RADIO:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_RADIO";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_RADIO_NEIGHBOUR_REQ:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_RADIO_NEIGHBOUR_REQ";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_WNM:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_WNM";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_BTM_QUERY:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_BTM_QUERY";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_BTM_RESP:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_BTM_RESP";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_DMS_REQ:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_DMS_REQ";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_DMS_RESP:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_DMS_RESP";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_WMM:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_WMM";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_WMM_ADDTS_REQ:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_WMM_ADDTS_REQ";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_WMM_DELTS:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_WMM_DELTS";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_FT:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_FT";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_FT_REQ:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_FT_REQ";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_FT_RESP:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_FT_RESP";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_VENDOR:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_VENDOR";
+	case HOSTAPD_IF_FRAME_TYPE_ACTION_MAX:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_MAX";
+	default:
+		return "HOSTAPD_IF_FRAME_TYPE_ACTION_UNKNOWN";
+	}
+}
+
 struct hostapd_if_frame_category {
 	enum hostapd_if_frame_reg_type type;
 	union {
-		struct {
-			uint8_t category;
-			struct action_field action;
-		} action;
+		enum hostapd_if_action_frame_type action_type;
 	} u;
 };
 
@@ -275,6 +331,7 @@ struct hostapd_if_event {
 				HOSTAPD_IF_SET_GTK_ERROR,
 				HOSTAPD_IF_START_SA_QUERY_ERROR,
 				HOSTAPD_IF_EAPOL_TX_ERROR,
+				HOSTAPD_IF_SEND_FRAME_ERROR,
 			} type;
 			const char *func;
 			int line_num;
@@ -454,18 +511,20 @@ struct hostapd_external_app_object {
 	void (*eapol_key_rx)(char *ifname, uint8_t link_id,
 			     uint8_t *frame, uint16_t frame_len);
 
-	void (*invoke_action)(char *ifname, uint8_t *sta_mac,
-			      uint8_t *frame, uint16_t frame_len,
-			      struct hostapd_if_frame_ctx *ctx);
+	void (*offload_action)(char *ifname, const uint8_t *sta_mac,
+			       const uint8_t *frame, uint16_t frame_len,
+			       uint8_t link_id,
+			       struct hostapd_if_frame_ctx *ctx);
 
 	void (*invoke_remote_auth)(char *ifname, uint8_t *sta_mac,
 				   uint8_t *auth_body,
 				   uint16_t auth_body_len,
 				   struct hostapd_if_frame_ctx *ctx);
 
-	void (*notify_action)(char *ifname, uint8_t *sta_mac,
-			      uint8_t *frame, uint16_t frame_len,
-			      int link_id);
+	void (*notify_action)(char *ifname, const uint8_t *sta_mac,
+			      const uint8_t *frame, uint16_t frame_len,
+			      int link_id,
+			      struct hostapd_if_frame_ctx *ctx);
 
 	void (*notify_remote_auth)(char *ifname, uint8_t *sta_mac,
 				   uint8_t *auth_body,
@@ -597,7 +656,7 @@ struct hostapd_external_app_object {
 	/*
 	 * ASYNC: Send generic frame
 	 */
-	void (*send_frame)(char *ifname, uint8_t link_id, uint8_t *frame,
+	void (*send_frame)(char *ifname, int link_id, uint8_t *frame,
 			   uint16_t frame_len);
 
 	/*

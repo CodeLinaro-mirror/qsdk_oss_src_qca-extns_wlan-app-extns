@@ -481,9 +481,8 @@ static void interface_create(char *ifname, void *ctx)
 	if (!ifname)
 		return;
 
-	if (!test_plugin.register_frame) {
+	if (!test_plugin.register_frame)
 		return;
-	}
 
 	hapd = ctx;
 
