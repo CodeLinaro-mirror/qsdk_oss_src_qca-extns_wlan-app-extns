@@ -141,7 +141,7 @@ static int wpa_drv_notify_rcsa(struct wpa_supplicant *wpa_s, int freq,
 	if (wpa_s->wpa_state != WPA_COMPLETED)
 		return -1;
 
-	wpa_printf(MSG_DEBUG, "RCSA: freq %u chan %u cs_count %u",
+	wpa_printf(MSG_DEBUG, "rcsa: freq %u chan %u cs_count %u",
 		   freq, chan, cs_count);
 
 	if (opt_ie && opt_ie_len > 0)
@@ -149,7 +149,7 @@ static int wpa_drv_notify_rcsa(struct wpa_supplicant *wpa_s, int freq,
 
 	buf = wpabuf_alloc(total_len);
 	if (!buf) {
-		wpa_printf(MSG_DEBUG, "RCSA: Memory allocation failed");
+		wpa_printf(MSG_DEBUG, "rcsa: Memory allocation failed");
 		return -1;
 	}
 
@@ -192,7 +192,7 @@ static int wpa_drv_notify_rcsa(struct wpa_supplicant *wpa_s, int freq,
 	if (optional_ml_info_ie_access(opt_ie, opt_ie_len, &link_id, 1))
 		link_id = -1;
 
-	wpa_printf(MSG_INFO, "RCSA: sending on %d link freq %u",
+	wpa_printf(MSG_DEBUG, "rcsa: sending on %d link freq %u",
 		   link_id, tx_freq);
 
 	res = wpa_drv_send_action_extn(wpa_s, tx_freq, 0,
@@ -201,7 +201,7 @@ static int wpa_drv_notify_rcsa(struct wpa_supplicant *wpa_s, int freq,
 				       wpabuf_head(buf), wpabuf_len(buf),
 				       0, link_id);
 	if (res < 0)
-		wpa_printf(MSG_ERROR, "RCSA: Failed to send action frame");
+		wpa_printf(MSG_ERROR, "rcsa: Failed to send action frame");
 	wpabuf_free(buf);
 
 	return res;
@@ -218,7 +218,7 @@ static int hostapd_ucode_notify_rcsa_tx(struct hostapd_iface *iface, u8 channel,
 	char *opt_ie_hex = NULL;
 	struct hostapd_rcsa_ctx *rcsa_ctx;
 
-	wpa_printf(MSG_INFO, "RCSA TX notify: freq=%d channel=%d",
+	wpa_printf(MSG_DEBUG, "rcsa: TX notify: freq=%d channel=%d",
 		   freq, channel);
 
 	if (!iface->ucode.idx)
@@ -244,7 +244,7 @@ static int hostapd_ucode_notify_rcsa_tx(struct hostapd_iface *iface, u8 channel,
 	if (iface->current_hw_info)
 		hw_idx = iface->current_hw_info->hw_idx;
 
-	wpa_printf(MSG_INFO, "RCSA event with radio id %d %s\n",
+	wpa_printf(MSG_DEBUG, "rcsa: event with radio id %d %s\n",
 		   hw_idx, iface->phy);
 	uc_value_push(ucv_get(ucv_int64_new(hw_idx)));
 	uc_value_push(ucv_get(val));
@@ -388,7 +388,7 @@ static size_t hostapd_build_rcsa_optional_ies(const u8 *nol_ie,
 			return 0;
 
 		os_memcpy(pos, nol_ie, nol_ie_len);
-		wpa_printf(MSG_INFO, "rcsa:copied nol");
+		wpa_printf(MSG_DEBUG, "rcsa:copied nol");
 		pos += nol_ie_len;
 	}
 
@@ -404,36 +404,31 @@ static size_t hostapd_build_rcsa_optional_ies(const u8 *nol_ie,
 }
 
 static int hostapd_build_nol_ie(struct hostapd_iface *iface,
-					  int freq,
-					  u8 current_vht_oper_chwidth,
-					  u8 oper_centr_freq_seg0_idx,
-					  u8 oper_centr_freq_seg1_idx,
-					  u8 *buf, size_t buf_len)
+				u8 *buf, size_t buf_len)
 {
-	dfs_nol_ie_info nol_info;
+	dfs_nol_ie_info *nol_info;
 	u8 *pos = buf;
 	u8 *length_pos;
 
-	if (!iface || !buf || buf_len < 4)
+	if (!iface->iface_extn.nol_info_valid)
 		return -1;
 
-	if (!iface->radar_bit_pattern_extn ||
-	    iface->radar_bit_pattern_extn == 0xffff ||
-	    dfs_prepare_nol_ie_bitmap(iface, freq,
-				      current_vht_oper_chwidth,
-				      oper_centr_freq_seg0_idx,
-				      oper_centr_freq_seg1_idx,
-				      iface->radar_bit_pattern_extn,
-				      &nol_info) != 0)
-		return -1;
+	nol_info = &iface->iface_extn.nol_info;
+
+	wpa_printf(MSG_DEBUG,
+		   "rcsa: nol info : bw %u freq %u nol %hx",
+		   nol_info->bandwidth, nol_info->freq,
+		   nol_info->subchan_bitmap);
 
 	*pos++ = WLAN_EID_VENDOR_SPECIFIC;
 	length_pos = pos++;
-	*pos++ = (u8) nol_info.bandwidth;
-	WPA_PUT_LE16(pos, (u16) nol_info.freq);
+	*pos++ = (u8) nol_info->bandwidth;
+	WPA_PUT_LE16(pos, (u16) nol_info->freq);
 	pos += 2;
-	*pos++ = (u8) nol_info.subchan_bitmap;
+	*pos++ = (u8) nol_info->subchan_bitmap;
 	*length_pos = pos - length_pos - 1;
+
+	iface->iface_extn.nol_info_valid = false;
 
 	return pos - buf;
 }
@@ -452,7 +447,7 @@ static void hostapd_rcsa_store_optional_ie(struct hostapd_iface *iface,
 
 	if (opt_ie_len > sizeof(rcsa_ctx->optional_ie)) {
 		wpa_printf(MSG_WARNING,
-				"RCSA: optional IE too long (%zu > %zu)",
+				"rcsa: optional IE too long (%zu > %zu)",
 				opt_ie_len, sizeof(rcsa_ctx->optional_ie));
 		return;
 	}
@@ -516,28 +511,26 @@ int hostapd_send_rcsa_extn(struct hostapd_iface *iface,
 		return -EINVAL;
 
 	if (hostapd_csa_in_progress(iface)) {
-		wpa_printf(MSG_INFO,
-			   "RCSA: defer TX because channel switch is already in progress");
+		wpa_printf(MSG_DEBUG,
+			   "rcsa: defer TX because channel switch is already in progress");
 		return 0;
 	}
 
 	if (hostapd_is_rcsa_inprogress(iface)) {
-		wpa_printf(MSG_INFO,
-			   "RCSA: inprogress");
+		wpa_printf(MSG_DEBUG,
+			   "rcsa: inprogress");
 		return -EINVAL;
 	}
 
-	nol_ie_len = hostapd_build_nol_ie(iface, freq,
-					  current_vht_oper_chwidth,
-					  oper_centr_freq_seg0_idx,
-					  oper_centr_freq_seg1_idx,
+	nol_ie_len = hostapd_build_nol_ie(iface,
 					  nol_ie_buf,
 					  sizeof(nol_ie_buf));
 	if (nol_ie_len > 0)
 		attach_nol_ie = true;
 
 	hostapd_get_local_rcsa_ml_info(iface, &attach_ml_ie, &link_id_bitmap);
-	wpa_printf(MSG_INFO,"rcsa:attach ml %u",attach_ml_ie);
+	wpa_printf(MSG_DEBUG, "rcsa: attach_ml %u attach_nol %u",
+		   attach_ml_ie, attach_nol_ie);
 
 	opt_ie_len = hostapd_build_rcsa_optional_ies(
 				attach_nol_ie ? nol_ie_buf : NULL,
@@ -634,7 +627,7 @@ bool hostapd_rcsa_rx_hdl(struct hostapd_data *hapd,
 	u16 link_id_bitmap = 0;
 	iface = hapd->iface;
 
-	wpa_printf(MSG_INFO, "RCSA: received RCSA from repeater");
+	wpa_printf(MSG_DEBUG, "rcsa: received RCSA from repeater");
 
 	if (hostapd_parse_rcsa_frame(hapd, buf, len,
 				     &switch_mode, &new_chan,
@@ -659,17 +652,17 @@ bool hostapd_rcsa_rx_hdl(struct hostapd_data *hapd,
 		return 1;
 
 	if (hostapd_csa_in_progress(iface)) {
-		wpa_printf(MSG_INFO,
-			   "RCSA: defer forwarding because channel switch is already in progress");
+		wpa_printf(MSG_DEBUG,
+			   "rcsa: defer forwarding because channel switch is already in progress");
 		return 0;
 	}
 
 	if (hostapd_is_rcsa_inprogress(iface)) {
-		wpa_printf(MSG_INFO, "RCSA: inprogress");
+		wpa_printf(MSG_DEBUG, "rcsa: inprogress");
 		return 1;
 	}
 
-	wpa_printf(MSG_INFO, "RCSA: proceeding with Tx");
+	wpa_printf(MSG_DEBUG, "rcsa: proceeding with Tx");
 
 	/* strip off ml-info iE */
 	if (mlinfo_present &&  (opt_ie_len >= 5))
@@ -719,7 +712,7 @@ void hostapd_rcsa_trigger_channal_change(void *eloop_data, void *user_data)
 				       iface, NULL);
 		return;
 	}
-	wpa_printf(MSG_INFO,"RCSA: CSA timeout: trigger channel switch");
+	wpa_printf(MSG_DEBUG, "rcsa: CSA timeout: trigger channel switch");
 	hostapd_dfs_start_channel_switch(iface);
 	hostapd_set_rcsa_inprogress(iface, false);
 }
