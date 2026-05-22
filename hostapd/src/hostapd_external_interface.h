@@ -283,6 +283,7 @@ enum hostapd_if_event_type {
 	HOSTAPD_IF_EVENT_EAPOL_M2_RECEIVED,
 	HOSTAPD_IF_EVENT_ACTION_COMPLETION,
 	HOSTAPD_IF_EVENT_INBOUND_CALL_ERROR,
+	HOSTAPD_IF_EVENT_DOT1X_COMPLETE,
 	HOSTAPD_IF_EVENT_MAX
 };
 
@@ -319,6 +320,13 @@ struct hostapd_if_event {
 		struct {
 			int authorized;
 		} authorize_completion;
+
+		struct {
+			uint8_t identity[MAX_RADIUS_CUI_LEN];
+			size_t identity_len;
+			int success;
+		} dot1x_completion;
+
 		struct {
 			enum HOSTAPD_IF_INBOUND_ERROR {
 				HOSTAPD_IF_AUTH_RESPONSE_ERROR,
