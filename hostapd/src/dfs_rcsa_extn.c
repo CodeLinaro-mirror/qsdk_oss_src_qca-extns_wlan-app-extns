@@ -10,6 +10,7 @@
 #include "common/wpa_ctrl.h"
 #include "cmn.h"
 #include <ap/hostapd.h>
+#include <ap/ap_drv_ops.h>
 #include <ap/dfs.h>
 #include <ap/hw_features.h>
 #include "utils/wpa_debug.h"
@@ -32,9 +33,13 @@
  */
 #define RCSA_VENDOR_ACTION_HDR_LEN 4
 #define RCSA_CSA_IE_HDR_LEN 2
+#define RCSA_NOL_IE_INFO_LEN 4
+#define RCSA_NOL_IE_TOTAL_LEN (RCSA_CSA_IE_HDR_LEN + RCSA_NOL_IE_INFO_LEN)
 #define RCSA_MIN_FRAME_LEN \
 	(RCSA_VENDOR_ACTION_HDR_LEN + RCSA_CSA_IE_HDR_LEN + \
 	 IEEE80211_CSA_IE_MIN_LEN)
+#define RCSA_MIN_DFS_SUBCHAN_BW 20
+#define RCSA_MAX_20M_SUB_CH 8
 
 #define HOSTAPD_RCSA_TX_COUNT 5
 #define HOSTAPD_RCSA_SWITCH_MODE 1
@@ -455,6 +460,409 @@ static void hostapd_rcsa_store_optional_ie(struct hostapd_iface *iface,
 	rcsa_ctx->optional_ie_len = opt_ie_len;
 }
 
+/**
+ * hostapd_validate_rcsa_nol_info - Validate parsed RCSA NOL IE data
+ * @iface: hostapd interface receiving the RCSA frame
+ * @rcsa_nol: NOL information parsed from the RCSA optional IE
+ * @nol_info: output NOL information cleared before bitmap extraction
+ *
+ * Validates the context and mandatory NOL fields before bitmap
+ * extraction. Clears @nol_info to avoid stale data on failure.
+ *
+ * Return: 0 when the parsed NOL data can be processed, -1 otherwise.
+ */
+static int hostapd_validate_rcsa_nol_info(struct hostapd_iface *iface,
+					  const dfs_nol_ie_info *rcsa_nol,
+					  dfs_nol_ie_info *nol_info)
+{
+	if (!iface || !iface->conf || !rcsa_nol || !nol_info) {
+		wpa_printf(MSG_ERROR, "RCSA: invalid NOL reverse context");
+		return -1;
+	}
+
+	os_memset(nol_info, 0, sizeof(*nol_info));
+	if (!rcsa_nol->freq || rcsa_nol->bandwidth != RCSA_MIN_DFS_SUBCHAN_BW ||
+	    !rcsa_nol->subchan_bitmap) {
+		wpa_printf(MSG_ERROR,
+			   "RCSA: invalid NOL freq=%u bw=%u bitmap=0x%04x",
+			   rcsa_nol->freq, rcsa_nol->bandwidth,
+			   rcsa_nol->subchan_bitmap);
+		return -1;
+	}
+
+	return 0;
+}
+
+/**
+ * hostapd_get_rcsa_oper_bw - Get operating bandwidth for RCSA NOL bitmap
+ * @iface: hostapd interface with current operating channel information
+ * @bandwidth_mhz: output operating bandwidth in MHz
+ *
+ * Return: 0 on success, -1 otherwise.
+ */
+static int hostapd_get_rcsa_oper_bw(struct hostapd_iface *iface,
+				    int *bandwidth_mhz)
+{
+	int oper_chwidth;
+
+	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	if (dfs_nol_ie_chan_width_to_bw_mhz(oper_chwidth, iface->freq,
+					    iface->freq, bandwidth_mhz)) {
+		wpa_printf(MSG_ERROR, "RCSA: unsupported oper chwidth=%d",
+			   oper_chwidth);
+		return -1;
+	}
+
+	return 0;
+}
+
+/**
+ * hostapd_get_rcsa_start_subchan - Find NOL start subchannel
+ * @rcsa_nol: NOL information parsed from the RCSA frame
+ * @base_freq: primary operating frequency in MHz
+ * @n_subchans: number of 20 MHz subchannels in operating bandwidth
+ * @start_subchan_idx: output start index in operation-channel bitmap
+ *
+ * Calculates where the received NOL frequency starts in the operating channel
+ * bitmap so the RCSA NOL bitmap can be mapped to local channel state.
+ *
+ * Return: 0 on success, -1 otherwise.
+ */
+static int hostapd_get_rcsa_start_subchan(const dfs_nol_ie_info *rcsa_nol,
+					  int base_freq, int n_subchans,
+					  int *start_subchan_idx)
+{
+	if (!base_freq || rcsa_nol->freq < (u32) base_freq ||
+	    ((int) rcsa_nol->freq - base_freq) % RCSA_MIN_DFS_SUBCHAN_BW) {
+		wpa_printf(MSG_ERROR,
+			   "RCSA: invalid NOL freq=%u base=%d",
+			   rcsa_nol->freq, base_freq);
+		return -1;
+	}
+
+	*start_subchan_idx = ((int) rcsa_nol->freq - base_freq) /
+		RCSA_MIN_DFS_SUBCHAN_BW;
+	if (*start_subchan_idx < 0 || *start_subchan_idx >= n_subchans) {
+		wpa_printf(MSG_ERROR,
+			   "RCSA: invalid NOL start=%d count=%d",
+			   *start_subchan_idx, n_subchans);
+		return -1;
+	}
+
+	return 0;
+}
+
+/**
+ * hostapd_rcsa_idenitfy_nol_bitmap - Identify operating NOL bitmap
+ * @rcsa_bitmap: bitmap parsed from the RCSA NOL IE
+ * @rcsa_freq: first NOL subchannel frequency in MHz
+ * @start_subchan_idx: start index in operation-channel bitmap
+ * @n_subchans: number of 20 MHz subchannels in operating bandwidth
+ *
+ * Maps the RCSA NOL bitmap to the local operating-channel bitmap.
+ *
+ * Return: operation-channel NOL bitmap.
+ */
+static u16 hostapd_rcsa_idenitfy_nol_bitmap(u16 rcsa_bitmap,
+					    u32 rcsa_freq,
+					    int start_subchan_idx,
+					    int n_subchans)
+{
+	u16 oper_bitmap = 0;
+	int bit;
+
+	for (bit = 0; bit < RCSA_MAX_20M_SUB_CH; bit++) {
+		int oper_bit;
+
+		if (!(rcsa_bitmap & BIT(bit)))
+			continue;
+
+		oper_bit = start_subchan_idx + bit;
+		if (oper_bit >= n_subchans) {
+			wpa_printf(MSG_WARNING,
+				   "RCSA: skip NOL bit=%d rcsa_freq=%u oper_bit=%d",
+				   bit, rcsa_freq + bit * RCSA_MIN_DFS_SUBCHAN_BW,
+				   oper_bit);
+			continue;
+		}
+
+		oper_bitmap |= BIT(oper_bit);
+	}
+
+	return oper_bitmap;
+}
+
+/**
+ * hostapd_extract_rcsa_nol_ie_bitmap - Extract NOL IE bitmap from RCSA
+ * @iface: hostapd interface receiving the RCSA frame
+ * @rcsa_nol: NOL IE information received from the RCSA message
+ * @nol_info: output NOL information updated with extracted NOL IE data
+ *
+ * Extracts the received RCSA NOL IE, identifies the operating NOL bitmap,
+ * and fills @nol_info with the extracted NOL IE information.
+ *
+ * Return: 0 on success, -1 otherwise.
+ */
+static int hostapd_extract_rcsa_nol_ie_bitmap(struct hostapd_iface *iface,
+					      const dfs_nol_ie_info *rcsa_nol,
+					      dfs_nol_ie_info *nol_info)
+{
+	u16 parsed_bitmap;
+	u16 nol_ie_bitmap;
+	int base_freq;
+	int bandwidth_mhz;
+	int n_subchans;
+	int start_subchan_idx;
+
+	if (hostapd_validate_rcsa_nol_info(iface, rcsa_nol, nol_info))
+		return -1;
+
+	parsed_bitmap = rcsa_nol->subchan_bitmap;
+	if (hostapd_get_rcsa_oper_bw(iface, &bandwidth_mhz))
+		return -1;
+
+	n_subchans = bandwidth_mhz / RCSA_MIN_DFS_SUBCHAN_BW;
+	if (n_subchans <= 0 || n_subchans > RCSA_MAX_20M_SUB_CH) {
+		wpa_printf(MSG_ERROR,
+			   "RCSA: invalid subchannel count=%d bw=%d",
+			   n_subchans, bandwidth_mhz);
+		return -1;
+	}
+
+	base_freq = iface->freq;
+	if (hostapd_get_rcsa_start_subchan(rcsa_nol, base_freq, n_subchans,
+					   &start_subchan_idx))
+		return -1;
+
+	nol_ie_bitmap = hostapd_rcsa_idenitfy_nol_bitmap(parsed_bitmap,
+							 rcsa_nol->freq,
+							 start_subchan_idx,
+							 n_subchans);
+
+	if (!nol_ie_bitmap) {
+		wpa_printf(MSG_ERROR,
+			   "RCSA: empty NOL bitmap freq=%u base=%d bitmap=0x%04x",
+			   rcsa_nol->freq, base_freq, parsed_bitmap);
+		return -1;
+	}
+
+	nol_info->freq = rcsa_nol->freq - (start_subchan_idx * RCSA_MIN_DFS_SUBCHAN_BW);
+	nol_info->bandwidth = bandwidth_mhz;
+	nol_info->subchan_bitmap = nol_ie_bitmap;
+	wpa_printf(MSG_DEBUG,
+		   "RCSA: Parsed NOLIE freq: %d NOL bitmap =0x%04x Identified NOL bitmap =0x%04x NOL bw=%u",
+		   nol_info->freq, parsed_bitmap, nol_info->subchan_bitmap, nol_info->bandwidth);
+
+	return 0;
+}
+
+/**
+ * hostapd_rcsa_get_radar_freq_params - Build radar frequency parameters
+ * @hapd: hostapd BSS data
+ * @nol_info: decoded RCSA NOL information
+ * @freq_params: output frequency parameters for radar notification
+ *
+ * Derives the current operating channel data, center channel segment, and
+ * channel width from the RCSA NOL information and fills @freq_params for
+ * hostapd_drv_notify_radar().
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int hostapd_rcsa_get_radar_freq_params(struct hostapd_data *hapd,
+					      const dfs_nol_ie_info *nol_info,
+					      struct hostapd_freq_params *freq_params)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_hw_modes *mode = iface->current_mode;
+	struct hostapd_channel_data *chan_data;
+	u8 channel;
+	u8 oper_chwidth;
+	u8 center_seg0_idx;
+	int ret;
+
+	freq_params->mode = ieee80211_freq_to_chan(iface->freq, &channel);
+	if (freq_params->mode == NUM_HOSTAPD_MODES) {
+		wpa_printf(MSG_ERROR, "RCSA: invalid radar freq=%d",
+			   iface->freq);
+		return -1;
+	}
+
+	oper_chwidth = uc_hostapd_bandwidth_to_oper_chwidth_extn(nol_info->bandwidth);
+	if (!mode) {
+		wpa_printf(MSG_ERROR,
+			   "RCSA: current hw mode unavailable freq=%d bw=%u",
+			   iface->freq, nol_info->bandwidth);
+		return -1;
+	}
+
+	chan_data = hw_mode_get_channel(mode, iface->freq, NULL);
+	if (!chan_data) {
+		wpa_printf(MSG_ERROR,
+			   "RCSA: failed to find channel data freq=%d bw=%u",
+			   iface->freq, nol_info->bandwidth);
+		return -1;
+	}
+
+	center_seg0_idx = hostapd_get_center_chan_extn(iface, chan_data,
+						       oper_chwidth);
+	ret = hostapd_set_freq_params(freq_params, iface->conf->hw_mode,
+				      iface->freq, channel,
+				      iface->conf->enable_edmg,
+				      iface->conf->edmg_channel,
+				      iface->conf->ieee80211n,
+				      iface->conf->ieee80211ac,
+				      iface->conf->ieee80211ax,
+				      iface->conf->ieee80211be,
+				      iface->conf->ieee80211bn,
+				      iface->conf->secondary_channel,
+				      oper_chwidth,
+				      center_seg0_idx,
+				      0,
+				      iface->conf->vht_capab,
+				      &mode->he_capab[IEEE80211_MODE_AP],
+				      &mode->eht_capab[IEEE80211_MODE_AP],
+				      &mode->uhr_capab[IEEE80211_MODE_AP],
+				      0,
+				      hapd->iconf->he_6ghz_reg_pwr_type,
+				      iface->conf->bandwidth_device,
+				      iface->conf->center_freq_device);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "RCSA: failed to build freq params ret=%d freq=%d bw=%u",
+			   ret, iface->freq, nol_info->bandwidth);
+		return -1;
+	}
+
+#ifdef CONFIG_IEEE80211BE
+	freq_params->link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+
+	return 0;
+}
+
+/**
+ * hostapd_rcsa_notify_radar - Propagate radar event to driver based on
+ *                             RCSA-derived NOL information
+ * @hapd: hostapd BSS data
+ *
+ * Builds frequency parameters from the decoded RCSA NOL IE, notifies the
+ * driver through hostapd_drv_notify_radar(), and then runs hostapd DFS radar
+ * handling for the same NOL subchannel bitmap.
+ */
+static void hostapd_rcsa_notify_radar(struct hostapd_data *hapd)
+{
+	struct hostapd_freq_params freq_params;
+	struct hostapd_iface *iface;
+	dfs_nol_ie_info *nol_info;
+	int ret;
+
+	if (!hapd || !hapd->iface || !hapd->iface->conf || !hapd->iconf) {
+		wpa_printf(MSG_ERROR, "RCSA: invalid radar notify context");
+		return;
+	}
+
+	iface = hapd->iface;
+	nol_info = &iface->iface_extn.nol_info;
+
+	if (!nol_info->freq || !nol_info->bandwidth ||
+	    !nol_info->subchan_bitmap) {
+		wpa_printf(MSG_ERROR,
+			   "RCSA: invalid NOL info freq=%u bw=%u bitmap=0x%04x",
+			   nol_info->freq, nol_info->bandwidth,
+			   nol_info->subchan_bitmap);
+		return;
+	}
+
+	if (nol_info->bandwidth < DFS_NOL_IE_BW_80_MHZ) {
+		wpa_printf(MSG_DEBUG,
+			   "RCSA: Puncturing is not applicable for bandwidth less than 80 MHz");
+		return;
+	}
+
+	if (hostapd_rcsa_get_radar_freq_params(hapd, nol_info, &freq_params)) {
+		wpa_printf(MSG_WARNING,
+			   "RCSA: failed to get radar frequency params freq=%u bw=%u bitmap=0x%04x",
+			   nol_info->freq, nol_info->bandwidth,
+			   nol_info->subchan_bitmap);
+		return;
+	}
+
+	ret = hostapd_drv_notify_radar(hapd, &freq_params,
+				       nol_info->subchan_bitmap);
+	if (ret < 0)
+		wpa_printf(MSG_WARNING,
+			   "RCSA: notify failed ret=%d freq=%d cf1=%d bw=%u",
+			   ret, freq_params.freq, freq_params.center_freq1,
+			   nol_info->bandwidth);
+}
+
+/**
+ * hostapd_parse_rcsa_nol_ie - Parse RCSA NOL IE from optional IEs
+ * @iface: hostapd interface to update
+ * @ies: optional IE buffer following the CSA IE
+ * @ies_len: length of optional IE buffer
+ *
+ * Searches the received RCSA optional IEs for the NOL IE generated by
+ * hostapd_build_nol_ie() by repeater. The NOL IE values which were prepared by
+ * dfs_prepare_nol_ie_bitmap() from repeater is converted back to the
+ * operation-channel bitmap by root AP.
+ *
+ * On success, updates iface->iface_extn.nol_info and sets
+ * iface->iface_extn.nol_info_valid to true. Existing NOL state is cleared
+ * before parsing to avoid using stale data.
+ *
+ * Return: true when a valid NOL IE is parsed, false otherwise.
+ */
+static bool hostapd_parse_rcsa_nol_ie(struct hostapd_iface *iface,
+				      const u8 *ies, size_t ies_len)
+{
+	const u8 *pos = ies;
+	size_t rem_len = ies_len;
+	dfs_nol_ie_info parsed_nol_info;
+	dfs_nol_ie_info nol_info;
+
+	if (!iface)
+		return false;
+
+	iface->iface_extn.nol_info_valid = false;
+	os_memset(&iface->iface_extn.nol_info, 0,
+		  sizeof(iface->iface_extn.nol_info));
+	if (!ies || !ies_len)
+		return false;
+
+	while (rem_len >= 2) {
+		size_t ie_len = (size_t) pos[1] + 2;
+
+		if (ie_len > rem_len)
+			return false;
+
+		if (pos[0] == WLAN_EID_VENDOR_SPECIFIC &&
+		    ie_len == RCSA_NOL_IE_TOTAL_LEN) {
+			wpa_hexdump(MSG_INFO, "RCSA: NOL IE parse raw", pos, ie_len);
+			os_memset(&parsed_nol_info, 0, sizeof(parsed_nol_info));
+			parsed_nol_info.bandwidth = pos[2];
+			parsed_nol_info.freq = WPA_GET_LE16(pos + 3);
+			parsed_nol_info.subchan_bitmap = pos[5];
+
+			if (hostapd_extract_rcsa_nol_ie_bitmap(iface,
+							       &parsed_nol_info,
+							       &nol_info))
+				return false;
+
+			os_memcpy(&iface->iface_extn.nol_info, &nol_info,
+				  sizeof(iface->iface_extn.nol_info));
+			iface->iface_extn.nol_info_valid = true;
+
+			return true;
+		}
+
+		pos += ie_len;
+		rem_len -= ie_len;
+	}
+
+	return false;
+}
+
 void hostapd_trigger_rcsa_tx(void *eloop_data, void *user_data)
 {
 	struct hostapd_iface *iface = eloop_data;
@@ -583,6 +991,7 @@ static int hostapd_parse_rcsa_frame(struct hostapd_data *hapd,
 	pos = cs_ie + IEEE80211_CSA_IE_TOTAL_LEN;
 	rem_len = end - pos;
 
+	hostapd_parse_rcsa_nol_ie(hapd->iface, pos, rem_len);
 	if (rem_len >= 2 && opt_ie) {
 		copy_len = rem_len < RCSA_MAX_OPTIONAL_IE_LEN ? rem_len : RCSA_MAX_OPTIONAL_IE_LEN;
 
@@ -647,6 +1056,17 @@ bool hostapd_rcsa_rx_hdl(struct hostapd_data *hapd,
 	iface = target_hapd->iface;
 	if (!iface)
 		return 0;
+
+	if (iface->iface_extn.nol_info_valid &&
+	    !hostapd_is_backhaul_sta_configured(iface)) {
+		wpa_printf(MSG_DEBUG, "RCSA: notifying radar from parsed NOL IE");
+		hostapd_rcsa_notify_radar(target_hapd);
+	}
+
+	if (iface->iface_extn.nol_info_valid) {
+		wpa_printf(MSG_DEBUG, "RCSA: clearing parsed NOL IE valid flag");
+		iface->iface_extn.nol_info_valid = false;
+	}
 
 	if (!hostapd_rcsa_rx_bh_enabled(iface))
 		return 1;

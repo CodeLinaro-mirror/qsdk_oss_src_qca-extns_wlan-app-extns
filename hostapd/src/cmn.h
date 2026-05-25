@@ -1986,6 +1986,9 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 					 struct csa_settings *csa);
 void hostapd_iface_set_supplicant_channel_extn(struct hostapd_iface *hapd_iface);
 int acs_get_bw_center_chan(int freq, enum bw_type bw);
+int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
+				 struct hostapd_channel_data *chan,
+				 enum oper_chan_width oper_bw);
 struct hostapd_channel_data *
 acs_find_ideal_chan(struct hostapd_iface *iface);
 int acs_study_options(struct hostapd_iface *iface);
@@ -2300,6 +2303,8 @@ int hostapd_drv_mark_vap_submode_extn(void *priv, unsigned int vendor_id,
 
 u16 hostapd_get_width_from_oper_chwidth_extn(enum oper_chan_width oper_chwidth,
 					     int secondary_channel);
+
+u8 uc_hostapd_bandwidth_to_oper_chwidth_extn(int bandwidth);
 
 enum oper_chan_width hostapd_get_oper_chwidth_from_width_extn(u16 width);
 

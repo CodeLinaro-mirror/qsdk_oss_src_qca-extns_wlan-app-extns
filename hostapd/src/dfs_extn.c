@@ -72,14 +72,6 @@ enum qca_wlan_vendor_attr_dfs_nol_info {
 
 #define DFS_NOL_IE_BITMAP_MASK(n_subchans) ((u16)((1U << (n_subchans)) - 1))
 
-enum dfs_nol_ie_bw_mhz {
-	DFS_NOL_IE_BW_20_MHZ = 20,
-	DFS_NOL_IE_BW_40_MHZ = 40,
-	DFS_NOL_IE_BW_80_MHZ = 80,
-	DFS_NOL_IE_BW_160_MHZ = 160,
-	DFS_NOL_IE_BW_320_MHZ = 320,
-};
-
 enum dfs_channel_type_extn {
 	DFS_ANY_CHANNEL_EXTN,
 	DFS_AVAILABLE_EXTN,	/* non-radar or radar-available */
@@ -444,9 +436,9 @@ int handle_action_vs_extn(struct hostapd_data *hapd,
 	return -1;
 }
 
-static int dfs_nol_ie_chan_width_to_bw_mhz(enum oper_chan_width chan_width,
-					    int freq, int cf1,
-					    int *bandwidth_mhz)
+int dfs_nol_ie_chan_width_to_bw_mhz(enum oper_chan_width chan_width,
+				    int freq, int cf1,
+				    int *bandwidth_mhz)
 {
 	if (!bandwidth_mhz)
 		return -1;
@@ -486,7 +478,7 @@ static int dfs_nol_ie_chan_width_to_bw_mhz(enum oper_chan_width chan_width,
 }
 
 static int dfs_nol_ie_bw_mhz_to_chan_width(u32 bandwidth_mhz,
-					  int *chan_width)
+					   int *chan_width)
 {
 	if (!chan_width)
 		return -1;
