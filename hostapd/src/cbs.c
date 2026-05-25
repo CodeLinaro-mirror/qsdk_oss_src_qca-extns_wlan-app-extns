@@ -302,8 +302,9 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 				     union wpa_event_data *data)
 {
 	struct cbs_event *cbs_evt;
-	struct hostapd_iface *iface = hapd->iface;
-	struct hostapd_config_extn *conf_extn = &hapd->iface->conf->conf_extn;
+	struct hostapd_data *link_hapd;
+	struct hostapd_iface *iface;
+	struct hostapd_config_extn *conf_extn;
 
 	if (!data) {
 		wpa_printf(MSG_ERROR, "WPA event with NULL data");
@@ -311,9 +312,17 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 	}
 
 	cbs_evt = &data->event_data_extn.scan_results_event.cbs_event;
+	link_hapd = switch_link_hapd(hapd, cbs_evt->link_id);
+	if (!link_hapd)
+		return -1;
 
-	wpa_printf(MSG_DEBUG, "CBS scan complete: frequency=%u scan_complete=%u",
-		   cbs_evt->scan_complete_freq, cbs_evt->status);
+	iface = link_hapd->iface;
+	conf_extn = &iface->conf->conf_extn;
+
+	wpa_printf(MSG_DEBUG,
+		   "CBS scan complete: frequency=%u scan_complete=%u link_id=%u",
+		   cbs_evt->scan_complete_freq, cbs_evt->status,
+		   cbs_evt->link_id);
 
 	if (!cbs_evt->scan_complete_freq)
 		return -1;
@@ -321,7 +330,8 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 	/* Pre processing of scan results per channel */
 	if (cbs_evt->status == VENDOR_SCAN_STATUS_NEW_RESULTS ||
 	    cbs_evt->status == VENDOR_SPLIT_SCAN_COMPLETE_PER_CHANNEL) {
-		if (hostapd_drv_get_survey(hapd, cbs_evt->scan_complete_freq))
+		if (hostapd_drv_get_survey(link_hapd,
+					   cbs_evt->scan_complete_freq))
 			wpa_printf(MSG_ERROR, "CBS: survey results failed");
 		if (conf_extn->qacs_enable)
 			acs_process_hostapd_scan_data_per_freq(

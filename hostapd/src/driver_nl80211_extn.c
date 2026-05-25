@@ -714,6 +714,7 @@ int qca_nl80211_scan_done_event_extn(struct i802_bss *bss, u8 *data, size_t len)
 	cbs_evt = &event.event_data_extn.scan_results_event.cbs_event;
 	cbs_evt->scan_complete_freq = 0;
 	cbs_evt->status = 0;
+	cbs_evt->link_id = 0;
 
 	if (!bss) {
 		wpa_printf(MSG_ERROR, "nl80211: bss is NULL!");
@@ -730,6 +731,13 @@ int qca_nl80211_scan_done_event_extn(struct i802_bss *bss, u8 *data, size_t len)
 		wpa_printf(MSG_ERROR,
 			   "nl80211: Failed to parse scan done attributes");
 		return -EINVAL;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SCAN_LINK_ID]) {
+		cbs_evt->link_id =
+			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SCAN_LINK_ID]);
+		bss->bss_extn.scan_link_extn =
+			nl80211_get_link(bss, cbs_evt->link_id);
 	}
 
 	if (tb[QCA_WLAN_VENDOR_ATTR_SCAN_FREQUENCIES]) {
@@ -755,12 +763,26 @@ int qca_nl80211_scan_done_event_extn(struct i802_bss *bss, u8 *data, size_t len)
 	}
 
 	wpa_printf(MSG_INFO,
-		   "nl80211: scan done event: scan_complete_freq=%u status=%u",
+		   "nl80211: scan done event: scan_complete_freq=%u status=%u link_id=%u",
 		   cbs_evt->scan_complete_freq,
-		   cbs_evt->status);
+		   cbs_evt->status, cbs_evt->link_id);
 
 	wpa_supplicant_event(bss->ctx, EVENT_SCAN_RESULTS_EXTN, &event);
 	return 0;
+}
+
+void *wpa_driver_nl80211_get_survey_extn(struct i802_bss *bss, void *ctx)
+{
+	if (!bss)
+		return ctx;
+
+	if (bss->bss_extn.scan_link_extn && bss->bss_extn.scan_link_extn->ctx) {
+		ctx = bss->bss_extn.scan_link_extn->ctx;
+		bss->bss_extn.scan_link_extn = NULL;
+		wpa_printf(MSG_DEBUG, "nl80211: survey results processing for scan_link: %p", ctx);
+	}
+
+	return ctx;
 }
 
 static int hw_blocked_chans_process_event_extn(struct nl_msg *msg, void *arg)
