@@ -2215,6 +2215,7 @@ struct hostapd_channel_data *
 dfs_downgrade_bandwidth_helper(struct hostapd_iface *iface, int *secondary_channel,
 						u8 *oper_centr_freq_seg0_idx,
 						u8 *oper_centr_freq_seg1_idx,
+						u8 *oper_chwidth,
 						int *channel_type);
 struct hostapd_channel_data *
 dfs_get_valid_channel_helper(struct hostapd_iface *iface,
