@@ -397,25 +397,26 @@ repurpose_reduce_contig_bw_extn(u8 pri, enum oper_chan_width *width,
 	}
 }
 
-
-/* hostapd_get_oper_info_of_repurposed_bss_extn derives the channel operation
- * information that can be advertised in management frames of repurposed BSS
- * by considering the repurpose_he_width or repurpose_vht_width configured on
- * the interface based on the repurpose mode configured on the BSS.
+/**
+ * hostapd_oper_info_of_repurposed_bss_helper_extn - Apply repurpose width cap
+ * @hapd: BSS context whose repurpose configuration is used
+ * @primary_channel: Primary operating channel to derive the legacy info for
+ * @secondary_channel: Secondary channel offset of the operating channel
+ * @oper_chwidth: Maximum advertisable legacy operating channel width
+ * @seg0: Center frequency segment 0 index for the operating channel
+ * @seg1: Center frequency segment 1 index for the operating channel
  *
- * Callers must pass the current maximum-advertisable legacy operating channel
- * information for the BSS. In particular, if the radio is punctured or the
- * BSS is EHT-disabled on a 320 MHz interface, width/seg0/seg1 must already be
- * adjusted for those constraints before this function is called.
- *
- * This function only applies the additional repurpose bandwidth cap. It does
- * not recompute puncture-derived operating information. Hence, callers must
- * also ensure to call this only when BSS is repurposed.
+ * Apply the repurpose bandwidth cap to the caller supplied legacy operating
+ * channel information. The caller is expected to pass already-adjusted values
+ * when puncturing or 320 MHz to 160 MHz downgrade handling is needed.
  */
-void hostapd_get_oper_info_of_repurposed_bss_extn(struct hostapd_data *hapd,
-						  enum oper_chan_width *oper_chwidth,
-						  u8 *seg0,
-						  u8 *seg1)
+static void
+hostapd_oper_info_of_repurposed_bss_helper_extn(struct hostapd_data *hapd,
+						u8 primary_channel,
+						int secondary_channel,
+						enum oper_chan_width *oper_chwidth,
+						u8 *seg0,
+						u8 *seg1)
 {
 	u16 oper_width;
 	u16 repurpose_width;
@@ -423,17 +424,20 @@ void hostapd_get_oper_info_of_repurposed_bss_extn(struct hostapd_data *hapd,
 	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
 		return;
 
+	if (*seg0 == 0)
+		*seg0 = primary_channel;
+
 	/* If chan width is 20/40, then check if seg0 passed is same as pri
 	 * channel. If so, the operating bandwidth is 20. Skip deriving based
 	 * on secondary channel.
 	 */
 	if (*oper_chwidth == CONF_OPER_CHWIDTH_USE_HT &&
-	    *seg0 == hapd->iconf->channel)
+	    *seg0 == primary_channel)
 		oper_width = 20;
 	else
 		oper_width = hostapd_get_width_from_oper_chwidth_extn(
 				      *oper_chwidth,
-				      hapd->iconf->secondary_channel);
+				      secondary_channel);
 
 	if (hostapd_is_repurpose_disabled_11ax_extn(hapd->conf))
 		repurpose_width =
@@ -458,21 +462,79 @@ void hostapd_get_oper_info_of_repurposed_bss_extn(struct hostapd_data *hapd,
 		if (*oper_chwidth == CONF_OPER_CHWIDTH_USE_HT) {
 			/* 20 MHz */
 			*seg1 = 0;
-			*seg0 = hapd->iconf->channel;
+			*seg0 = primary_channel;
 			break;
 		}
-		repurpose_reduce_contig_bw_extn(hapd->iconf->channel,
+		repurpose_reduce_contig_bw_extn(primary_channel,
 						oper_chwidth,
 						seg0, seg1);
 		oper_width = hostapd_get_width_from_oper_chwidth_extn(
 					*oper_chwidth,
-					hapd->iconf->secondary_channel);
+					secondary_channel);
 	}
 	wpa_printf(MSG_DEBUG,
 		   "Repurpose: updated oper_chwidth = %d seg0 = %d seg1 = %d",
 		   *oper_chwidth, *seg0, *seg1);
+
 }
 
+
+
+/* hostapd_get_oper_info_of_repurposed_bss_extn derives the channel operation
+ * information that can be advertised in management frames of repurposed BSS
+ * by considering the repurpose_he_width or repurpose_vht_width configured on
+ * the interface based on the repurpose mode configured on the BSS.
+ *
+ * Callers must pass the current maximum-advertisable legacy operating channel
+ * information for the BSS. In particular, if the radio is punctured or the
+ * BSS is EHT-disabled on a 320 MHz interface, width/seg0/seg1 must already be
+ * adjusted for those constraints before this function is called.
+ *
+ * This function only applies the additional repurpose bandwidth cap. It does
+ * not recompute puncture-derived operating information. Hence, callers must
+ * also ensure to call this only when BSS is repurposed.
+ */
+void hostapd_get_oper_info_of_repurposed_bss_extn(struct hostapd_data *hapd,
+						  enum oper_chan_width *oper_chwidth,
+						  u8 *seg0,
+						  u8 *seg1)
+{
+	hostapd_oper_info_of_repurposed_bss_helper_extn(hapd,
+							hapd->iconf->channel,
+							hapd->iconf->secondary_channel,
+							oper_chwidth,
+							seg0,
+							seg1);
+}
+
+
+/**
+ * hostapd_get_csa_info_of_repurposed_bss_extn - Derive repurposed CSA info
+ * @hapd: BSS context whose repurpose configuration is used
+ * @primary_channel: Primary channel of the CSA target channel definition
+ * @secondary_channel: Secondary channel offset of the CSA target channel
+ * @oper_chwidth: Maximum advertisable legacy operating channel width for CSA
+ * @seg0: Center frequency segment 0 index for the CSA target channel
+ * @seg1: Center frequency segment 1 index for the CSA target channel
+ *
+ * Apply the repurpose bandwidth cap to caller supplied CSA target channel
+ * information so that ECSA/CSA operating class derivation uses the target BSS
+ * bandwidth instead of the interface bandwidth.
+ */
+void hostapd_get_csa_info_of_repurposed_bss_extn(struct hostapd_data *hapd,
+						 u8 primary_channel,
+						 int secondary_channel,
+						 enum oper_chan_width *oper_chwidth,
+						 u8 *seg0,
+						 u8 *seg1)
+{
+	hostapd_oper_info_of_repurposed_bss_helper_extn(hapd,
+							primary_channel,
+							secondary_channel,
+							oper_chwidth,
+							seg0,
+							seg1);
+}
 
 void
 hostapd_repurpose_update_ht_capabilities_extn(struct hostapd_data *hapd,

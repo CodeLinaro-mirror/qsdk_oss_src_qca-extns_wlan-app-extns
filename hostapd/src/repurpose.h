@@ -87,6 +87,15 @@ hostapd_get_oper_info_of_repurposed_bss_extn(struct hostapd_data *hapd,
 {
 }
 
+static inline void
+hostapd_get_csa_info_of_repurposed_bss_extn(struct hostapd_data *hapd,
+						 u8 primary_channel,
+						 int secondary_channel,
+						 enum oper_chan_width *oper_chwidth,
+						 u8 *seg0, u8 *seg1)
+{
+}
+
 static inline bool
 hostapd_config_check_repurpose_width_extn(struct hostapd_config *conf)
 {
@@ -167,6 +176,13 @@ void hostapd_get_oper_info_of_repurposed_bss_extn(
 			enum oper_chan_width *oper_chwidth,
 			u8 *seg0,
 			u8 *seg1);
+void hostapd_get_csa_info_of_repurposed_bss_extn(
+				struct hostapd_data *hapd,
+				u8 primary_channel,
+				int secondary_channel,
+				enum oper_chan_width *oper_chwidth,
+				u8 *seg0,
+				u8 *seg1);
 
 bool hostapd_config_check_repurpose_width_extn(struct hostapd_config *conf);
 void
