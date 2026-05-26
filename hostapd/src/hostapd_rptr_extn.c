@@ -414,7 +414,7 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 				 * rather than a fatal error so the ongoing
 				 * channel switch can complete normally.
 				 */
-				if (iface->bss[i]->csa_in_progress &&
+				if (iface->bss[i] && iface->bss[i]->csa_in_progress &&
 				    iface->bss[i]->cs_freq_params.freq ==
 				    csa->freq_params.freq) {
 					wpa_printf(MSG_DEBUG,
