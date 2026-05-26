@@ -547,6 +547,13 @@ void hostapd_periodic_acs_stop(struct hostapd_iface *iface)
 	iface->iface_extn.periodic_acs_timer_set = false;
 }
 
+bool acs_scan_event_expected_extn(struct hostapd_iface *iface)
+{
+	return ((iface->state == HAPD_IFACE_ACS) ||
+		(iface->iface_extn.dynamic_acs_action &&
+		 iface->state == HAPD_IFACE_ENABLED));
+}
+
 static int hostapd_acs_run_extn(struct hostapd_data *hapd, const char *pos,
                                 char *reply, size_t reply_size)
 {
