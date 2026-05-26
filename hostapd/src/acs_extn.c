@@ -1139,6 +1139,19 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 	/* Notify wpa_supplicant to resume scans on success and channel change requested */
 	hostapd_ml_acs_check_and_notify(iface, 1);
 
+	if (hostapd_is_bh_sta_connecting_or_connected_extn(iface)) {
+		if (iface->conf->conf_extn.rptr_allow_chan_sw) {
+			wpa_printf(MSG_DEBUG, "Rptr BH STA is connected, "
+				   "disconnect BH STA and allow ACS channel switch");
+			hostapd_ucode_trigger_bhsta_disconnect(iface);
+		} else {
+			wpa_printf(MSG_ERROR, "Rptr BH STA is connected, "
+				   "discard ACS channel switch");
+			iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+			return 0;
+		}
+	}
+
 	cs_err = hostapd_trigger_channel_switch_extn(iface, chan);
 	if (cs_err) {
 		wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",

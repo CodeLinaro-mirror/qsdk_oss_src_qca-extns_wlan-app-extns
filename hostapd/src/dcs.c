@@ -1558,6 +1558,19 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 
 	if (!hostapd_dcs_set_in_progress(iface, type))
 		return;
+
+	if (hostapd_is_bh_sta_connecting_or_connected_extn(iface)) {
+		if (iface->conf->conf_extn.rptr_allow_chan_sw) {
+			wpa_printf(MSG_DEBUG, "Rptr BH STA is connected, "
+				   "disconnect BH STA and allow DCS channel switch");
+			hostapd_ucode_trigger_bhsta_disconnect(iface);
+		} else {
+			wpa_printf(MSG_ERROR, "Rptr BH STA is connected, "
+				   "discard DCS channel switch");
+			return;
+		}
+	}
+
 	ret = hostapd_dcs_channel_change(&settings, link_hapd->iface, new_chan_width, new_centre_freq);
 	if (ret) {
 		hostapd_dcs_restore_extn(iface, "CSA trigger failed");

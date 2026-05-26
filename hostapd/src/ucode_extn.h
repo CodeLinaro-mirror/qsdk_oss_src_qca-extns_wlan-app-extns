@@ -12,6 +12,7 @@ static inline
 void hostapd_ucode_trigger_bhsta_disconnect(struct hostapd_iface *hapd)
 {
 }
+static inline
 void hostapd_ucode_notify_uplink_csa(struct hostapd_iface *hapd, int event, u8 channel,
 				     int freq, int csa_count, u8 new_ch_width,
 				     u8 ch_seg_0, u8 ch_seg_1,

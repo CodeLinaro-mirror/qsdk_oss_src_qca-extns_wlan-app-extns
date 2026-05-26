@@ -22,6 +22,7 @@
 #include "rropinfo.h"
 #include "wpa_config_extn.h"
 #include "reg_extn.h"
+#include "ucode_extn.h"
 
 struct hostapd_config;
 struct sta_info;
@@ -435,6 +436,10 @@ struct hostapd_config_extn {
 	bool qacs_enable;
 	bool uplink_csa;
 	bool rpt_max_phy;
+	/* 1 - Allow channel switch for Repeater AP, when BH STA is connected
+	 * 0 - Disallow channel switch for Repeater AP, when BH STA is not connected
+	 */
+	bool rptr_allow_chan_sw;
 
 	/* Indicates whether HE MCS 12/13 support is enabled
 	 * (the support is enabled by default)
