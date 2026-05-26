@@ -147,6 +147,25 @@ static int wpas_uplink_csa_get_tx_link(struct wpa_supplicant *wpa_s,
 	return -1;
 }
 
+static void wpas_uplink_csa_update_wb_ie_cfs(u8 primary_chan, u8 new_ch_width,
+					     u8 *ch_seg_0, u8 *ch_seg_1)
+{
+	if (new_ch_width != CONF_OPER_CHWIDTH_160MHZ)
+		return;
+
+	/*
+	 * Encode CCFS0/CCFS1 for 160 MHz per IEEE Std 802.11-2024,
+	 * Table 9-316, matching hostapd_eid_wb_channel_switch():
+	 * - CCFS1 is the 160 MHz center frequency segment index.
+	 * - CCFS0 is the 80 MHz segment containing the primary channel.
+	 */
+	*ch_seg_1 = *ch_seg_0;
+	if (primary_chan < *ch_seg_0)
+		*ch_seg_0 -= 8;
+	else
+		*ch_seg_0 += 8;
+}
+
 #ifdef UPLINK_CSA_DUMP_ACTION_FRAME
 static void wpas_uplink_csa_dump_action_frame(struct wpabuf *buf)
 {
@@ -247,6 +266,9 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 			   freq);
 		return -1;
 	}
+
+	wpas_uplink_csa_update_wb_ie_cfs(chan, new_ch_width,
+					 &ch_seg_0, &ch_seg_1);
 
 	wpa_printf(MSG_DEBUG,
 		   "freq %u chan %u cs_count %u ch_seg_0 %u ch_seg_1 %u new_ch_width %u assoc_freq %u tx_freq %u tx_link_id %d",
