@@ -614,7 +614,8 @@ int hostapd_prepare_nol_ie_bmap_extn(struct hostapd_iface *iface,
 	iface->iface_extn.nol_info_valid = false;
 	os_memset(&iface->iface_extn.nol_info, 0, sizeof(iface->iface_extn.nol_info));
 
-	if (!hostapd_uplink_csa_bh_enabled(iface))
+	if (!hostapd_uplink_csa_bh_enabled(iface) &&
+	    !IS_CSH_RCSA_TO_UPLINK_ENABLED(iface->conf->conf_extn.cswopts))
 		return -EINVAL;
 
 	wpa_printf(MSG_INFO,
