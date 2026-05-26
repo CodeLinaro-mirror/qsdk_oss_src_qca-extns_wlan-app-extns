@@ -282,9 +282,9 @@ bool hostapd_config_check_repurpose_width_extn(struct hostapd_config *conf)
 							 conf->secondary_channel);
 
 	if (conf->conf_extn.repurpose_he_width > oper_width) {
-		wpa_printf(MSG_ERROR,
-				"Repurpose HE width can't be greater than oper width of interface");
-		return false;
+		wpa_printf(MSG_DEBUG,
+			   "Repurpose HE width can't be greater than oper width of interface, cap it to oper width");
+		conf->conf_extn.repurpose_he_width = oper_width;
 	}
 
 	if (!conf->conf_extn.repurpose_he_width) {
@@ -298,9 +298,9 @@ bool hostapd_config_check_repurpose_width_extn(struct hostapd_config *conf)
 	}
 
 	if (conf->conf_extn.repurpose_vht_width > conf->conf_extn.repurpose_he_width) {
-		wpa_printf(MSG_ERROR,
-			   "Repurpose: VHT width can't be greater than repurpose HE width");
-		return false;
+		wpa_printf(MSG_DEBUG,
+			   "Repurpose: VHT width can't be greater than repurpose HE width, cap it to HE width");
+		conf->conf_extn.repurpose_vht_width = conf->conf_extn.repurpose_he_width;
 	}
 
 	if (!conf->conf_extn.repurpose_vht_width) {
