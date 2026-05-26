@@ -652,6 +652,208 @@ static int hostapd_ctrl_iface_get_ecsa_opclass_extn(struct hostapd_data *hapd,
 	return res;
 }
 
+/* List of 40 MHz bonded channel frequencies */
+static const struct bonded_channel_freq_extn bonded_chan_40mhz_list_freq_extn[] = {
+	{5180, 5200},
+	{5220, 5240},
+	{5260, 5280},
+	{5300, 5320},
+	{5500, 5520},
+	{5540, 5560},
+	{5580, 5600},
+	{5620, 5640},
+	{5660, 5680},
+	{5700, 5720},
+	{5745, 5765},
+	{5785, 5805},
+	{5825, 5845},
+	{5865, 5885},
+	{5955, 5975},
+	{5995, 6015},
+	{6035, 6055},
+	{6075, 6095},
+	{6115, 6135},
+	{6155, 6175},
+	{6195, 6215},
+	{6235, 6255},
+	{6275, 6295},
+	{6315, 6335},
+	{6355, 6375},
+	{6395, 6415},
+	{6435, 6455},
+	{6475, 6495},
+	{6515, 6535},
+	{6555, 6575},
+	{6595, 6615},
+	{6635, 6655},
+	{6675, 6695},
+	{6715, 6735},
+	{6755, 6775},
+	{6795, 6815},
+	{6835, 6855},
+	{6875, 6895},
+	{6915, 6935},
+	{6955, 6975},
+	{6995, 7015},
+	{7035, 7055},
+	{7075, 7095}
+};
+
+/**
+ * hostapd_ctrl_iface_get_sec_offset_from_bonded_40mhz_freq_extn - Get HT40 secondary
+ * offset from bonded pair table
+ *
+ * Looks up @freq in the bonded 40 MHz pair table
+ * (bonded_chan_40mhz_list_freq_extn).
+ *
+ * Return: 1 if @freq matches the pair start frequency (HT40+),
+ * -1 if @freq matches the pair end frequency (HT40-),
+ * 0 if @freq is not present in the bonded 40 MHz list.
+ */
+static int
+hostapd_ctrl_iface_get_sec_offset_from_bonded_40mhz_freq_extn(int freq)
+{
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(bonded_chan_40mhz_list_freq_extn); i++) {
+		if (freq == bonded_chan_40mhz_list_freq_extn[i].start_freq)
+			return 1;
+		if (freq == bonded_chan_40mhz_list_freq_extn[i].end_freq)
+			return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * Keep SET_CHANNEL center frequency calculations aligned with
+ * mac80211.sh:mac80211_get_seg0().
+ */
+static int
+hostapd_ctrl_iface_get_seg0_idx_extn(int freq, int channel,
+				     enum oper_chan_width oper_chwidth,
+				     int secondary_channel)
+{
+	bool is_6ghz = is_6ghz_freq(freq);
+	bool is_6ghz_chan2 = is_6ghz && freq == FREQ_6GHZ_CHAN2;
+
+	switch (oper_chwidth) {
+	case CONF_OPER_CHWIDTH_USE_HT:
+		/* 20 MHz does not use seg0 index; derive only for 40 MHz HT. */
+		if (!secondary_channel)
+			break;
+
+		if (is_6ghz && !is_6ghz_chan2)
+			return ((channel / 4) % 2) ? channel - 2 : channel + 2;
+		if (is_24ghz_freq(freq) && freq != FREQ_2GHZ_CHAN14)
+			return channel < 7 ? channel + 2 : channel - 2;
+		if (!is_6ghz_chan2)
+			return ((channel / 4) % 2) ? channel + 2 : channel - 2;
+		break;
+	case CONF_OPER_CHWIDTH_80MHZ:
+	case CONF_OPER_CHWIDTH_80P80MHZ:
+		if (is_6ghz && !is_6ghz_chan2) {
+			switch ((channel / 4) % 4) {
+			case 0:
+				return channel + 6;
+			case 1:
+				return channel + 2;
+			case 2:
+				return channel - 2;
+			case 3:
+				return channel - 6;
+			}
+		} else if (!is_6ghz_chan2) {
+			switch ((channel / 4) % 4) {
+			case 1:
+				return channel + 6;
+			case 2:
+				return channel + 2;
+			case 3:
+				return channel - 2;
+			case 0:
+				return channel - 6;
+			}
+		}
+		break;
+	case CONF_OPER_CHWIDTH_160MHZ:
+		if (is_6ghz && !is_6ghz_chan2) {
+			switch (channel) {
+			case 1: case 5: case 9: case 13: case 17: case 21: case 25: case 29:
+				return 15;
+			case 33: case 37: case 41: case 45: case 49: case 53: case 57: case 61:
+				return 47;
+			case 65: case 69: case 73: case 77: case 81: case 85: case 89: case 93:
+				return 79;
+			case 97: case 101: case 105: case 109: case 113: case 117: case 121: case 125:
+				return 111;
+			case 129: case 133: case 137: case 141: case 145: case 149: case 153: case 157:
+				return 143;
+			case 161: case 165: case 169: case 173: case 177: case 181: case 185: case 189:
+				return 175;
+			case 193: case 197: case 201: case 205: case 209: case 213: case 217: case 221:
+				return 207;
+			}
+		} else if (!is_6ghz_chan2) {
+			switch (channel) {
+			case 36: case 40: case 44: case 48: case 52: case 56: case 60: case 64:
+				return 50;
+			case 100: case 104: case 108: case 112: case 116: case 120: case 124: case 128:
+				return 114;
+			case 149: case 153: case 157: case 161: case 165: case 169: case 173: case 177:
+				return 163;
+			}
+		}
+		break;
+	case CONF_OPER_CHWIDTH_320MHZ:
+		if (is_6ghz && !is_6ghz_chan2) {
+			switch (channel) {
+			case 1: case 5: case 9: case 13: case 17: case 21: case 25: case 29:
+			case 33: case 37: case 41: case 45:
+				return 31;
+			case 49: case 53: case 57: case 61: case 65: case 69: case 73: case 77:
+				return 63;
+			case 81: case 85: case 89: case 93: case 97: case 101: case 105: case 109:
+				return 95;
+			case 113: case 117: case 121: case 125: case 129: case 133: case 137: case 141:
+				return 127;
+			case 145: case 149: case 153: case 157: case 161: case 165: case 169: case 173:
+				return 159;
+			case 177: case 181: case 185: case 189: case 193: case 197: case 201: case 205:
+			case 209: case 213: case 217: case 221:
+				return 191;
+			}
+		} else if (is_5ghz_freq(freq) &&
+			   freq >= FREQ_5GHZ_240MHZ_START &&
+			   freq <= FREQ_5GHZ_240MHZ_END) {
+			return 130;
+		}
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static int
+hostapd_ctrl_iface_get_sec_offset_extn(int freq, int channel)
+{
+	if (is_5ghz_freq(freq) || is_6ghz_freq(freq))
+		return hostapd_ctrl_iface_get_sec_offset_from_bonded_40mhz_freq_extn(freq);
+
+	if (is_24ghz_freq(freq)) {
+		if (channel < IEEE_2GHZ_CHAN_MIN ||
+		    channel > IEEE_2GHZ_CHAN_MAX)
+			return 0;
+
+		/* Keep deterministic HT40 split used in set-channel flow. */
+		return channel < IEEE_2GHZ_CHAN_SEC_SPLIT ? 1 : -1;
+	}
+
+	return 0;
+}
+
 static int hostapd_ctrl_iface_set_channel_extn(struct hostapd_data *hapd,
 					       const char *cmd)
 {
@@ -660,6 +862,10 @@ static int hostapd_ctrl_iface_set_channel_extn(struct hostapd_data *hapd,
 	struct hostapd_hw_modes *mode;
 	struct hostapd_channel_data *chan;
 	struct hostapd_freq_params freq_params;
+	enum oper_chan_width oper_chwidth;
+	int sec_offset, old_sec_offset, bandwidth, seg0_calc;
+	u8 seg0_idx, seg1_idx;
+	u16 punct_bitmap;
 	char *end;
 	long channel;
 	int freq;
@@ -707,6 +913,33 @@ static int hostapd_ctrl_iface_set_channel_extn(struct hostapd_data *hapd,
 		return -1;
 	}
 
+	old_sec_offset = iface->conf->secondary_channel;
+	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	bandwidth = hostapd_get_width_from_oper_chwidth_extn(oper_chwidth,
+							     old_sec_offset);
+	seg0_calc = hostapd_ctrl_iface_get_seg0_idx_extn(freq, channel,
+							 oper_chwidth,
+							 iface->conf->secondary_channel);
+	if (bandwidth > 20) {
+		sec_offset = hostapd_ctrl_iface_get_sec_offset_extn(freq, channel);
+		if (bandwidth == 40 && (!sec_offset)) {
+			wpa_printf(MSG_ERROR,
+				   "CTRL: SET_CHANNEL: Failed to derive sec_offset");
+			return -1;
+		}
+
+		if (!seg0_calc) {
+			wpa_printf(MSG_ERROR,
+				   "CTRL: SET_CHANNEL: Failed to derive seg0");
+			return -1;
+		}
+	} else {
+		sec_offset = 0;
+	}
+	seg0_idx = (u8) seg0_calc;
+	seg1_idx = oper_chwidth == CONF_OPER_CHWIDTH_80P80MHZ ?
+		   hostapd_get_oper_centr_freq_seg1_idx(iface->conf) : 0;
+	punct_bitmap = hostapd_get_punct_bitmap(hapd);
 	ret = hostapd_set_freq_params(&freq_params,
 				      iface->conf->hw_mode,
 				      freq, channel,
@@ -717,15 +950,15 @@ static int hostapd_ctrl_iface_set_channel_extn(struct hostapd_data *hapd,
 				      iface->conf->ieee80211ax,
 				      iface->conf->ieee80211be,
 				      iface->conf->ieee80211bn,
-				      0,
-				      CONF_OPER_CHWIDTH_USE_HT,
-				      0,
-				      0,
+				      sec_offset,
+				      oper_chwidth,
+				      seg0_idx,
+				      seg1_idx,
 				      iface->conf->vht_capab,
 				      mode ? &mode->he_capab[IEEE80211_MODE_AP] : NULL,
 				      mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
 				      mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
-				      0,
+				      punct_bitmap,
 				      hapd->iconf->he_6ghz_reg_pwr_type,
 				      iface->conf->bandwidth_device,
 				      iface->conf->center_freq_device);
@@ -744,16 +977,33 @@ static int hostapd_ctrl_iface_set_channel_extn(struct hostapd_data *hapd,
 	ret = hostapd_change_config_freq(iface->bss[0], iface->conf,
 					 &freq_params, NULL);
 	if (ret) {
+		iface->conf->secondary_channel = old_sec_offset;
 		wpa_printf(MSG_ERROR,
 			   "CTRL: SET_CHANNEL: Failed to set channel %ld in config",
 			   channel);
 		return -1;
 	}
 
+	/*
+	 * Keep user-requested primary channel intact. 5 GHz coexistence scan
+	 * flow can otherwise swap primary/secondary HT40 pair and implicitly
+	 * move the operating primary channel after SET_CHANNEL succeeds.
+	 */
+	iface->conf->no_pri_sec_switch = 1;
 	ret = hostapd_enable_iface(iface);
 	if (ret) {
 		wpa_printf(MSG_ERROR, "CTRL: SET_CHANNEL: Failed to enable interface");
 		return -1;
+	}
+
+	if (iface->conf->channel != channel ||
+	    hostapd_get_oper_chwidth(iface->conf) != oper_chwidth) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_CHANNEL: Requested channel/width not retained after restart (requested channel=%ld width=%d, current channel=%u width=%d)",
+			   channel, bandwidth, iface->conf->channel,
+			   hostapd_get_width_from_oper_chwidth_extn(
+				   hostapd_get_oper_chwidth(iface->conf),
+				   iface->conf->secondary_channel));
 	}
 
 	return 0;
