@@ -7,9 +7,8 @@
 #define DFS_EXTN_H
 #include "cmn.h"
 
-/* NOL IE structure definitions */
+/* Single NOL IE entry type */
 typedef struct dfs_nol_ie_info_extn dfs_nol_ie_info;
-typedef struct dfs_nol_ie_list_extn dfs_nol_ie_list;
 
 #ifndef CONFIG_QCN_EXTN
 #else
@@ -23,17 +22,14 @@ typedef struct dfs_nol_ie_list_extn dfs_nol_ie_list;
 
 
 int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
-			      int chan_width, int cf1, int cf2,
+			      enum oper_chan_width chan_width, int cf1, int cf2,
 			      u16 radar_bitmap,
 			      dfs_nol_ie_info *nol_info);
 int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
-			      dfs_nol_ie_list *nol_list,
-			      int new_cf0, int new_cf1,
-			      enum oper_chan_width new_ch_width);
+			      const dfs_nol_ie_info *nol_info);
 int dfs_decode_nol_ie(const u8 *ie, size_t ie_len,
-		      dfs_nol_ie_list *nol_list);
-void dfs_free_nol_ie_list(dfs_nol_ie_list *nol_list);
-int dfs_encode_nol_ie(dfs_nol_ie_list *nol_list, u8 *buf,
+		      dfs_nol_ie_info *nol_info);
+int dfs_encode_nol_ie(const dfs_nol_ie_info *nol_info, u8 *buf,
 		      size_t buf_len);
 int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface);
 bool hostapd_is_backhaul_sta_configured(struct hostapd_iface *iface);

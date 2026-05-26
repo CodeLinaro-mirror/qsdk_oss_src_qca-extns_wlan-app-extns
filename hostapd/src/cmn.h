@@ -346,15 +346,15 @@ struct hostapd_data_extn {
 #endif /* CONFIG_IEEE80211AC */
 };
 
+/* NOL IE vendor element encoding/decoding constants */
+#define DFS_NOL_IE_FIXED_HDR_LEN 7 /* EID+Len+OUI(3)+Type+Count */
+#define DFS_NOL_IE_ENTRY_LEN 10    /* freq(4)+bw(4)+bitmap(2) */
+#define DFS_NOL_IE_MIN_LEN DFS_NOL_IE_FIXED_HDR_LEN
+
 struct dfs_nol_ie_info_extn {
 	u32 freq;              /* Center frequency in MHz */
 	u32 bandwidth;         /* Bandwidth in MHz (20, 40, 80, 160, 320) */
 	u16 subchan_bitmap;    /* Bitmap of affected 20MHz subchannels */
-};
-
-struct dfs_nol_ie_list_extn {
-	struct dfs_nol_ie_info_extn *entries;
-	size_t count;
 };
 
 #ifdef CONFIG_IEEE80211AC
@@ -585,8 +585,8 @@ struct hostapd_iface_extn {
 	bool acs_failed;
 	enum dynamic_acs_action_extn dynamic_acs_action;
 	bool dfs_available_from_sta;
-	struct dfs_nol_ie_info_extn nol_info;
-	struct dfs_nol_ie_list_extn nol_list;
+	struct dfs_nol_ie_info_extn nol_info; /* single NOL entry for uplink CSA */
+	bool nol_info_valid;                  /* true when nol_info holds a valid entry */
 	/* Penalty percentage to be applied for non-priority channels in QACS */
 	u8 vlp_non_prior_penalty;
 
@@ -896,6 +896,13 @@ inline int wpa_driver_nl80211_dcs_sim_extn(void *priv,
 static inline int wpa_driver_nl80211_cbs_trigger_scan(void *priv,
 						      const struct cbs_params_extn *params,
 						      int *freq_list, int link_id)
+{
+	return -1;
+}
+
+static inline int
+nl80211_notify_radar_detected_extn(void *priv,
+				   struct hostapd_freq_params *freq)
 {
 	return -1;
 }
@@ -1729,6 +1736,8 @@ void wpa_driver_nl80211_sta_add_extn(void *priv,
 				     struct hostapd_sta_add_params *params);
 int wpa_driver_nl80211_dcs_config_extn(void *priv, u8 link_id,
 				       struct driver_dcs_config *params);
+int nl80211_notify_radar_detected_extn(void *priv,
+					      struct hostapd_freq_params *freq);
 int wpa_driver_nl80211_dcs_sim_extn(void *priv, u8 link_id,
 				    struct driver_dcs_sim *params);
 int wpa_driver_nl80211_cbs_trigger_scan(void *priv,

@@ -1192,6 +1192,104 @@ error:
 	return -1;
 }
 
+/**
+ * nl80211_notify_radar_detected_extn - Notify cfg80211 of radar detection
+ * via NL80211_CMD_NOTIFY_RADAR for a channel described by hostapd_freq_params.
+ *
+ * Called from DFS extn NOL processing path when an uplink CSA NOL IE
+ * is processed, so that cfg80211 marks the channel DFS_UNAVAILABLE and
+ * propagates the event to all registered radios.
+ *
+ * @priv: private driver data (struct i802_bss *)
+ * @freq: channel parameters including frequency, bandwidth and center freqs
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+int nl80211_notify_radar_detected_extn(void *priv,
+				      struct hostapd_freq_params *freq)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	int ret;
+
+	if (!bss || !freq) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid parameters for radar notification");
+		return -1;
+	}
+
+	drv = bss->drv;
+	if (!drv) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Driver data not available");
+		return -1;
+	}
+
+	if (freq->freq <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid frequency %d for radar notification",
+			   freq->freq);
+		return -1;
+	}
+
+	if (!(drv->capa.flags & WPA_DRIVER_FLAGS_RADAR)) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Driver does not support radar detection");
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Notify radar detected on %d MHz (ht_enabled=%d, vht_enabled=%d, bandwidth=%d MHz, cf1=%d MHz, cf2=%d MHz)",
+		   freq->freq, freq->ht_enabled, freq->vht_enabled,
+		   freq->bandwidth, freq->center_freq1, freq->center_freq2);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_NOTIFY_RADAR);
+	if (!msg) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to allocate message for radar notification");
+		return -1;
+	}
+
+	/*
+	 * Build frequency attributes directly — nl80211_put_freq_params() is
+	 * a static function in driver_nl80211.c and cannot be called here.
+	 * For NOL IE processing we always notify about individual 20 MHz
+	 * subchannels, so the attributes are straightforward.
+	 */
+	if (nla_put_u32(msg, NL80211_ATTR_WIPHY_FREQ, freq->freq) ||
+	    nla_put_u32(msg, NL80211_ATTR_CHANNEL_WIDTH, NL80211_CHAN_WIDTH_20) ||
+	    nla_put_u32(msg, NL80211_ATTR_CENTER_FREQ1, freq->freq)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to add frequency attributes");
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	if (nl80211_link_valid(bss->valid_links, freq->link_id)) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Radar notification on link_id=%d",
+			   freq->link_id);
+		if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, freq->link_id)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+	}
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret == 0) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Successfully notified radar on %d MHz",
+			   freq->freq);
+		return 0;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Failed to notify radar detection: %d (%s)",
+		   ret, strerror(-ret));
+	return -1;
+}
+
 static int rropinfo_handler(struct nl_msg *msg, void *arg)
 {
 	struct nlattr *tb[NL80211_ATTR_MAX + 1];

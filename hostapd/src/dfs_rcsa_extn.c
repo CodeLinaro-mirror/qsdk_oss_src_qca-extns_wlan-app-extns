@@ -410,7 +410,7 @@ static int hostapd_build_nol_ie(struct hostapd_iface *iface,
 					  u8 oper_centr_freq_seg1_idx,
 					  u8 *buf, size_t buf_len)
 {
-	struct dfs_nol_ie_info nol_info;
+	dfs_nol_ie_info nol_info;
 	u8 *pos = buf;
 	u8 *length_pos;
 
