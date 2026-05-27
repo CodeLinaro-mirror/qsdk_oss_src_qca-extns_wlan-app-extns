@@ -390,7 +390,8 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 	}
 
 	/* If channel params differ, perform CSA and track per-BSS completion */
-	if (!uc_hostapd_compare_channel_params_extn(conf, csa->freq_params, iface->freq)) {
+	if (!uc_hostapd_compare_channel_params_extn(conf, csa->freq_params, iface->freq) ||
+	     iface->conf->conf_extn.rpt_max_phy) {
 		if (iface->cac_started) {
 			ret = uc_hostapd_handle_csa_during_cac_extn(iface, csa,
 								    pre_connect);
