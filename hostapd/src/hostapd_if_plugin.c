@@ -84,6 +84,8 @@ static const struct hostapd_if_action_policy_entry hostapd_if_action_policy_map[
 	  "external_plugin_action_policy_wnm_btm_query" },
 	{ HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_BTM_RESP,
 	  "external_plugin_action_policy_wnm_btm_resp" },
+	{ HOSTAPD_IF_FRAME_TYPE_ACTION_WMM,
+	  "external_plugin_action_policy_wmm" },
 	{ HOSTAPD_IF_FRAME_TYPE_ACTION_WMM_ADDTS_REQ,
 	  "external_plugin_action_policy_wmm_addts_req" },
 	{ HOSTAPD_IF_FRAME_TYPE_ACTION_WMM_DELTS,
@@ -1519,8 +1521,13 @@ static int hostapd_ctrl_iface_send_frame(struct hostapd_data *hapd,
 {
 	const char *hex = cmd;
 	u8 *buf = NULL;
-	u8 link_id = 0xff;
+	int link_id = -1;
 	size_t hex_len, len;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
 
 	wpa_printf(MSG_DEBUG, "CTRL_IFACE SEND_FRAME %s", cmd);
 
