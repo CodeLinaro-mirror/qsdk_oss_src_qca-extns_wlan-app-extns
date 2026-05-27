@@ -469,7 +469,17 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 	} else if (os_strcasecmp(buf, "CSwOpts") == 0) {
 		if (hostapd_set_cswopts_extn(conf_extn, pos) < 0)
 			return 1;
+	} else if (os_strcmp(buf, "acs_periodic_interval") == 0) {
+		val = atoi(pos);
+		if (val < 60 || val > 86400) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid acs_periodic_interval %d (expected 60..86400)",
+				   line, val);
+			return -1;
+		}
+		conf_extn->acs_periodic_interval = val;
 	} else {
+		wpa_printf(MSG_INFO, "%s:%d> error buf %s =====> Not found", __func__, __LINE__, buf);
 		return -1;
 	}
 

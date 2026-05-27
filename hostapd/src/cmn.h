@@ -459,6 +459,7 @@ struct hostapd_config_extn {
 	 * 0 - Disallow channel switch for Repeater AP, when BH STA is not connected
 	 */
 	bool rptr_allow_chan_sw;
+	u32 acs_periodic_interval;
 
 	/* Indicates whether HE MCS 12/13 support is enabled
 	 * (the support is enabled by default)
@@ -596,6 +597,8 @@ struct hostapd_iface_extn {
 	bool dfs_available_from_sta;
 	struct dfs_nol_ie_info_extn nol_info; /* single NOL entry for uplink CSA */
 	bool nol_info_valid;                  /* true when nol_info holds a valid entry */
+	bool periodic_acs_timer_set;
+
 	/* Penalty percentage to be applied for non-priority channels in QACS */
 	u8 vlp_non_prior_penalty;
 
@@ -1453,6 +1456,21 @@ hostapd_trigger_dynamic_acs(struct hostapd_data *hapd,
 	return -1;
 }
 
+static inline void
+hostapd_periodic_acs_start(struct hostapd_iface *iface)
+{
+}
+
+static inline void
+hostapd_periodic_acs_stop(struct hostapd_iface *iface)
+{
+}
+
+static inline void
+hostapd_periodic_acs_schedule(struct hostapd_iface *iface)
+{
+}
+
 static inline int
 hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 		       struct driver_dcs_config *params)
@@ -1850,6 +1868,7 @@ int
 hostapd_config_fill_extn(struct hostapd_config *conf,
 			 struct hostapd_bss_config *bss,
 			 const char *buf, char *pos, int line);
+
 int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 				  u32 subcmd, u8 *data, size_t len);
 int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *value);
@@ -2197,6 +2216,9 @@ int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd,
 int hostapd_cbs_handle_single_channel_survey(struct hostapd_iface *iface,
 					     struct hostapd_channel_data *chan,
 					     struct freq_survey *survey);
+void hostapd_periodic_acs_start(struct hostapd_iface *iface);
+void hostapd_periodic_acs_stop(struct hostapd_iface *iface);
+void hostapd_periodic_acs_schedule(struct hostapd_iface *iface);
 int hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 			   struct driver_dcs_config *params);
 void dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap);
