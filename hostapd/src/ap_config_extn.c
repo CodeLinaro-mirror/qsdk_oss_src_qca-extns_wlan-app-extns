@@ -191,6 +191,7 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		conf_extn->repurpose_he_width = val;
+		conf_extn->user_repurpose_he_width = val;
 		return 0;
 	} else if (os_strcmp(buf, "repurpose_vht_width") == 0) {
 		u16 val = (u16) atoi(pos);
@@ -201,6 +202,7 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		conf_extn->repurpose_vht_width = val;
+		conf_extn->user_repurpose_vht_width = val;
 		return 0;
 	} else if (os_strcmp(buf, "acs_wradar") == 0) {
 		conf_extn->qacs_conf.wradar = atoi(pos);

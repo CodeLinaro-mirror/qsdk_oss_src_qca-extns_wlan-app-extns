@@ -489,6 +489,8 @@ struct hostapd_config_extn {
 	/* MLO Repurpose specific configurations */
 	u16 repurpose_vht_width;
 	u16 repurpose_he_width;
+	u16 user_repurpose_vht_width;
+	u16 user_repurpose_he_width;
 
 	/* OBSS SNR thresholds */
 	u8 obss_snr_threshold;    /* OBSS SNR threshold */

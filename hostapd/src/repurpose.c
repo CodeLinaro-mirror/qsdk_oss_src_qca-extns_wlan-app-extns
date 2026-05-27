@@ -281,13 +281,10 @@ bool hostapd_config_check_repurpose_width_extn(struct hostapd_config *conf)
 		hostapd_get_width_from_oper_chwidth_extn(oper_chwidth,
 							 conf->secondary_channel);
 
-	if (conf->conf_extn.repurpose_he_width > oper_width) {
-		wpa_printf(MSG_DEBUG,
-			   "Repurpose HE width can't be greater than oper width of interface, cap it to oper width");
-		conf->conf_extn.repurpose_he_width = oper_width;
-	}
-
-	if (!conf->conf_extn.repurpose_he_width) {
+	if (conf->conf_extn.user_repurpose_he_width) {
+		conf->conf_extn.repurpose_he_width =
+			MIN(conf->conf_extn.user_repurpose_he_width, oper_width);
+	} else {
 		if (oper_width == 320)
 			conf->conf_extn.repurpose_he_width = 160;
 		else
@@ -297,13 +294,11 @@ bool hostapd_config_check_repurpose_width_extn(struct hostapd_config *conf)
 			   conf->conf_extn.repurpose_he_width);
 	}
 
-	if (conf->conf_extn.repurpose_vht_width > conf->conf_extn.repurpose_he_width) {
-		wpa_printf(MSG_DEBUG,
-			   "Repurpose: VHT width can't be greater than repurpose HE width, cap it to HE width");
-		conf->conf_extn.repurpose_vht_width = conf->conf_extn.repurpose_he_width;
-	}
-
-	if (!conf->conf_extn.repurpose_vht_width) {
+	if (conf->conf_extn.user_repurpose_vht_width) {
+		conf->conf_extn.repurpose_vht_width =
+			MIN(conf->conf_extn.user_repurpose_vht_width,
+			    conf->conf_extn.repurpose_he_width);
+	} else {
 		conf->conf_extn.repurpose_vht_width = conf->conf_extn.repurpose_he_width;
 		wpa_printf(MSG_DEBUG,
 			   "Repurpose: internally derived repurpose vht width = %d",
@@ -332,28 +327,34 @@ void hostapd_set_repurpose_oper_chwidth_extn(struct hostapd_config *conf,
 				oper_chwidth,
 				conf->secondary_channel);
 
-	if (!conf_extn->repurpose_he_width) {
+	if (!conf_extn->user_repurpose_he_width) {
 		wpa_printf(MSG_DEBUG,
 			   "Repurpose: User not configured repurpose_he_width, set it now to %d",
 			   oper_width);
 		conf_extn->repurpose_he_width = oper_width;
-	} else if (conf_extn->repurpose_he_width > oper_width) {
+	} else {
+		conf_extn->repurpose_he_width =
+			MIN(conf_extn->user_repurpose_he_width, oper_width);
 		wpa_printf(MSG_DEBUG,
-			   "Repurpose: override repurpose_he_width to %d",
-			   oper_width);
-		conf_extn->repurpose_he_width = oper_width;
+			   "Repurpose: repurpose_he_width set to %d (user %d, oper %d)",
+			   conf_extn->repurpose_he_width,
+			   conf_extn->user_repurpose_he_width, oper_width);
 	}
 
-	if (!conf_extn->repurpose_vht_width) {
+	if (!conf_extn->user_repurpose_vht_width) {
 		wpa_printf(MSG_DEBUG,
-			   "Repurpose : User not configured repurpose_vht_width, set it now to %d",
+			   "Repurpose: User not configured repurpose_vht_width, set it now to %d",
 			   oper_width);
 		conf_extn->repurpose_vht_width = oper_width;
-	} else if (conf_extn->repurpose_vht_width > oper_width) {
+	} else {
+		conf_extn->repurpose_vht_width =
+			MIN(conf_extn->user_repurpose_vht_width,
+			    conf_extn->repurpose_he_width);
 		wpa_printf(MSG_DEBUG,
-			   "Repurpose: override repurpose_vht_width to %d",
-			   oper_width);
-		conf_extn->repurpose_vht_width = oper_width;
+			   "Repurpose: repurpose_vht_width set to %d (user %d, he %d)",
+			   conf_extn->repurpose_vht_width,
+			   conf_extn->user_repurpose_vht_width,
+			   conf_extn->repurpose_he_width);
 	}
 
 	wpa_printf(MSG_DEBUG,
