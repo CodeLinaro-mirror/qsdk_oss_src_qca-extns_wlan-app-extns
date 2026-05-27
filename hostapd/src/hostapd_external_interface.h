@@ -271,6 +271,7 @@ struct hostapd_if_frame_ctx {
 		struct {
 			uint8_t category;
 			uint8_t action_code;
+			int rssi;
 		} action;
 	} data;
 };
