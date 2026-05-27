@@ -280,9 +280,14 @@ struct dcs_intf_event {
 	u16 type;
 };
 
+struct i802_bss_extn {
+	struct i802_link *scan_link_extn;
+};
+
 struct cbs_event {
 	u32 scan_complete_freq;
 	enum scan_status status;
+	u8 link_id;
 };
 
 struct scan_results_event {
@@ -903,6 +908,12 @@ inline int wpa_driver_nl80211_dcs_sim_extn(void *priv,
 					   struct driver_dcs_sim *params)
 {
 	return -1;
+}
+
+static inline void *wpa_driver_nl80211_get_survey_extn(struct i802_bss *bss,
+						       void *ctx)
+{
+	return ctx;
 }
 
 static inline int wpa_driver_nl80211_cbs_trigger_scan(void *priv,
@@ -1796,6 +1807,7 @@ int wpa_driver_nl80211_dcs_sim_extn(void *priv, u8 link_id,
 int wpa_driver_nl80211_cbs_trigger_scan(void *priv,
 					const struct cbs_params_extn *params,
 					int *freq_list, int link_id);
+void *wpa_driver_nl80211_get_survey_extn(struct i802_bss *bss, void *ctx);
 int hostapd_drv_fetch_and_set_vendor_bssid_extn(struct hostapd_data *hapd);
 void hostapd_free_bss_index_extn(struct hostapd_data *hapd);
 bool hostapd_dfs_get_valid_punc_bitmap_extn(int chan_freq,
