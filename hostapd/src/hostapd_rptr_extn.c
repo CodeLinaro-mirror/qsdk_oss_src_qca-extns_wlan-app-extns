@@ -196,7 +196,7 @@ hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
 	return CHAN_WIDTH_20;
 }
 
-static u8 uc_hostapd_bandwidth_to_oper_chwidth_extn(int bandwidth)
+u8 uc_hostapd_bandwidth_to_oper_chwidth_extn(int bandwidth)
 {
 	if (bandwidth == 320)
 		return CONF_OPER_CHWIDTH_320MHZ;
@@ -778,4 +778,3 @@ int hostapd_update_assoc_resp_with_hop_count_extn(struct hostapd_data *hapd)
 
 	return 0;
 }
-

@@ -22,9 +22,9 @@
 #include "cmn.h"
 #include "block_channel.h"
 
-static int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
-					struct hostapd_channel_data *chan,
-					enum oper_chan_width oper_bw)
+int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
+				 struct hostapd_channel_data *chan,
+				 enum oper_chan_width oper_bw)
 {
 	int center = 0;
 	int bw;

@@ -20,6 +20,13 @@ typedef struct dfs_nol_ie_info_extn dfs_nol_ie_info;
 #define IEEE80211_CSA_IE_COUNT_OFFSET 4
 #define IEEE80211_CSA_IE_TOTAL_LEN 5
 
+enum dfs_nol_ie_bw_mhz {
+	DFS_NOL_IE_BW_20_MHZ = 20,
+	DFS_NOL_IE_BW_40_MHZ = 40,
+	DFS_NOL_IE_BW_80_MHZ = 80,
+	DFS_NOL_IE_BW_160_MHZ = 160,
+	DFS_NOL_IE_BW_320_MHZ = 320,
+};
 
 int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 			      enum oper_chan_width chan_width, int cf1, int cf2,
@@ -75,5 +82,8 @@ bool dfs_chan_skip_by_flags_extn(struct hostapd_iface *iface,
 				 struct hostapd_channel_data *chan,
 				 unsigned int flags);
 
+int dfs_nol_ie_chan_width_to_bw_mhz(enum oper_chan_width chan_width,
+				    int freq, int cf1,
+				    int *bandwidth_mhz);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* DFS_EXTN_H */
