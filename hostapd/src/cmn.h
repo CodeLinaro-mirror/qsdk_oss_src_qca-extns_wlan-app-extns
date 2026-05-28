@@ -231,6 +231,19 @@ enum dcs_cmd_type {
 #define DCS_VALID_USER_MAX_CU       BIT(7)
 
 #define BASE_6G_FREQ 5950
+#define FREQ_6GHZ_CHAN2             5935
+#define FREQ_2GHZ_CHAN14            2484
+#define FREQ_5GHZ_240MHZ_START      5500
+#define FREQ_5GHZ_240MHZ_END        5730
+
+#define IEEE_2GHZ_CHAN_MIN          1
+#define IEEE_2GHZ_CHAN_MAX          13
+#define IEEE_2GHZ_CHAN_SEC_SPLIT    7
+
+struct bonded_channel_freq_extn {
+	u16 start_freq;
+	u16 end_freq;
+};
 
 #ifndef DEFAULT_NOISE_FLOOR_2GHZ
 #define DEFAULT_NOISE_FLOOR_2GHZ (-89)

@@ -169,6 +169,7 @@ u16 hostapd_get_width_from_oper_chwidth_extn(enum oper_chan_width oper_chwidth,
 		width = 320;
 		break;
 	case CONF_OPER_CHWIDTH_160MHZ:
+	case CONF_OPER_CHWIDTH_80P80MHZ:
 		width = 160;
 		break;
 	case CONF_OPER_CHWIDTH_80MHZ:
