@@ -361,6 +361,7 @@ struct qacs_conf_extn {
 	 */
 	u16 dbg_module_bitmap;
 	u8 dbg_level;
+	bool acs_2g_scan_all;
 };
 #endif
 
