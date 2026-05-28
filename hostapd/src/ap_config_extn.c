@@ -72,6 +72,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	/* OBSS SNR threshold defaults */
 	conf_extn->obss_snr_threshold = 0;
 	conf_extn->obss_rx_snr_threshold = 0;
+	conf_extn->opclass_tbl_idx = OPCLS_TAB_IDX_GLOBAL;
 
 	/* DCS BW reduction control default */
 	conf_extn->dcs_conf.bw_reduction_ctrl = 0;

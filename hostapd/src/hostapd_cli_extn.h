@@ -17,6 +17,8 @@ int hostapd_cli_cmd_get_non_prior_penalty_extn(struct wpa_ctrl *ctrl, int argc,
 int hostapd_cli_cmd_set_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_channel_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_set_opclass_tbl_idx_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_opclass_tbl_idx_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_countryie_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_countryie_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_ecsa_opclass_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
@@ -92,6 +94,10 @@ int hostapd_cli_cmd_get_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *ar
 		"= get rnr 6ghz colocated" }, \
 	{ "set_channel", hostapd_cli_cmd_set_channel_extn, NULL, \
 		"<channel> = set channel by restarting interface" }, \
+	{ "set_opclass_tbl", hostapd_cli_cmd_set_opclass_tbl_idx_extn, NULL, \
+		"<0-6> = set operating class table index (0:none,1:US,2:EUROPE,3:JAPAN,4:GLOBAL,6:CHINA)" }, \
+	{ "get_opclass_tbl", hostapd_cli_cmd_get_opclass_tbl_idx_extn, NULL, \
+		"= get current operating class table index" }, \
 	{ "countryie", hostapd_cli_cmd_countryie_extn, NULL, \
 		"<0|1> = disable/enable Country IE in beacon" }, \
 	{ "get_countryie", hostapd_cli_cmd_get_countryie_extn, NULL, \

@@ -245,6 +245,14 @@ struct bonded_channel_freq_extn {
 	u16 end_freq;
 };
 
+#define OPCLS_TAB_IDX_NONE     0
+#define OPCLS_TAB_IDX_US       1
+#define OPCLS_TAB_IDX_EUROPE   2
+#define OPCLS_TAB_IDX_JAPAN    3
+#define OPCLS_TAB_IDX_GLOBAL   4
+#define OPCLS_TAB_IDX_CHINA    6
+#define OPCLS_TAB_IDX_MAX      6
+
 #ifndef DEFAULT_NOISE_FLOOR_2GHZ
 #define DEFAULT_NOISE_FLOOR_2GHZ (-89)
 #endif
@@ -506,6 +514,7 @@ struct hostapd_config_extn {
 	/* OBSS SNR thresholds */
 	u8 obss_snr_threshold;    /* OBSS SNR threshold */
 	u8 obss_rx_snr_threshold; /* OBSS RX SNR threshold */
+	u8 opclass_tbl_idx;       /* Country IE operating class table index */
 
 	/* Channel Switch Options bitmap
 	 * Bit 0 (0x1): Random non DFS channel selection

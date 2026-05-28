@@ -95,6 +95,48 @@ int hostapd_cli_cmd_set_channel_extn(struct wpa_ctrl *ctrl, int argc, char *argv
 	return wpa_ctrl_command(ctrl, cmd);
 }
 
+int hostapd_cli_cmd_set_opclass_tbl_idx_extn(struct wpa_ctrl *ctrl, int argc,
+					      char *argv[])
+{
+	char cmd[64];
+	char *end;
+	long idx;
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: set_opclass_tbl <0-6>\n");
+		return -1;
+	}
+
+	errno = 0;
+	idx = strtol(argv[0], &end, 10);
+	if (errno != 0 || end == argv[0] || *end != '\0' || idx < 0 ||
+	    idx > 6) {
+		printf("Invalid opclass table index '%s' (expected 0-6)\n",
+		       argv[0]);
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_OPCLASS_TBL_IDX %ld", idx);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("set_opclass_tbl cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+int hostapd_cli_cmd_get_opclass_tbl_idx_extn(struct wpa_ctrl *ctrl, int argc,
+					      char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid get_opclass_tbl command: no arguments expected\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "GET_OPCLASS_TBL_IDX");
+}
+
 int hostapd_cli_cmd_countryie_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	char cmd[32];

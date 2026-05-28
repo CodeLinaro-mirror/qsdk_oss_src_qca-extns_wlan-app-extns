@@ -602,6 +602,66 @@ static int hostapd_ctrl_iface_get_country_ie_extn(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_opclass_tbl_idx_extn(struct hostapd_data *hapd,
+							const char *cmd)
+{
+	char *end;
+	unsigned long idx;
+	u8 old_idx;
+
+	if (!hapd || !hapd->iconf || !cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+	if (*cmd == '\0') {
+		wpa_printf(MSG_ERROR, "CTRL: SET_OPCLASS_TBL_IDX: empty value");
+		return -1;
+	}
+
+	errno = 0;
+	idx = strtoul(cmd, &end, 10);
+	while (end && *end == ' ')
+		end++;
+	if (errno != 0 || end == cmd || (end && *end != '\0') ||
+	    idx > OPCLS_TAB_IDX_MAX) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_OPCLASS_TBL_IDX: invalid value '%s' (expected 0-%d)",
+			   cmd, OPCLS_TAB_IDX_MAX);
+		return -1;
+	}
+
+	old_idx = hapd->iconf->conf_extn.opclass_tbl_idx;
+	if (old_idx == (u8) idx)
+		return 0;
+
+	hapd->iconf->conf_extn.opclass_tbl_idx = (u8) idx;
+	if (ieee802_11_update_beacons(hapd->iface) < 0) {
+		hapd->iconf->conf_extn.opclass_tbl_idx = old_idx;
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG, "CTRL: SET_OPCLASS_TBL_IDX set to %lu", idx);
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_opclass_tbl_idx_extn(struct hostapd_data *hapd,
+							char *reply,
+							size_t reply_size)
+{
+	int ret;
+
+	if (!hapd || !hapd->iconf)
+		return -1;
+
+	ret = os_snprintf(reply, reply_size, "%u\n",
+			  hapd->iconf->conf_extn.opclass_tbl_idx);
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
 static int hostapd_ctrl_iface_set_ecsa_opclass_extn(struct hostapd_data *hapd,
 						    const char *cmd)
 {
@@ -1701,6 +1761,12 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn = hostapd_ctrl_iface_get_country_ie_extn(hapd,
 								      reply,
 								      reply_size);
+	} else if (os_strncmp(buf, "SET_OPCLASS_TBL_IDX ", 20) == 0) {
+		if (hostapd_ctrl_iface_set_opclass_tbl_idx_extn(hapd, buf + 20))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_OPCLASS_TBL_IDX") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_opclass_tbl_idx_extn(
+			hapd, reply, reply_size);
 	} else if (os_strncmp(buf, "HT40INTOL ", 10) == 0) {
 		if (hostapd_ctrl_iface_set_ht40intol_extn(hapd, buf + 10))
 			reply_len_extn = -1;
