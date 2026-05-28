@@ -19,6 +19,8 @@
 #include "cbs.h"
 #include "dcs.h"
 
+#define HOSTAPD_CBS_BEST_CHAN_MAX_AGE_SEC 600
+
 static int
 cbs_print_usage_extn(char *reply, int reply_size)
 {
@@ -39,9 +41,7 @@ cbs_print_usage_extn(char *reply, int reply_size)
 		"  g_dwellsplit         : get dwell split value\n"
 		"  totaldwell <value>   : set total dwell value\n"
 		"  g_totaldwell         : get total dwell value\n"
-		"  csa <1|0>            : enable/disable CSA for CBS\n"
-		"  g_csa                : get CSA state for CBS\n"
-                );
+		);
 
 	if (os_snprintf_error(reply_size, ret))
 		return -1;
@@ -257,32 +257,6 @@ static int hostapd_cbs_get_totaldwell(struct hostapd_config_extn *conf_extn,
 	return ret;
 }
 
-static int hostapd_cbs_set_csa(struct hostapd_config_extn *conf_extn,
-			       const char *pos, char *reply, size_t reply_size)
-{
-	int val = atoi(pos);
-
-	if (val == 0 || val == 1) {
-		conf_extn->cbs_params.csa_enable = val;
-		return 0;
-	}
-
-	return -1;
-}
-
-static int hostapd_cbs_get_csa(struct hostapd_config_extn *conf_extn,
-			       const char *pos, char *reply, size_t reply_size)
-{
-	int ret = os_snprintf(reply, reply_size,
-			      "CBS csa: %d\n",
-			      conf_extn->cbs_params.csa_enable);
-
-	if (os_snprintf_error(reply_size, ret))
-		return -1;
-
-	return ret;
-}
-
 int hostapd_cbs_handle_single_channel_survey(struct hostapd_iface *iface,
 					     struct hostapd_channel_data *chan,
 					     struct freq_survey *survey)
@@ -348,6 +322,15 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 				acs_find_ideal_chan(iface);
 		}
 
+		if (conf_extn->cbs_params.best_chan) {
+			os_get_reltime(&conf_extn->cbs_params.best_chan_fill_ts);
+			wpa_printf(MSG_INFO,
+				   "CBS best_chan filled at ts=%ld.%06ld (freq=%d)",
+				   conf_extn->cbs_params.best_chan_fill_ts.sec,
+				   conf_extn->cbs_params.best_chan_fill_ts.usec,
+				   conf_extn->cbs_params.best_chan->freq);
+		}
+
 		if (conf_extn->cbs_params.cbs_enable == 1)
 			conf_extn->cbs_params.cbs_enable = 0;
 	}
@@ -360,10 +343,36 @@ int hostapd_cbs_trigger_csa(struct hostapd_data *hapd)
 	struct hostapd_config_extn *conf_extn = &hapd->iface->conf->conf_extn;
 	struct hostapd_channel_data *cbs_chan =
 		conf_extn->cbs_params.best_chan;
+	struct os_reltime now, age;
 
 	if (!cbs_chan) {
 		wpa_printf(MSG_DEBUG, "CBS CSA attempt failed. CBS chan: %p",
 			   cbs_chan);
+		return -1;
+	}
+
+	os_get_reltime(&now);
+	os_reltime_sub(&now, &conf_extn->cbs_params.best_chan_fill_ts, &age);
+
+	wpa_printf(MSG_DEBUG,
+		   "CBS CSA timestamp check: now=%ld.%06ld best_chan_fill_ts=%ld.%06ld age=%ld.%06ld",
+		   now.sec, now.usec,
+		   conf_extn->cbs_params.best_chan_fill_ts.sec,
+		   conf_extn->cbs_params.best_chan_fill_ts.usec,
+		   age.sec, age.usec);
+
+	if (age.sec >= HOSTAPD_CBS_BEST_CHAN_MAX_AGE_SEC) {
+		wpa_printf(MSG_INFO,
+			   "CBS best channel age %ld sec exceeds max %u sec. Skipping CSA for CBS channel",
+			   age.sec, HOSTAPD_CBS_BEST_CHAN_MAX_AGE_SEC);
+		conf_extn->cbs_params.best_chan = NULL;
+		return -1;
+	}
+
+	if (hapd->iface->freq == cbs_chan->freq) {
+		wpa_printf(MSG_ERROR,
+			   "CBS CSA attempt failed. Current channel is same as CBS Best channel: (%d)",
+			   cbs_chan->freq);
 		return -1;
 	}
 
@@ -421,12 +430,6 @@ int hostapd_handle_cli_cbs_extn(struct hostapd_data *hapd,
 
 	} else if (os_strncmp(pos, "totaldwell ", 11) == 0) {
 		return hostapd_cbs_set_totaldwell(conf_extn, pos + 11, buf, buflen);
-
-	} else if (os_strncmp(pos, "g_csa", 5) == 0) {
-		return hostapd_cbs_get_csa(conf_extn, pos, buf, buflen);
-
-	} else if (os_strncmp(pos, "csa ", 4) == 0) {
-		return hostapd_cbs_set_csa(conf_extn, pos + 4, buf, buflen);
 
 	} else {
 		return cbs_print_usage_extn(buf, buflen);

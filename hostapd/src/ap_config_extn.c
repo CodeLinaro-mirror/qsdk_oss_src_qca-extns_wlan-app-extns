@@ -79,12 +79,11 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 
 	/* Configure CBS defaults here */
 	conf_extn->cbs_params.cbs_enable = 0;
-	conf_extn->cbs_params.resttime = 0;
-	conf_extn->cbs_params.dwellrest = 0;
-	conf_extn->cbs_params.waittime = 0;
+	conf_extn->cbs_params.resttime = 500;
+	conf_extn->cbs_params.dwellrest = 500;
+	conf_extn->cbs_params.waittime = 1000;
 	conf_extn->cbs_params.dwellsplit = 50;
-	conf_extn->cbs_params.totaldwell = 100;
-	conf_extn->cbs_params.csa_enable = 0;
+	conf_extn->cbs_params.totaldwell = 200;
 
 	conf_extn->eht_config_ccfs0 = false;
 
@@ -458,8 +457,6 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		conf_extn->cbs_params.dwellsplit = atoi(pos);
 	} else if (os_strcmp(buf, "cbs_totaldwell") == 0) {
 		conf_extn->cbs_params.totaldwell = atoi(pos);
-	} else if (os_strcmp(buf, "cbs_csa_enable") == 0) {
-		conf_extn->cbs_params.csa_enable = atoi(pos);
 
 	} else if (os_strcmp(buf, "vap_submode") == 0) {
 		u8 val = atoi(pos);
