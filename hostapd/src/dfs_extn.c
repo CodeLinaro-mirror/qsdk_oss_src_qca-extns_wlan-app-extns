@@ -618,7 +618,7 @@ int hostapd_prepare_nol_ie_bmap_extn(struct hostapd_iface *iface,
 	if (!dfs_prepare_nol_ie_bitmap(iface, freq, current_vht_oper_chwidth,
 				      oper_centr_freq_seg0_idx,
 				      oper_centr_freq_seg1_idx,
-				      radar_bitmap_oper, &iface->iface_extn.nol_info) == 0) {
+				      radar_bitmap_oper, &iface->iface_extn.nol_info)) {
 		iface->iface_extn.nol_info_valid = true;
 		wpa_printf(MSG_INFO,
 			   "DFS: NOL IE prepared - freq=%u bw=%u bitmap=0x%04x",
