@@ -1360,6 +1360,12 @@ hostapd_hwbl_validate_6ghz(struct hostapd_iface *iface,
 	return true;
 }
 
+static inline bool
+acs_scan_event_expected_extn(struct hostapd_iface *iface)
+{
+	return false;
+}
+
 static inline int
 qca_nl80211_handle_dcs_config_evt_extn(struct i802_bss *bss,
 				       u8 *data, size_t len)
@@ -2180,6 +2186,7 @@ void acs_update_puncturing_bitmap(struct hostapd_iface *iface,
 				  struct hostapd_channel_data *chan,
 				  long double factor, int index_primary);
 #endif /* CONFIG_IEEE80211BE */
+bool acs_scan_event_expected_extn(struct hostapd_iface *iface);
 bool
 acs_usable_bw_chan(const struct hostapd_channel_data *chan, enum bw_type bw);
 int qca_nl80211_handle_dcs_config_evt_extn(struct i802_bss *bss,
