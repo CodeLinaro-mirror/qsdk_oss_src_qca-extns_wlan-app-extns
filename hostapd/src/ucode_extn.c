@@ -69,6 +69,8 @@ void hostapd_ucode_notify_uplink_csa(struct hostapd_iface *hapd, int event, u8 c
 	ucv_object_add(val, "new_ch_width", ucv_int64_new(new_ch_width));
 	ucv_object_add(val, "ch_seg_0", ucv_int64_new(ch_seg_0));
 	ucv_object_add(val, "ch_seg_1", ucv_int64_new(ch_seg_1));
+	ucv_object_add(val, "cac_abort",
+		       ucv_int64_new(hapd->iface_extn.cac_abort ? 1 : 0));
 
 	if (nol_info) {
 		uc_value_t *nol_entry = ucv_object_new(vm);
