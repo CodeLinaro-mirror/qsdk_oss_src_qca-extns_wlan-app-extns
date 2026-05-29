@@ -1494,7 +1494,6 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 	u8 oper_centr_freq_seg0_idx;
 	u8 oper_centr_freq_seg1_idx;
 	u8 current_vht_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
-	u8 new_vht_oper_chwidth;
 	int channel_type = DFS_AVAILABLE_EXTN;
 
 	wpa_printf(MSG_DEBUG,
@@ -1518,6 +1517,7 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 		channel = dfs_downgrade_bandwidth_helper(iface, &secondary_channel,
 							 &oper_centr_freq_seg0_idx,
 							 &oper_centr_freq_seg1_idx,
+							 &current_vht_oper_chwidth,
 							 &channel_type);
 		if (!channel) {
 			hostapd_disable_iface(iface);
@@ -1529,8 +1529,6 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 	wpa_printf(MSG_DEBUG,
 		   "DFS restarting on a fresh channel %d without CSA",
 		   channel->chan);
-	new_vht_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
-	hostapd_set_oper_chwidth(iface->conf, current_vht_oper_chwidth);
 
 	os_memset(&freq_params, 0, sizeof(freq_params));
 	err = hostapd_set_freq_params(&freq_params,
@@ -1544,7 +1542,7 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 				      iface->conf->ieee80211be,
 				      iface->conf->ieee80211bn,
 				      secondary_channel,
-				      new_vht_oper_chwidth,
+				      current_vht_oper_chwidth,
 				      oper_centr_freq_seg0_idx,
 				      oper_centr_freq_seg1_idx,
 				      cmode->vht_capab,
