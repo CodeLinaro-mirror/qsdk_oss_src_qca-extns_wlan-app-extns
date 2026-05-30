@@ -15,6 +15,7 @@ void hostapd_iface_init_extn(struct hostapd_iface *iface)
 		return;
 
 	iface->iface_extn.check_hw_blocklist = true;
+	iface->iface_extn.agile_capable = true;
 }
 
 void hostapd_iface_deinit_extn(struct hostapd_iface *iface)
