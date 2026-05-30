@@ -538,6 +538,21 @@ static void notify_auth(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 	}
 }
 
+static void notify_remote_auth(char *ifname, uint8_t *sta_mac,
+			       const uint8_t *ies, uint16_t ies_len,
+			       struct hostapd_if_frame_ctx *ctx)
+{
+	wpa_printf(MSG_DEBUG,
+		   "Notified Remote Auth for STA " MACSTR
+		   " on link_id=%d, ies_len=%u\n",
+		   MAC2STR(sta_mac), ctx->rx_link_id, ies_len);
+	wpa_printf(MSG_DEBUG,
+		   "Remote Auth status_code=%u (%s), is_ml_sta=%d\n",
+		   ctx->status_code,
+		   ctx->status_code == 0 ? "SUCCESS" : "REJECTED",
+		   ctx->data.remote_auth_req.is_ml_sta);
+}
+
 static void notify_deauth(char *ifname, uint8_t *sta_mac, const void *frame,
 			  size_t frame_len, struct hostapd_if_frame_ctx *ctx)
 {
@@ -1309,6 +1324,7 @@ enum hostapd_if_eloop_type hostapd_if_plugin_init(void *arg)
 	test_plugin.invoke_remote_auth   = invoke_remote_auth,
 	test_plugin.notify_assoc         = notify_assoc,
 	test_plugin.notify_auth          = notify_auth,
+	test_plugin.notify_remote_auth   = notify_remote_auth,
 	test_plugin.notify_disassoc      = notify_disassoc,
 	test_plugin.notify_deauth        = notify_deauth,
 	test_plugin.notify_action        = notify_action,
