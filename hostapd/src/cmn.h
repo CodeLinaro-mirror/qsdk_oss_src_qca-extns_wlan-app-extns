@@ -939,6 +939,15 @@ static inline void *wpa_driver_nl80211_get_survey_extn(struct i802_bss *bss,
 	return ctx;
 }
 
+inline int nl80211_disable_opclass_chans_extn(void *priv, u8 link_id,
+					      u8 is_disable,
+					      u8 opclass,
+					      const u8 *chan_list,
+					      size_t chan_count)
+{
+	return -1;
+}
+
 static inline int wpa_driver_nl80211_cbs_trigger_scan(void *priv,
 						      const struct cbs_params_extn *params,
 						      int *freq_list, int link_id)
@@ -1833,6 +1842,11 @@ int nl80211_notify_radar_detected_extn(void *priv,
 					      struct hostapd_freq_params *freq);
 int wpa_driver_nl80211_dcs_sim_extn(void *priv, u8 link_id,
 				    struct driver_dcs_sim *params);
+int nl80211_disable_opclass_chans_extn(void *priv, u8 link_id,
+				       u8 is_disable,
+				       u8 opclass,
+				       const u8 *chan_list,
+				       size_t chan_count);
 int wpa_driver_nl80211_cbs_trigger_scan(void *priv,
 					const struct cbs_params_extn *params,
 					int *freq_list, int link_id);

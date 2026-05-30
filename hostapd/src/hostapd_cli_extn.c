@@ -421,6 +421,38 @@ int hostapd_cli_cmd_get_primary_chans(struct wpa_ctrl *ctrl,
 	return wpa_ctrl_command(ctrl, "GET_PRIMARY_CHANS");
 }
 
+int hostapd_cli_cmd_disable_opclass_chans(struct wpa_ctrl *ctrl,
+					  int argc, char *argv[])
+{
+	char cmd[512];
+	int i, pos, res;
+
+	if (argc < 3) {
+		printf("Usage: disable_opclass_chans <0|1> <opclass> <ch1> [<ch2> ...]\n");
+		return -1;
+	}
+
+	if (os_strcmp(argv[0], "0") != 0 && os_strcmp(argv[0], "1") != 0) {
+		printf("Invalid disable flag '%s' (expected 0 or 1)\n", argv[0]);
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "DISABLE_OPCLASS_CHANS %s %s",
+			  argv[0], argv[1]);
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+
+	pos = res;
+	for (i = 2; i < argc; i++) {
+		res = os_snprintf(cmd + pos, sizeof(cmd) - pos, " %s", argv[i]);
+		if (os_snprintf_error(sizeof(cmd) - pos, res))
+			return -1;
+		pos += res;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
 int hostapd_cli_cmd_set_ht40intol(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	char buf[64];

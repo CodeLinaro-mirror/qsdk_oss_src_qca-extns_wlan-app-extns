@@ -1639,6 +1639,384 @@ static int hostapd_ctrl_iface_get_dfs_no_wradar_extn(struct hostapd_data *hapd,
 			   hapd->iface->iface_extn.dfs_no_wradar);
 }
 
+static bool
+hostapd_ctrl_iface_list_has_current_chan_extn(struct hostapd_data *hapd,
+					      const u8 *chan_list,
+					      size_t chan_count)
+{
+	u8 current_chan = 0;
+	size_t idx;
+	int mode;
+
+	if (!hapd || !hapd->iface || !chan_list || !chan_count ||
+	    hapd->iface->freq <= 0)
+		return false;
+
+	mode = ieee80211_freq_to_chan(hapd->iface->freq, &current_chan);
+	if (mode == NUM_HOSTAPD_MODES || !current_chan)
+		return false;
+
+	for (idx = 0; idx < chan_count; idx++) {
+		if (chan_list[idx] == current_chan)
+			return true;
+	}
+
+	return false;
+}
+
+static bool
+hostapd_ctrl_iface_chan_in_list_extn(const u8 *chan_list, size_t chan_count,
+				     u8 channel)
+{
+	size_t idx;
+
+	if (!chan_list || !chan_count || !channel)
+		return false;
+
+	for (idx = 0; idx < chan_count; idx++) {
+		if (chan_list[idx] == channel)
+			return true;
+	}
+
+	return false;
+}
+
+static struct hostapd_channel_data *
+hostapd_ctrl_iface_first_enabled_chan_extn(struct hostapd_iface *iface,
+					   const u8 *blocked_chan_list,
+					   size_t blocked_chan_count,
+					   u8 current_chan)
+{
+	struct hostapd_hw_modes *mode;
+	struct hostapd_channel_data *chan;
+	bool select_5ghz;
+	bool select_6ghz;
+	bool select_24ghz;
+	int i;
+
+	if (!iface || !iface->current_mode)
+		return NULL;
+
+	mode = iface->current_mode;
+	select_5ghz = is_5ghz_freq(iface->freq);
+	select_6ghz = is_6ghz_freq(iface->freq);
+	select_24ghz = is_24ghz_freq(iface->freq);
+
+	for (i = 0; i < mode->num_channels; i++) {
+		chan = &mode->channels[i];
+
+		if (select_5ghz && !is_5ghz_freq(chan->freq))
+			continue;
+
+		if (select_6ghz && !is_6ghz_freq(chan->freq))
+			continue;
+
+		if (select_24ghz && !is_24ghz_freq(chan->freq))
+			continue;
+
+		if (current_chan && chan->chan == current_chan)
+			continue;
+
+		if (hostapd_ctrl_iface_chan_in_list_extn(blocked_chan_list,
+							 blocked_chan_count,
+							 chan->chan))
+			continue;
+
+		if (chan->flag & HOSTAPD_CHAN_DISABLED)
+			continue;
+
+		if (!chan_pri_allowed(chan))
+			continue;
+
+		if (!chan_in_current_hw_info(iface->current_hw_info, chan))
+			continue;
+
+		return chan;
+	}
+
+	return NULL;
+}
+
+static int
+hostapd_ctrl_iface_build_target_freq_params_extn(struct hostapd_data *hapd,
+						 struct hostapd_channel_data *chan,
+						 struct hostapd_freq_params *freq_params)
+{
+	struct hostapd_iface *iface;
+	struct hostapd_hw_modes *mode;
+
+	if (!hapd || !hapd->iface || !chan || !freq_params)
+		return -1;
+
+	iface = hapd->iface;
+	mode = iface->current_mode;
+
+	os_memset(freq_params, 0, sizeof(*freq_params));
+	return hostapd_set_freq_params(freq_params,
+				       iface->conf->hw_mode,
+				       chan->freq, chan->chan,
+				       iface->conf->enable_edmg,
+				       iface->conf->edmg_channel,
+				       iface->conf->ieee80211n,
+				       iface->conf->ieee80211ac,
+				       iface->conf->ieee80211ax,
+				       iface->conf->ieee80211be,
+				       iface->conf->ieee80211bn,
+				       0,
+				       CONF_OPER_CHWIDTH_USE_HT,
+				       0,
+				       0,
+				       iface->conf->vht_capab,
+				       mode ? &mode->he_capab[IEEE80211_MODE_AP] : NULL,
+				       mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
+				       mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
+				       0,
+				       hapd->iconf->he_6ghz_reg_pwr_type,
+				       iface->conf->bandwidth_device,
+				       iface->conf->center_freq_device);
+}
+
+/**
+ * hostapd_ctrl_iface_move_off_disabled_channel_extn - Move AP off disabled channel
+ * @hapd: BSS context receiving DISABLE_OPCLASS_CHANS
+ * @blocked_chan_list: List of channels disabled by the control command
+ * @blocked_chan_count: Number of entries in @blocked_chan_list
+ *
+ * If the current operating channel is disabled, select the first enabled
+ * replacement channel in the same band and reconfigure the interface to that
+ * channel. The fallback frequency parameters are built with 20 MHz bandwidth.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int
+hostapd_ctrl_iface_move_off_disabled_channel_extn(struct hostapd_data *hapd,
+						  const u8 *blocked_chan_list,
+						  size_t blocked_chan_count)
+{
+#ifdef NEED_AP_MLME
+	struct hostapd_iface *iface;
+	struct hostapd_channel_data *target_chan;
+	struct hostapd_freq_params freq_params;
+	int ret;
+	int i;
+	u8 current_chan = 0;
+
+	if (!hapd || !hapd->iface)
+		return -1;
+
+	iface = hapd->iface;
+	ret = hostapd_get_hw_features(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: failed to refresh hw features (%d)",
+			   ret);
+		return -1;
+	}
+
+	ret = hostapd_select_hw_mode(iface);
+	if (ret < 0) {
+		wpa_printf(MSG_INFO,
+			   "CTRL: DISABLE_OPCLASS_CHANS: select hw mode returned %d; continuing fallback recovery",
+			   ret);
+		/*
+		 * hostapd_select_hw_mode() can fail while the current
+		 * configured channel is being disabled. If a matching
+		 * mode is present, continue with best-effort fallback.
+		 */
+		if (!iface->current_mode) {
+			for (i = 0; i < iface->num_hw_features; i++) {
+				if (iface->hw_features[i].mode ==
+				    iface->conf->hw_mode) {
+					iface->current_mode =
+						&iface->hw_features[i];
+					break;
+				}
+			}
+		}
+
+		if (!iface->current_mode) {
+			wpa_printf(MSG_ERROR,
+				   "CTRL: DISABLE_OPCLASS_CHANS: no usable hw mode available for fallback");
+			return -1;
+		}
+	}
+
+	if (iface->freq > 0 && hostapd_set_current_hw_info(iface, iface->freq))
+		wpa_printf(MSG_DEBUG,
+			   "CTRL: DISABLE_OPCLASS_CHANS: could not refresh current_hw_info for freq=%d",
+			   iface->freq);
+
+	if (ieee80211_freq_to_chan(iface->freq, &current_chan) ==
+	    NUM_HOSTAPD_MODES)
+		current_chan = 0;
+
+	target_chan = hostapd_ctrl_iface_first_enabled_chan_extn(iface, blocked_chan_list,
+								 blocked_chan_count,
+								 current_chan);
+	if (!target_chan) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: no enabled fallback channel available");
+		return -1;
+	}
+
+	if (target_chan->freq == iface->freq) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: current channel %u is disabled, but no alternate channel was selected",
+			   current_chan);
+		return -1;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "CTRL: DISABLE_OPCLASS_CHANS: moving from disabled channel %u to channel %u (%d MHz) with fallback restart%s",
+		   current_chan, target_chan->chan, target_chan->freq,
+		   iface->cac_started ? " (stopping DFS CAC)" : "");
+
+	if (hostapd_ctrl_iface_build_target_freq_params_extn(hapd, target_chan,
+							     &freq_params)) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: failed to build fallback params for channel %u",
+			   target_chan->chan);
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG,
+		   "CTRL: DISABLE_OPCLASS_CHANS: fallback params freq=%d chan=%d bw=%d sec_off=%d cf1=%d cf2=%d",
+		   freq_params.freq, freq_params.channel, freq_params.bandwidth,
+		   freq_params.sec_channel_offset, freq_params.center_freq1,
+		   freq_params.center_freq2);
+
+	ret = hostapd_disable_iface(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: Failed to disable interface");
+		return -1;
+	}
+
+	ret = hostapd_change_config_freq(iface->bss[0], iface->conf,
+					 &freq_params, NULL);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: Failed to set channel");
+		return -1;
+	}
+
+	iface->conf->no_pri_sec_switch = 1;
+	ret = hostapd_enable_iface(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: Failed to enable interface");
+		return -1;
+	}
+	return 0;
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME */
+}
+
+static int
+hostapd_ctrl_iface_disable_opclass_chans_extn(struct hostapd_data *hapd, char *cmd)
+{
+	u8 chan_list[256], is_disable, opclass, link_id;
+	char *end = cmd;
+	long val;
+	size_t chan_count = 0;
+	int ret;
+	bool current_chan_requested = false;
+
+	if (!hapd || !cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	val = strtol(cmd, &end, 10);
+	if (errno != 0 || end == cmd || (val != 0 && val != 1)) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: invalid disable flag '%s'",
+			   cmd);
+		return -1;
+	}
+
+	is_disable = (u8) val;
+	while (*end == ' ')
+		end++;
+	if (*end == '\0') {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: missing opclass");
+		return -1;
+	}
+
+	cmd = end;
+	errno = 0;
+	val = strtol(cmd, &end, 10);
+	if (errno != 0 || end == cmd || val <= 0 || val > 255) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: invalid opclass '%s'",
+			   cmd);
+		return -1;
+	}
+
+	opclass = (u8) val;
+	while (*end == ' ')
+		end++;
+	if (*end == '\0') {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: at least one channel required");
+		return -1;
+	}
+
+	while (*end != '\0') {
+		if (chan_count >= ARRAY_SIZE(chan_list)) {
+			wpa_printf(MSG_ERROR,
+			"CTRL: DISABLE_OPCLASS_CHANS: channel cnt %zu exceeds %zu",
+			chan_count, ARRAY_SIZE(chan_list));
+			return -1;
+		}
+
+		errno = 0;
+		val = strtol(end, &cmd, 10);
+		if (errno != 0 || cmd == end || val <= 0 || val > 255) {
+			wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: invalid channel near '%s'",
+			   end);
+			return -1;
+		}
+
+		chan_list[chan_count++] = (u8) val;
+		while (*cmd == ' ')
+			cmd++;
+		end = cmd;
+	}
+
+	link_id = hapd->mld_link_id;
+	ret = nl80211_disable_opclass_chans_extn(hapd->drv_priv, link_id, is_disable,
+						 opclass, chan_list, chan_count);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: driver command failed ret=%d",
+			   ret);
+		if (ret == -EINVAL)
+			wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: backend support is not available in driver/open-extns");
+		return -1;
+	}
+
+	current_chan_requested = is_disable &&
+				 hostapd_ctrl_iface_list_has_current_chan_extn(
+					hapd, chan_list, chan_count);
+	if (current_chan_requested && hapd->iface &&
+	    hostapd_ctrl_iface_move_off_disabled_channel_extn(hapd, chan_list,
+							      chan_count)) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: failed to move interface away from disabled channel");
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "CTRL: DISABLE_OPCLASS_CHANS: disable=%u opclass=%u channels=%zu",
+		   is_disable, opclass, chan_count);
+	return 0;
+}
+
 int
 hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 					char *buf, char *reply,
@@ -1735,6 +2113,9 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn = hostapd_get_primary_chanlist(hapd->iface,
 							      reply, reply_size);
 		if (reply_len_extn < 0)
+			reply_len_extn = -1;
+	} else if (os_strncmp(buf, "DISABLE_OPCLASS_CHANS ", 22) == 0) {
+		if (hostapd_ctrl_iface_disable_opclass_chans_extn(hapd, buf + 22))
 			reply_len_extn = -1;
 	} else if (os_strncmp(buf, "SET_OBSS_SNR_THRESHOLD ", 23) == 0) {
 		if (hostapd_ctrl_iface_set_obss_snr_threshold_extn(hapd,
