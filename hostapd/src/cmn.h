@@ -1416,6 +1416,12 @@ dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf, u16 dcs_intf_type)
 	return false;
 }
 
+static inline bool
+hostapd_dcs_awgn_handle_rand_chan_disabled_extn(struct hostapd_iface *iface)
+{
+	return false;
+}
+
 static struct hostapd_channel_data *
 get_chan_data_by_freq(struct hostapd_hw_modes *mode, int freq)
 {
@@ -2240,6 +2246,7 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 void update_chan_params(struct hostapd_data *hapd, int cf1, int cf2,
 			enum chan_width chwidth);
 bool dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf, u16 dcs_intf_type);
+bool hostapd_dcs_awgn_handle_rand_chan_disabled_extn(struct hostapd_iface *iface);
 void hostapd_dcs_restore_extn(struct hostapd_iface *iface, const char *reason);
 void hostapd_dcs_iface_deinit_extn(struct hostapd_iface *iface);
 struct hostapd_channel_data *
