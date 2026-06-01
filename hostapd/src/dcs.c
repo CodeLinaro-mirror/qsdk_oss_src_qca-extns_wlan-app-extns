@@ -115,7 +115,7 @@ static void hostapd_dcs_apply_enable_bitmap(struct hostapd_iface *iface,
 	struct hostapd_data *hapd;
 	struct hostapd_iface_extn *iface_extn;
 
-	if (!iface || !iface->conf || !iface->bss || !iface->num_bss)
+	if (!iface || !iface->conf || !iface->bss || iface->num_bss < 1)
 		return;
 
 	hapd = iface->bss[0];
@@ -262,7 +262,10 @@ static void hostapd_dcs_reenable_timeout(void *eloop_ctx, void *timeout_ctx)
 	struct hostapd_iface *iface = eloop_ctx;
 	struct hostapd_iface_extn *iface_extn;
 
-	if (!iface || !iface->conf)
+	(void) timeout_ctx;
+
+	if (!iface || !iface->conf || !iface->bss ||
+	    iface->num_bss < 1 || !iface->bss[0])
 		return;
 
 	iface_extn = &iface->iface_extn;
@@ -286,6 +289,25 @@ static void hostapd_dcs_reenable_timeout(void *eloop_ctx, void *timeout_ctx)
 	iface_extn->dcs_disabled_excessive_triggers = false;
 	iface_extn->dcs_excess_trigger_enable_bitmap = 0;
 	iface_extn->dcs_excess_trigger_restore_bitmap = 0;
+}
+
+void hostapd_dcs_iface_deinit_extn(struct hostapd_iface *iface)
+{
+	struct hostapd_iface_extn *iface_extn;
+
+	if (!iface)
+		return;
+
+	iface_extn = &iface->iface_extn;
+	eloop_cancel_timeout(hostapd_dcs_reenable_timeout, iface, NULL);
+	iface_extn->dcs_reenable_timer_set = false;
+	iface_extn->dcs_trigger_count = 0;
+	os_memset(iface_extn->dcs_trigger_ts, 0,
+		  sizeof(iface_extn->dcs_trigger_ts));
+	iface_extn->dcs_disabled_excessive_triggers = false;
+	iface_extn->dcs_excess_trigger_enable_bitmap = 0;
+	iface_extn->dcs_excess_trigger_restore_bitmap = 0;
+	iface_extn->dcs_in_progress = false;
 }
 
 static int

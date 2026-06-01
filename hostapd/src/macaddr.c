@@ -268,6 +268,12 @@ void hostapd_free_bss_index_extn(struct hostapd_data *hapd)
 	u8 ven_bssid[ETH_ALEN];
 	int drv_idx;
 
+	if (!hapd)
+		return;
+
+	if (hapd->iface)
+		hostapd_dcs_iface_deinit_extn(hapd->iface);
+
 	if (!hapd->iconf)
 		return;
 
