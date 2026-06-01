@@ -71,3 +71,7 @@ CFLAGS += -DCONFIG_QCN_APP_EXTN
 OBJS += qcn_extns/qacs/qacs.o
 endif
 endif
+
+ifdef CONFIG_IEEE80211BN
+OBJS += qcn_extns/mapc_extn.o
+endif
