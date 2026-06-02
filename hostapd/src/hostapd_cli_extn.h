@@ -33,6 +33,8 @@ int hostapd_cli_cmd_sync_iface_freq_extn(struct wpa_ctrl *ctrl, int argc,
 					 char *argv[]);
 int hostapd_cli_cmd_dfs_no_wradar_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_dfs_no_wradar_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_set_allow_scan_on_dfs_chan_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_allow_scan_on_dfs_chan_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_dcs_wlan_intr_params(struct wpa_ctrl *ctrl, int argc,
 					    char *argv[]);
@@ -160,6 +162,10 @@ int hostapd_cli_cmd_get_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *ar
 		"<0|1> = avoid ETSI weather radar channels in DFS random channel selection" }, \
 	{ "get_dfs_no_wradar", hostapd_cli_cmd_get_dfs_no_wradar_extn, NULL, \
 		"= get dfs_no_wradar state (0|1)" }, \
+	{ "allow_scan_on_dfs_chan", hostapd_cli_cmd_set_allow_scan_on_dfs_chan_extn, NULL, \
+		"<0|1> = enable/disable DFS channel switch on ACS trigger during DCS WLAN interference" }, \
+	{ "get_allow_scan_on_dfs_chan", hostapd_cli_cmd_get_allow_scan_on_dfs_chan_extn, NULL, \
+		"= get allow_scan_on_dfs_chan state (0|1)" }, \
 	{ "ignorecac", hostapd_cli_cmd_ignorecac_extn, NULL, \
 		"[0|1] = get/set whether to ignore DFS CAC" },\
 	{ "dcs", hostapd_cli_cmd_dcs_extn, NULL, \

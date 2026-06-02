@@ -634,6 +634,7 @@ struct hostapd_iface_extn {
 
 	bool dfs_no_wradar;
 	bool ignorecac;
+	bool allow_scan_on_dfs_chan;
 	char sta_wpa_state[32]; /* Stores the STA WPA state, in case of repeater */
 	bool acs_dfs_cac_pending;  /* ACS picked DFS channel, waiting for CAC */
 	int vap_type;
@@ -1977,6 +1978,7 @@ int nl80211_get_he_mcs_12_13_extn(void *priv, u8 radio_idx, u16 *radio_cap);
  * Returns: 0 on success, negative on failure.
  */
 int nl80211_set_he_mcs_12_13_peer_cap_extn(void *priv, u8 radio_idx, u16 peer_cap);
+int nl80211_set_allow_scan_on_dfs_chan_extn(void *priv, bool enable);
 int wpas_ctrl_iface_set_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 			     const char *value, bool *is_extn_cmd);
 int wpas_ctrl_iface_get_extn(struct wpa_supplicant *wpa_s, const char *cmd,

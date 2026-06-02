@@ -1605,6 +1605,60 @@ fail:
 	return -ENOBUFS;
 }
 
+/**
+ * nl80211_set_allow_scan_on_dfs_chan_extn - Enable/disable scanning on DFS
+ *	channels in the mac80211 kernel layer.
+ *
+ * Uses QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION with:
+ *   GENERIC_COMMAND = QCA_WLAN_VENDOR_WIFI_PARAM_ALLOW_SCAN_ON_DFS_CHAN
+ *   GENERIC_DATA    = u8 (1 = enable, 0 = disable)
+ *
+ * Returns: 0 on success, negative on failure.
+ */
+int nl80211_set_allow_scan_on_dfs_chan_extn(void *priv, bool enable)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	u8 val = enable ? 1 : 0;
+	struct nlattr *params;
+	struct nl_msg *msg;
+	int ret;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Set allow_scan_on_dfs_chan = %d", val);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND,
+			QCA_WLAN_VENDOR_WIFI_PARAM_ALLOW_SCAN_ON_DFS_CHAN) ||
+	    nla_put(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA,
+		    sizeof(val), &val)) {
+		nla_nest_end(msg, params);
+		goto fail;
+	}
+
+	nla_nest_end(msg, params);
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: allow_scan_on_dfs_chan set failed: %d", ret);
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
 static int nl80211_get_he_mcs_12_13_handler(struct nl_msg *msg, void *arg)
 {
 	u16 *radio_cap = arg;

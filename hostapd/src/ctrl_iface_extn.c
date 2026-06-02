@@ -2017,6 +2017,59 @@ hostapd_ctrl_iface_disable_opclass_chans_extn(struct hostapd_data *hapd, char *c
 	return 0;
 }
 
+static int hostapd_ctrl_iface_set_allow_scan_on_dfs_chan_extn(struct hostapd_data *hapd,
+							      const char *value)
+{
+	struct hostapd_iface_extn *iface_extn;
+	char *end = NULL;
+	long val;
+
+	if (!hapd || !hapd->iface || !value) {
+		wpa_printf(MSG_ERROR, "ALLOW_SCAN_ON_DFS: Invalid parameters");
+		return -1;
+	}
+
+	iface_extn = &hapd->iface->iface_extn;
+
+	val = strtol(value, &end, 10);
+	if (end == value) {
+		wpa_printf(MSG_ERROR, "ALLOW_SCAN_ON_DFS: Invalid value format");
+		return -1;
+	}
+
+	while (end && (*end == ' ' || *end == '\n' || *end == '\r' || *end == '\t'))
+		end++;
+
+	if (end && *end != '\0') {
+		wpa_printf(MSG_ERROR, "ALLOW_SCAN_ON_DFS: Trailing characters after value");
+		return -1;
+	}
+
+	if (val != 0 && val != 1) {
+		wpa_printf(MSG_ERROR, "ALLOW_SCAN_ON_DFS: Value must be 0 or 1");
+		return -1;
+	}
+
+	iface_extn->allow_scan_on_dfs_chan = !!val;
+
+	if (nl80211_set_allow_scan_on_dfs_chan_extn(hapd->drv_priv,
+	    iface_extn->allow_scan_on_dfs_chan)) {
+		wpa_printf(MSG_ERROR, "ALLOW_SCAN_ON_DFS: Failed to set in driver");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_allow_scan_on_dfs_chan_extn(struct hostapd_data *hapd,
+							      char *reply,
+							      size_t reply_size)
+{
+	return os_snprintf(reply, reply_size, "%d\n",
+			   hapd && hapd->iface &&
+			   hapd->iface->iface_extn.allow_scan_on_dfs_chan);
+}
+
 int
 hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 					char *buf, char *reply,
@@ -2077,6 +2130,14 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 			reply_len_extn = os_snprintf(reply, reply_size, "OK\n");
 	} else if (os_strcmp(buf, "GET_DFS_NO_WRADAR") == 0) {
 		reply_len_extn = hostapd_ctrl_iface_get_dfs_no_wradar_extn(
+			hapd, reply, reply_size);
+	} else if (os_strncmp(buf, "ALLOW_SCAN_ON_DFS_CHAN ", 23) == 0) {
+		if (hostapd_ctrl_iface_set_allow_scan_on_dfs_chan_extn(hapd, buf + 23))
+			reply_len_extn = -1;
+		else
+			reply_len_extn = os_snprintf(reply, reply_size, "OK\n");
+	} else if (os_strcmp(buf, "GET_ALLOW_SCAN_ON_DFS_CHAN") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_allow_scan_on_dfs_chan_extn(
 			hapd, reply, reply_size);
 	} else if (os_strncmp(buf, "DCS ", 4) == 0) {
 		reply_len_extn = hostapd_ctrl_iface_dcs_extn(hapd, buf + 4, reply,

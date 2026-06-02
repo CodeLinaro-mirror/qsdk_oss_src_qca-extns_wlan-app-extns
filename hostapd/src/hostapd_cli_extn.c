@@ -308,6 +308,37 @@ int hostapd_cli_cmd_get_dfs_no_wradar_extn(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, "GET_DFS_NO_WRADAR");
 }
 
+int hostapd_cli_cmd_set_allow_scan_on_dfs_chan_extn(struct wpa_ctrl *ctrl, int argc,
+						    char *argv[])
+{
+	char buf[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid allow_scan_on_dfs_chan command: needs one argument (0|1)\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "ALLOW_SCAN_ON_DFS_CHAN %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("Too long ALLOW_SCAN_ON_DFS_CHAN command.\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_allow_scan_on_dfs_chan_extn(struct wpa_ctrl *ctrl, int argc,
+						    char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid get_allow_scan_on_dfs_chan command: no arguments expected\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "GET_ALLOW_SCAN_ON_DFS_CHAN");
+}
+
 int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	if (argc < 1) {
