@@ -1491,6 +1491,66 @@ error:
 	return -1;
 }
 
+/**
+ * nl80211_set_allow_3addr_mc_extn - Set ALLOW_3ADDR_MC via vendor command
+ * @priv: Pointer to struct i802_bss (driver private data)
+ * @val: Value to set (0 = disallow, 1 = allow 3-address multicast)
+ *
+ * Sends QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION with
+ * QCA_WLAN_VENDOR_ATTR_CONFIG_ALLOW_3ADDR_MC attribute.
+ *
+ * Returns: 0 on success, negative error code on failure
+ */
+int nl80211_set_allow_3addr_mc_extn(void *priv, u8 val)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	struct nlattr *params;
+	int ret;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR, "ALLOW_3ADDR_MC: BSS not initialized");
+		return -1;
+	}
+
+	drv = bss->drv;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_ALLOW_3ADDR_MC,
+		       val))
+		goto fail;
+
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "ALLOW_3ADDR_MC: vendor command failed: %s (%d)",
+			   strerror(-ret), ret);
+		return ret;
+	}
+
+	wpa_printf(MSG_DEBUG, "ALLOW_3ADDR_MC: set to %u", val);
+	return 0;
+
+fail:
+	wpa_printf(MSG_ERROR,
+		   "ALLOW_3ADDR_MC: Failed to build vendor command");
+	nlmsg_free(msg);
+	return -1;
+}
+
 int hostapd_drv_mark_vap_submode(struct hostapd_data *hapd,
 				 enum qca_wlan_vendor_vap_submode_type submode)
 {

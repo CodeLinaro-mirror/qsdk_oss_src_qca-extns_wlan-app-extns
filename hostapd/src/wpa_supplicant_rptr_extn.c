@@ -1367,6 +1367,11 @@ void wds_ie_process_assoc_resp_extn(struct wpa_supplicant *wpa_s,
 
 	wpa_s->wds_ie_ap = 0;
 
+	if (nl80211_set_allow_3addr_mc_extn(wpa_s->drv_priv,
+					    (u8)wpa_s->conf->conf_extn.allow_3addr_mc))
+		wpa_printf(MSG_DEBUG,
+			   "ALLOW_3ADDR_MC: driver command failed");
+
 	/* Only process if the STA profile has wds_ie enabled */
 	if (!wpa_s->current_ssid || !wpa_s->current_ssid->wds_ie)
 		return;

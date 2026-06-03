@@ -511,6 +511,17 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		}
 		bss->bss_extn.wds_ie = val;
 		wpa_printf(MSG_DEBUG, "WDS IE: %s wds_ie=%d", bss->iface, val);
+	} else if (os_strcmp(buf, "allow_3addr_mc") == 0) {
+		val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid allow_3addr_mc value %d (expected 0 or 1)",
+				   val);
+			return -1;
+		}
+		bss->bss_extn.allow_3addr_mc = val;
+		wpa_printf(MSG_DEBUG, "allow_3addr_mc: %s allow_3addr_mc=%d",
+			   bss->iface, val);
 	} else {
 		wpa_printf(MSG_INFO, "%s:%d> error buf %s =====> Not found", __func__, __LINE__, buf);
 		return -1;
