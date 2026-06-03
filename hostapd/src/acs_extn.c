@@ -167,6 +167,70 @@ acs_print_usage_extn(char *reply, int reply_size)
 }
 
 #ifdef CONFIG_QCN_APP_EXTN
+
+static enum trigger_type acs_get_valid_trigger_type(int trigger_type)
+{
+	if (trigger_type >= 0 && trigger_type < trigger_type_max)
+		return (enum trigger_type) trigger_type;
+
+	return normal_scan;
+}
+
+void acs_fill_timestamp(struct hostapd_iface *iface,
+			int trigger_type, bool is_trigger_time)
+{
+	struct qacs_data_extn *data_extn;
+	struct os_time now = { 0 };
+	enum trigger_type trigger = acs_get_valid_trigger_type(trigger_type);
+
+	if (!iface || !iface->current_mode)
+		return;
+
+	data_extn = ICM_GET_EXTN_DATA_PTR(iface->current_mode);
+	if (!data_extn)
+		return;
+
+	if (!os_get_time(&now)) {
+		if (is_trigger_time) {
+			data_extn->chan_sel_trigger_time[trigger].tv_sec = now.sec;
+			data_extn->chan_sel_trigger_time[trigger].tv_nsec =
+				now.usec * 1000;
+		} else {
+			data_extn->chan_sel_completion_time[trigger].tv_sec = now.sec;
+			data_extn->chan_sel_completion_time[trigger].tv_nsec =
+				now.usec * 1000;
+		}
+
+	} else {
+		if (is_trigger_time) {
+			data_extn->chan_sel_trigger_time[trigger].tv_sec = 0;
+			data_extn->chan_sel_trigger_time[trigger].tv_nsec = 0;
+		} else {
+			data_extn->chan_sel_completion_time[trigger].tv_sec = 0;
+			data_extn->chan_sel_completion_time[trigger].tv_nsec = 0;
+		}
+	}
+
+	/* Track the latest trigger path for both start and completion updates. */
+	data_extn->trigger_type = trigger;
+}
+
+static void acs_fill_algo_type(struct hostapd_iface *iface)
+{
+	struct qacs_data_extn *data_extn;
+	enum acs_type acs_algo = iface->conf->conf_extn.qacs_enable ?
+				 qacs : standard_acs;
+
+	if (!iface || !iface->current_mode)
+		return;
+
+	data_extn = ICM_GET_EXTN_DATA_PTR(iface->current_mode);
+	if (!data_extn)
+		return;
+
+	data_extn->acs_algo = acs_algo;
+}
+
 static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 				   struct hostapd_iface *iface, int nchans,
 				   struct qacs_data_extn *data_extn,
@@ -302,6 +366,64 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 				data_extn->best_chan, data_extn->bw);
 	}
 
+	pos += ret;
+
+	static const char * const acs_algo_str[] = {
+		[0] = "Standard ACS",
+		[qacs] = "QACS",
+	};
+
+	static const char * const trigger_type_str[] = {
+		[0] = "Normal scan",
+		[cbs_vendor_scan] = "CBS Vendor scan",
+	};
+	const char *acs_algo = "Unknown ACS algo";
+	const char *trigger = "Unknown scan trigger";
+	enum trigger_type trig =
+		acs_get_valid_trigger_type(data_extn->trigger_type);
+	const struct timespec *trigger_time =
+		&data_extn->chan_sel_trigger_time[trig];
+	const struct timespec *completion_time =
+		&data_extn->chan_sel_completion_time[trig];
+
+	if (data_extn->acs_algo < ARRAY_SIZE(acs_algo_str) &&
+	    acs_algo_str[data_extn->acs_algo])
+		acs_algo = acs_algo_str[data_extn->acs_algo];
+
+	if (trig < ARRAY_SIZE(trigger_type_str) && trigger_type_str[trig])
+		trigger = trigger_type_str[trig];
+
+	ret = os_snprintf(pos, end - pos,
+			  "ACS Algo: %s  Trigger: %s\n",
+			  acs_algo, trigger);
+
+	if (os_snprintf_error(end - pos, ret))
+		return (int)(pos - reply);
+	pos += ret;
+
+	{
+		long diff_sec = (long)(completion_time->tv_sec -
+				       trigger_time->tv_sec);
+		long diff_usec = (long)((completion_time->tv_nsec -
+					 trigger_time->tv_nsec) / 1000);
+
+		if (diff_usec < 0) {
+			diff_sec--;
+			diff_usec += 1000000L;
+		}
+
+		ret = os_snprintf(pos, end - pos,
+				  "Chan sel trigger time: %ld.%06ld  completion time: %ld.%06ld\n"
+				  "Total Time taken for channel selection (sec): %ld.%06ld\n",
+				  (long)trigger_time->tv_sec,
+				  (long)(trigger_time->tv_nsec / 1000),
+				  (long)completion_time->tv_sec,
+				  (long)(completion_time->tv_nsec / 1000),
+				  diff_sec, diff_usec);
+	}
+
+	if (os_snprintf_error(end - pos, ret))
+		return (int)(pos - reply);
 	pos += ret;
 
 	return (int)(pos - reply);
@@ -450,6 +572,15 @@ static int hostapd_acs_show_neighbor_report_extn(struct hostapd_data *hapd,
 						 char *reply, size_t reply_size)
 {
 	return -1;
+}
+
+void acs_fill_timestamp(struct hostapd_iface *iface,
+			int trigger_type, bool is_trigger_time)
+{
+}
+
+static void acs_fill_algo_type(struct hostapd_iface *iface)
+{
 }
 #endif
 
@@ -1254,12 +1385,21 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
 	return 0;
 }
 
+void acs_init_extn(struct hostapd_iface *iface,
+		   uint8_t trigger)
+{
+	acs_fill_timestamp(iface, trigger, true);
+	acs_fill_algo_type(iface);
+}
+
 int
 acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			       struct hostapd_channel_data *chan,
 			       int err)
 {
 	int cs_err;
+
+	acs_fill_timestamp(iface, NORMAL_SCAN_TRIGGER, false);
 
 	if (iface->iface_extn.dynamic_acs_action == NO_CHANNEL_CHANGE) {
 		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;

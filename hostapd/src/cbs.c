@@ -18,6 +18,8 @@
 #include "utils/eloop.h"
 #include "cbs.h"
 #include "dcs.h"
+#include "cmn.h"
+#include "acs_extn.h"
 
 #define HOSTAPD_CBS_BEST_CHAN_MAX_AGE_SEC 600
 
@@ -120,6 +122,7 @@ static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
 	acs_cleanup(hapd->iface);
 	qacs_reset_scan_stats(hapd->iface, mode);
 	wpa_msg(hapd->msg_ctx, MSG_INFO, CBS_EVENT_STARTED);
+	acs_init_extn(hapd->iface, CBS_SCAN_TRIGGER);
 
 	ret = hapd->driver->set_cbs(hapd->drv_priv,
 				    cbs_params, freq_list,
@@ -322,6 +325,7 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 		if (conf_extn->qacs_enable) {
 			conf_extn->cbs_params.best_chan =
 				qacs_find_ideal_chan(iface);
+
 		} else {
 			acs_study_options(iface);
 			conf_extn->cbs_params.best_chan =
@@ -335,6 +339,7 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 				   conf_extn->cbs_params.best_chan_fill_ts.sec,
 				   conf_extn->cbs_params.best_chan_fill_ts.usec,
 				   conf_extn->cbs_params.best_chan->freq);
+			acs_fill_timestamp(iface, CBS_SCAN_TRIGGER, false);
 		}
 
 		if (conf_extn->cbs_params.cbs_enable == 1)
