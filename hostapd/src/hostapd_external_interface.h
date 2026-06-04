@@ -217,6 +217,7 @@ struct hostapd_if_frame_ctx {
 			 * transaction only relevant for SAE algorithm
 			 */
 			uint16_t auth_transaction;
+			int rssi;
 
 			/*
 			 * status code is outside
