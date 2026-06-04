@@ -623,10 +623,9 @@ void sme_pre_connect_timer_extn(void *eloop_ctx, void *timeout_ctx)
  * @link_id: Link ID index to update in the MLD link array
  *
  * Use Reduced Neighbor Report (RNR) information to update per-link
- * information for Multi-Link Device (MLD) APs in the BSS structure. In
- * Independent Repeater mode, use the neighbor BSS entry to populate
- * frequency, width, center frequency indices and puncturing bitmap for
- * the link.
+ * information for Multi-Link Device (MLD) APs in the BSS structure.
+ * When a neighbor BSS entry is available, also populate channel width,
+ * center frequency indices and puncturing bitmap for the link.
  */
 void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 					  struct wpa_bss *bss,
@@ -643,21 +642,13 @@ void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 	if (!neigh_bss)
 		neigh_bss = wpa_bss_get_bssid(wpa_s, bssid_ptr);
 
-	if (!wpa_s->conf->ind_rptr) {
-		bss->valid_links |= BIT(link_id);
-		l = &bss->mld_links[link_id];
-		os_memcpy(l->bssid, bssid_ptr, ETH_ALEN);
-		l->disabled = mld_params[2] & RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
-		l->freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
-		return;
-	}
+	bss->valid_links |= BIT(link_id);
+	l = &bss->mld_links[link_id];
+	os_memcpy(l->bssid, bssid_ptr, ETH_ALEN);
+	l->disabled = mld_params[2] & RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
+	l->freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
 
 	if (neigh_bss) {
-		bss->valid_links |= BIT(link_id);
-		l = &bss->mld_links[link_id];
-		os_memcpy(l->bssid, bssid_ptr, ETH_ALEN);
-		l->disabled = mld_params[2] & RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
-		l->freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
 		l->center_freq1_idx = neigh_bss->center_freq1_idx;
 		l->center_freq2_idx = neigh_bss->center_freq2_idx;
 		l->width = neigh_bss->max_cw;
@@ -665,6 +656,9 @@ void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 		wpa_printf(MSG_DEBUG, "%s: link_id=%u freq=%d cf1=%d cf2=%d width=%d punc=%d",
 			   __func__, link_id, l->freq, l->center_freq1_idx, l->center_freq2_idx,
 			   l->width, l->punc_bitmap);
+	} else {
+		wpa_printf(MSG_DEBUG, "%s: link_id=%u freq=%d (no neigh_bss, "
+			   "channel info unavailable)", __func__, link_id, l->freq);
 	}
 }
 
@@ -1223,73 +1217,15 @@ static bool wpas_check_link_nol_extn(struct wpa_supplicant *wpa_s,
 }
 
 /**
- * wpas_check_mlo_links_nol_extn - Check if any MLO link uses NOL channels
+ * wpas_bss_uses_nol_channel_extn - Check if BSS assoc link uses NOL channels
  * @wpa_s: wpa_supplicant context
- * @bss: MLO BSS to check
- * Returns: true if any link uses NOL channel, false otherwise
- */
-static bool wpas_check_mlo_links_nol_extn(struct wpa_supplicant *wpa_s,
-					  struct wpa_bss *bss)
-{
-	int i;
-
-	if (!bss->valid_links)
-		return false;
-
-	wpa_printf(MSG_DEBUG, "NOL: Checking MLO BSS " MACSTR " (valid_links=0x%x)",
-			   MAC2STR(bss->bssid), bss->valid_links);
-
-	for_each_link(bss->valid_links, i) {
-		struct mld_link *link = &bss->mld_links[i];
-		int link_bw, link_cf1 = 0, link_cf2 = 0;
-
-		if (link->disabled) {
-			wpa_printf(MSG_DEBUG, "NOL: Skipping disabled link %d", i);
-			continue;
-		}
-		if (!is_5ghz_freq(link->freq)) {
-			wpa_printf(MSG_DEBUG, "NOL: Skipping Non 5G Freq: %d", link->freq);
-			continue;
-		}
-
-		/* Get link bandwidth and center frequencies using common helper */
-		link_bw = wpas_get_channel_info_extn(link->freq, link->width,
-						     link->center_freq1_idx,
-						     link->center_freq2_idx,
-						     &link_cf1, &link_cf2);
-
-		wpa_printf(MSG_DEBUG, "NOL: MLO link %d BSS " MACSTR " "
-			  " freq = %d bw = %d c_freq1 = %d c_freq2 = %d"
-			  " link_cf1 = %d link_cf2 = %d", i, MAC2STR(link->bssid),
-			  link->freq, link_bw, link->center_freq1_idx,
-			  link->center_freq2_idx, link_cf1, link_cf2);
-		if (link_bw < 0) {
-			wpa_printf(MSG_DEBUG, "NOL: Failed to get channel info for link %d", i);
-			continue;
-		}
-
-		/* Check this link */
-		if (wpas_check_link_nol_extn(wpa_s, link->freq, link_bw,
-					     link_cf1, link_cf2)) {
-			wpa_printf(MSG_DEBUG,
-				   "NOL: MLO link %d (BSS " MACSTR ") uses NOL channel",
-				   i, MAC2STR(link->bssid));
-			return true;
-		}
-	}
-
-	return false;
-}
-
-/**
- * wpas_bss_uses_nol_channel_extn - Check if BSS uses NOL channels
- * @wpa_s: wpa_supplicant context
- * @bss: BSS to check (handles both SLO and MLO)
- * Returns: true if BSS uses any NOL channel, false otherwise
+ * @bss: BSS to check (Legacy, SLO, or MLO assoc link)
+ * Returns: true if the assoc link uses a NOL channel, false otherwise
  *
- * This function checks if a BSS (Single-Link or Multi-Link) uses any
- * channels that are in the Non-Occupancy List (NOL) due to radar detection.
- * For MLO, all valid links are checked.
+ * Checks whether the BSS primary (assoc) link frequency is in the NOL.
+ * For MLO, only the assoc link is checked here; partner link NOL handling
+ * is done earlier in wpa_bss_update_scan_rnr_res() by excluding NOL partner
+ * links from the connection attempt.
  */
 bool wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s,
 				    struct wpa_bss *bss)
@@ -1302,20 +1238,16 @@ bool wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s,
 	wpa_printf(MSG_DEBUG, "NOL: Checking BSS " MACSTR " (freq=%d)",
 			   MAC2STR(bss->bssid), bss->freq);
 
-	/* Handle MLO BSS */
-	if (!is_zero_ether_addr(bss->mld_addr) && bss->valid_links) {
-		return wpas_check_mlo_links_nol_extn(wpa_s, bss);
-	} else {
-		/* Handle Single-Link BSS */
-		if (!is_5ghz_freq(bss->freq))
-			return false;
-		bw = wpas_get_channel_info_extn(bss->freq, bss->max_cw,
-						bss->center_freq1_idx,
-						bss->center_freq2_idx, &cf1, &cf2);
-		if (bw < 0) {
-			wpa_printf(MSG_DEBUG, "NOL: Failed to get bandwidth info");
-			return false;
-		}
-		return wpas_check_link_nol_extn(wpa_s, bss->freq, bw, cf1, cf2);
+	/* Only 5G channels are subject to NOL */
+	if (!is_5ghz_freq(bss->freq))
+		return false;
+
+	bw = wpas_get_channel_info_extn(bss->freq, bss->max_cw,
+					bss->center_freq1_idx,
+					bss->center_freq2_idx, &cf1, &cf2);
+	if (bw < 0) {
+		wpa_printf(MSG_DEBUG, "NOL: Failed to get bandwidth info");
+		return false;
 	}
+	return wpas_check_link_nol_extn(wpa_s, bss->freq, bw, cf1, cf2);
 }
