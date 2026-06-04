@@ -537,14 +537,21 @@ static void offload_action(char *ifname, const uint8_t *sta_mac, const uint8_t *
 static void notify_auth(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 			uint16_t frame_len, struct hostapd_if_frame_ctx *ctx)
 {
-	uint16_t auth_alg;
-	uint16_t auth_transaction;
-	uint16_t notify_status_code;
+	uint16_t auth_alg = 0;
+	uint16_t auth_transaction = 0;
+	uint16_t notify_status_code = 0;
+	int rx_link_id = -1;
+	int rssi = 0;
+
+	if (ctx) {
+		rx_link_id = ctx->rx_link_id;
+		rssi = ctx->data.auth_req.rssi;
+	}
 
 	wpa_printf(MSG_DEBUG,
-		   "Notified Auth for STA " MACSTR " on link_id=%d, frame_len=%u\n",
-		   MAC2STR(sta_mac), ctx->rx_link_id,
-		   frame_len);
+		   "Notified Auth for STA " MACSTR " on link_id=%d, frame_len=%u%s RSSI %d\n",
+		   MAC2STR(sta_mac), rx_link_id, frame_len,
+		   ctx ? "" : " Frame ctx null", rssi);
 
 	/*
 	 * Parse status code from auth response frame if present
