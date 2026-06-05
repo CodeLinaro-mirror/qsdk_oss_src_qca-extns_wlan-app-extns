@@ -723,6 +723,7 @@ int hostapd_dfs_prepare_channel_switch_settings(struct hostapd_iface *iface,
 				      &cmode->uhr_capab[ieee80211_mode],
 				      punct_bitmap | iface->radar_bit_pattern,
 				      iface->conf->he_6ghz_reg_pwr_type,
+				      0, 0,
 				      iface->conf->bandwidth_device,
 				      iface->conf->center_freq_device);
 	if (err) {
@@ -1551,6 +1552,7 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 				      &cmode->uhr_capab[ieee80211_mode],
 				      iface->radar_bit_pattern,
 				      iface->conf->he_6ghz_reg_pwr_type,
+				      0, 0,
 				      iface->conf->bandwidth_device,
 				      iface->conf->center_freq_device);
 	if (err) {

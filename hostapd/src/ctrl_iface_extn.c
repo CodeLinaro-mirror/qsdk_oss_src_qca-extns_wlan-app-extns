@@ -1026,6 +1026,7 @@ static int hostapd_ctrl_iface_set_channel_extn(struct hostapd_data *hapd,
 				      mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
 				      punct_bitmap,
 				      hapd->iconf->he_6ghz_reg_pwr_type,
+				      0, 0,
 				      iface->conf->bandwidth_device,
 				      iface->conf->center_freq_device);
 	if (ret) {
@@ -1777,8 +1778,9 @@ hostapd_ctrl_iface_build_target_freq_params_extn(struct hostapd_data *hapd,
 				       mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
 				       mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
 				       0,
-				       hapd->iconf->he_6ghz_reg_pwr_type,
-				       iface->conf->bandwidth_device,
+                                       hapd->iconf->he_6ghz_reg_pwr_type,
+                                       0, 0,
+                                       iface->conf->bandwidth_device,
 				       iface->conf->center_freq_device);
 }
 
