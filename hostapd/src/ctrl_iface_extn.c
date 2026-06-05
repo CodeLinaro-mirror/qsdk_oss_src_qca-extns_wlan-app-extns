@@ -59,7 +59,7 @@ static int hostapd_ctrl_iface_set_ht40intol_extn(struct hostapd_data *hapd, char
 	long value;
 	bool user_ht40intol, current_ht40intol;
 
-	if (!hapd || !hapd->iconf || !pos)
+	if (!hapd || !hapd->iconf || !hapd->conf || !pos)
 		return ret;
 
 	value = strtol(pos, &end, 10);
@@ -69,16 +69,17 @@ static int hostapd_ctrl_iface_set_ht40intol_extn(struct hostapd_data *hapd, char
 	}
 
 	user_ht40intol = (value == 1);
-	current_ht40intol = !!(hapd->iconf->ht_capab & HT_CAP_INFO_40MHZ_INTOLERANT);
+	current_ht40intol = hapd->conf->bss_extn.ht40_intol.is_overridden ?
+			    hapd->conf->bss_extn.ht40_intol.value :
+			    !!(hapd->iconf->ht_capab & HT_CAP_INFO_40MHZ_INTOLERANT);
+
+	hapd->conf->bss_extn.ht40_intol.is_overridden = true;
+	hapd->conf->bss_extn.ht40_intol.value = user_ht40intol;
+
 	if (current_ht40intol == user_ht40intol) {
 		wpa_printf(MSG_DEBUG, "Intolerance is already %d\n", current_ht40intol);
 		return 0;
 	}
-
-	if (user_ht40intol)
-		hapd->iconf->ht_capab |= HT_CAP_INFO_40MHZ_INTOLERANT;
-	else
-		hapd->iconf->ht_capab &= ~HT_CAP_INFO_40MHZ_INTOLERANT;
 
 	ret = ieee802_11_update_beacons(hapd->iface);
 	if (ret)
@@ -91,12 +92,17 @@ static int hostapd_ctrl_iface_get_ht40intol_extn(struct hostapd_data *hapd, char
 						 size_t buflen)
 {
 	int ret = -1;
+	bool ht40intol;
 
-	if (!hapd || !hapd->iconf)
+	if (!hapd || !hapd->iconf || !hapd->conf || !buf)
 		return ret;
 
+	ht40intol = hapd->conf->bss_extn.ht40_intol.is_overridden ?
+		    hapd->conf->bss_extn.ht40_intol.value :
+		    !!(hapd->iconf->ht_capab & HT_CAP_INFO_40MHZ_INTOLERANT);
+
 	ret = os_snprintf(buf, buflen, "ht40intol: %d\n",
-			  !!(hapd->iconf->ht_capab & HT_CAP_INFO_40MHZ_INTOLERANT));
+			  ht40intol);
 
 	return ret;
 }

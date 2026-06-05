@@ -107,6 +107,7 @@ hostapd_config_defaults_bss_extn(struct hostapd_bss_config *bss)
 	bss_extn->nontx_vendor_elem_size =
 		MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE;
 
+	memset(&bss_extn->ht40_intol, 0, sizeof(bss_extn->ht40_intol));
 	bss_extn->tpe_common_psd = true;
 	bss_extn->tpe_tx_pwr_interp = TPE_REG_EIRP_PSD;
 	bss_extn->tpe_punct_channel_tx_pwr = false;
