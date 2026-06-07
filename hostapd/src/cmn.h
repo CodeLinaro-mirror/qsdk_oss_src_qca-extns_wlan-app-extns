@@ -63,6 +63,7 @@ struct nl80211_vendor_cmd_info;
 struct wpa_scan_res;
 struct wpa_config;
 struct freq_survey;
+struct wpa_ssid;
 
 struct ieee80211_240mhz_vendor_oper_extn {
 	u8 ccfs1;
@@ -279,6 +280,15 @@ struct sta_info_extn {
 	 * notifications from weak/distant stations.
 	 */
 	int assoc_snr;
+	/*
+	 * wds_ie_peer - WDS IE peer capability flag
+	 *
+	 * Set to true when the peer station advertised WDS_IE_CAP_STA in its
+	 * association request and the AP BSS has wds_ie=1 configured.
+	 * Used by handle_assoc_cb_wds_ie_extn() and ap_free_sta_wds_ie_extn()
+	 * to drive hostapd_set_wds_sta() enable/disable calls.
+	 */
+	bool wds_ie_peer;
 };
 
 /**
@@ -342,7 +352,22 @@ struct ieee802_11_elems_extn {
 
 	/* HE MCS 12/13 (4K-QAM) peer capability from QCN IE */
 	u16 he_mcs_12_13_peer_cap;
+
+	/*
+	 * wds_ie / wds_ie_len - WDS vendor IE from received frames
+	 *
+	 * Set by ieee802_11_parse_vendor_specific_elems_extn() when the
+	 * WDS vendor IE (OUI 00:13:84, type 0x01) is found.
+	 * Points to the OUI byte (first byte of the vendor IE payload,
+	 * i.e. after the EID and Length octets).  wds_ie_len is the
+	 * Length field value (OUI + Type + Cap + Ver = 6 bytes minimum).
+	 */
+	const u8 *wds_ie;
+	u8 wds_ie_len;
 };
+
+/* WDS IE OUI as a 24-bit big-endian integer (00:13:84) */
+#define OUI_WDS_IE  0x001384
 
 #ifndef CONFIG_QCN_APP_EXTN
 struct qacs_conf_extn {
@@ -632,6 +657,20 @@ struct hostapd_bss_config_extn {
 	 * This per-BSS configuration overrides the per-radio 'require_vht' config.
 	 */
 	struct pure11ac_bss_extn pure11ac_bss;
+
+	/*
+	 * wds_ie - WDS vendor IE advertisement control (AP mode)
+	 *
+	 * When set to 1, the AP advertises the WDS vendor IE (OUI 00:13:84,
+	 * type 0x01) in beacon, probe response, and association response
+	 * frames.  The AP also parses the WDS IE from association requests
+	 * and calls hostapd_set_wds_sta() to enable WDS mode for stations
+	 * that mutually advertise WDS_IE_CAP_STA.
+	 *
+	 * 0 = WDS IE disabled (default)
+	 * 1 = WDS IE enabled
+	 */
+	int wds_ie;
 };
 
 struct esp_extn {
@@ -1724,6 +1763,62 @@ hostapd_override_ht_capabilities_extn(const struct hostapd_data *hapd,
 				      struct ieee80211_ht_capabilities *cap)
 {
 }
+
+/* ------------------------------------------------------------------ */
+/* WDS vendor IE stubs (CONFIG_QCN_EXTN not set)                       */
+/* ------------------------------------------------------------------ */
+static inline size_t
+hostapd_wds_ie_len_extn(struct hostapd_data *hapd)
+{
+	return 0;
+}
+
+static inline u8 *
+hostapd_eid_wds_ie_extn(struct hostapd_data *hapd, u8 *eid, size_t len)
+{
+	return eid;
+}
+
+static inline u16
+check_wds_ie_extn(struct hostapd_data *hapd, struct sta_info *sta,
+		  const u8 *wds_ie, size_t wds_ie_len)
+{
+	return 0; /* WLAN_STATUS_SUCCESS */
+}
+
+static inline void
+handle_assoc_cb_wds_ie_extn(struct hostapd_data *hapd, struct sta_info *sta)
+{
+	return;
+}
+
+static inline void
+ap_free_sta_wds_ie_extn(struct hostapd_data *hapd, struct sta_info *sta)
+{
+	return;
+}
+
+static inline size_t
+wds_ie_assoc_req_len_extn(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid)
+{
+	return 0;
+}
+
+static inline u8 *
+wds_ie_populate_assoc_req_extn(struct wpa_supplicant *wpa_s,
+			       struct wpa_ssid *ssid,
+			       u8 *pos, size_t avail)
+{
+	return pos;
+}
+
+static inline void
+wds_ie_process_assoc_resp_extn(struct wpa_supplicant *wpa_s,
+			       const u8 *ies, size_t ies_len)
+{
+	return;
+}
+
 #else
 
 int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
@@ -2152,6 +2247,9 @@ bool hostapd_2040_coex_action_snr_below_threshold_extn(
 int hostapd_rssi_to_snr_extn(struct hostapd_data *hapd, int ssi_signal);
 bool hostapd_ht40_intolerant_snr_below_threshold_extn(
 	struct hostapd_data *hapd, struct sta_info *sta);
+int wpa_ctrl_set_wds_ie_extn(struct wpa_supplicant *wpa_s, int val);
+int wpa_ctrl_get_wds_ie_extn(struct wpa_supplicant *wpa_s,
+			     char *reply, int reply_size);
 #ifdef HOSTAPD
 struct hostapd_data *
 switch_link_hapd(struct hostapd_data *hapd, int link_id);
@@ -2546,5 +2644,24 @@ void wpas_dfs_nop_finished_sta_mode(struct wpa_supplicant *wpa_s,
  */
 void hostapd_override_ht_capabilities_extn(const struct hostapd_data *hapd,
 					   struct ieee80211_ht_capabilities *cap);
+/* ------------------------------------------------------------------ */
+/* WDS vendor IE APIs (CONFIG_QCN_EXTN set)                            */
+/* ------------------------------------------------------------------ */
+size_t hostapd_wds_ie_len_extn(struct hostapd_data *hapd);
+u8 *hostapd_eid_wds_ie_extn(struct hostapd_data *hapd, u8 *eid, size_t len);
+u16 check_wds_ie_extn(struct hostapd_data *hapd, struct sta_info *sta,
+		      const u8 *wds_ie, size_t wds_ie_len);
+void handle_assoc_cb_wds_ie_extn(struct hostapd_data *hapd,
+				 struct sta_info *sta);
+void ap_free_sta_wds_ie_extn(struct hostapd_data *hapd, struct sta_info *sta);
+size_t wds_ie_assoc_req_len_extn(struct wpa_supplicant *wpa_s,
+				 struct wpa_ssid *ssid);
+u8 *wds_ie_populate_assoc_req_extn(struct wpa_supplicant *wpa_s,
+				   struct wpa_ssid *ssid,
+				   u8 *pos, size_t avail);
+void wds_ie_process_assoc_resp_extn(struct wpa_supplicant *wpa_s,
+				    const u8 *ies, size_t ies_len);
+
+
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

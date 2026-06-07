@@ -115,6 +115,8 @@ hostapd_config_defaults_bss_extn(struct hostapd_bss_config *bss)
 	bss_extn->pureg_bss = false;
 	memset(&bss_extn->puren_bss, 0, sizeof(bss_extn->puren_bss));
 	memset(&bss_extn->pure11ac_bss, 0, sizeof(bss_extn->pure11ac_bss));
+	/* WDS vendor IE: disabled by default */
+	bss_extn->wds_ie = 0;
 }
 
 int
@@ -491,6 +493,24 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		conf_extn->acs_periodic_interval = val;
+	} else if (os_strcmp(buf, "wds_ie") == 0) {
+		/*
+		 * wds_ie - WDS vendor IE advertisement control
+		 *
+		 * 0 = disabled (default)
+		 * 1 = enabled: AP advertises WDS vendor IE (OUI 00:13:84,
+		 *     type 0x01) in beacon, probe response, and association
+		 *     response frames.  Enables WDS mode for stations that
+		 *     mutually advertise WDS_IE_CAP_STA.
+		 */
+		val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid wds_ie value %d (expected 0 or 1)", val);
+			return -1;
+		}
+		bss->bss_extn.wds_ie = val;
+		wpa_printf(MSG_DEBUG, "WDS IE: %s wds_ie=%d", bss->iface, val);
 	} else {
 		wpa_printf(MSG_INFO, "%s:%d> error buf %s =====> Not found", __func__, __LINE__, buf);
 		return -1;

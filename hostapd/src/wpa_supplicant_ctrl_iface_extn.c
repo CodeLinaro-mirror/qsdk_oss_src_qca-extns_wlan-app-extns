@@ -116,7 +116,7 @@ static int wpas_he_mcs_12_13_supp(struct wpa_supplicant *wpa_s, bool val)
 int wpas_ctrl_iface_set_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 			     const char *value, bool *is_extn_cmd)
 {
-	int ret = -1;
+	int ret = -1, enable;
 	bool val;
 
 	if (!is_extn_cmd)
@@ -126,6 +126,10 @@ int wpas_ctrl_iface_set_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 	if (os_strcasecmp(cmd, "he_mcs_12_13_supp") == 0) {
 		val = !!atoi(value);
 		ret = wpas_he_mcs_12_13_supp(wpa_s, val);
+	} else if (os_strcasecmp(cmd, "wds_ie") == 0) {
+		enable = atoi(value);
+		wpa_printf(MSG_ERROR, "ENABLE %d", enable);
+		ret = wpa_ctrl_set_wds_ie_extn(wpa_s, enable);
 	} else {
 		*is_extn_cmd = false;
 	}
@@ -147,6 +151,8 @@ int wpas_ctrl_iface_get_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 				  wpa_s->conf->conf_extn.he_mcs_12_13_enabled);
 		if (os_snprintf_error(buflen, ret))
 			return -1;
+	} else if (os_strcmp(cmd, "wds_ie") == 0) {
+		ret = wpa_ctrl_get_wds_ie_extn(wpa_s, buf, buflen);
 	} else {
 		*is_extn_cmd = false;
 	}
