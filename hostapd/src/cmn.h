@@ -570,6 +570,16 @@ struct ht40_intolerant_bss_extn {
 	bool value;
 };
 
+/**
+ * struct puren_bss_extn - Per-BSS pure-N CLI override.
+ * @is_overridden: Whether pure-N mode is overridden via CLI.
+ * @value: pure-N value set via cli.
+ */
+struct puren_bss_extn {
+	bool is_overridden;
+	bool value;
+};
+
 struct hostapd_bss_config_extn {
 	/* Add Per-BSS configuration for extn here */
 	u8 nontx_vendor_elem_size;
@@ -594,6 +604,15 @@ struct hostapd_bss_config_extn {
 	 * the BSS shall not allow association from any IEEE 802.11b STA.
 	 */
 	bool pureg_bss;
+	/*
+	 * When set to true, the BSS operates in pure IEEE 802.11n mode.
+	 *
+	 * By default, an IEEE 802.11n BSS supports association from both
+	 * HT-capable and non-HT STAs. When puren_bss is enabled, the BSS shall not
+	 * allow association from non-HT STA.
+	 * This per-BSS configuration overrides the per-radio 'require_ht' config.
+	 */
+	struct puren_bss_extn puren_bss;
 };
 
 struct esp_extn {

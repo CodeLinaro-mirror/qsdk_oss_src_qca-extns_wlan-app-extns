@@ -314,7 +314,8 @@ static int hostapd_ctrl_iface_set_puren_extn(struct hostapd_data *hapd, char *po
 		return -1;
 	}
 
-	hapd->iconf->require_ht = (int)user_input;
+	hapd->conf->bss_extn.puren_bss.is_overridden = true;
+	hapd->conf->bss_extn.puren_bss.value = (user_input == 1);
 
 	return 0;
 }
@@ -328,6 +329,8 @@ static int hostapd_ctrl_iface_get_puren_extn(struct hostapd_data *hapd,
 		return ret;
 
 	ret = os_snprintf(buf, buflen, "puren %d\n",
+			  hapd->conf->bss_extn.puren_bss.is_overridden ?
+			  hapd->conf->bss_extn.puren_bss.value :
 			  hapd->iconf->require_ht);
 
 	return ret;

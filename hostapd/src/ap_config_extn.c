@@ -113,6 +113,7 @@ hostapd_config_defaults_bss_extn(struct hostapd_bss_config *bss)
 	bss_extn->tpe_punct_channel_tx_pwr = false;
 	bss_extn->ecsa_opclass = 0;
 	bss_extn->pureg_bss = false;
+	memset(&bss_extn->puren_bss, 0, sizeof(bss_extn->puren_bss));
 }
 
 int
