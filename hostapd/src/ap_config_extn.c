@@ -35,6 +35,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->ind_rptr = 0;
 	conf_extn->cswopts = 0;
 	conf_extn->same_ssid = 0;
+	conf_extn->repeater = 0;
 
 	/*configure qacs_default here*/
 	conf_extn->qacs_enable = 1;                 /* QACS enabled */
@@ -145,6 +146,9 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		conf_extn->rnr_6ghz_override = val;
 	} else if (os_strcmp(buf, "athnewind") == 0) {
 		conf_extn->ind_rptr = atoi(pos);
+		return 0;
+	} else if (os_strcmp(buf, "repeater") == 0) {
+		conf_extn->repeater = atoi(pos);
 		return 0;
 	} else if (os_strcmp(buf, "same_ssid") == 0) {
 		conf_extn->same_ssid = atoi(pos);

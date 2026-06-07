@@ -474,6 +474,7 @@ struct hostapd_config_extn {
 	bool skip_cac;    /* Skip DFS CAC for Repeater AP */
 	bool ignorecac;   /* Skip DFS CAC for Root AP */
 	int ind_rptr;    /* 1 - Independent Rep; 0 - Dependent */
+	bool repeater;   /* 1 - Repeater config; 0 - Not a Repeater */
 	/* Same SSID Repeater
 	 * 0 = different SSIDs or not a repeater
 	 * 1 = same SSID repeater configuration
