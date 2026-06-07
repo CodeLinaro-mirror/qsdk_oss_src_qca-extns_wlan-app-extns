@@ -80,6 +80,8 @@ int hostapd_cli_cmd_set_puren(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_puren(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_set_pure11ac(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_pure11ac(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 
 #define HOSTAPD_CLI_CMDS_EXTN \
 	{ "set_esp", hostapd_cli_cmd_set_esp_extn, NULL, \
@@ -227,7 +229,11 @@ int hostapd_cli_cmd_get_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *ar
 	{ "set_disablecoexist", hostapd_cli_cmd_set_disablecoexist, NULL, \
 		"<value 0|1> :1-disable coexistence, 0-enable coexistence" }, \
 	{ "get_disablecoexist", hostapd_cli_cmd_get_disablecoexist, NULL, \
-		"Get disable coexistence config" },
+		"Get disable coexistence config" }, \
+	{ "set_pure11ac", hostapd_cli_cmd_set_pure11ac, NULL, \
+		"<value 0|1> :Enable/disable pure11ac mode" }, \
+	{ "get_pure11ac", hostapd_cli_cmd_get_pure11ac, NULL, \
+		"Get pure11ac mode config" },
 
 #define HOSTAPD_CLI_CMD_FIELDS_EXTN \
 	"he_mcs_12_13_supp",
