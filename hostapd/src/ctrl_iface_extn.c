@@ -2559,6 +2559,23 @@ int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *valu
 		return hostapd_he_mcs_12_13_supp_extn(hapd, val);
 	} else if (os_strcasecmp(cmd, "CSwOpts") == 0) {
 		return hostapd_set_cswopts_extn(conf_extn, value);
+	} else if (os_strcasecmp(cmd, "wds_ie") == 0) {
+		val = atoi(value);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "wds_ie: Invalid value %d (expected 0 or 1)",
+				   val);
+			return -1;
+		}
+		hapd->conf->bss_extn.wds_ie = val;
+		wpa_printf(MSG_INFO, "WDS IE: %s - wds_ie set to %d",
+			   hapd->conf->iface, val);
+		ret = ieee802_11_update_beacons(hapd->iface);
+		if (ret < 0) {
+			wpa_printf(MSG_ERROR,
+				   "WDS IE: Failed to update beacons after wds_ie change");
+			return -1;
+		}
 	}
 
 	return 0;
@@ -2584,6 +2601,12 @@ int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *cmd,
 		return res;
 	} else if (os_strcasecmp(cmd, "CSwOpts") == 0) {
 		res = os_snprintf(buf, buflen, "CSwOpts=0x%x\n", conf_extn->cswopts);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "wds_ie") == 0) {
+		res = os_snprintf(buf, buflen, "wds_ie=%d\n",
+				  hapd->conf->bss_extn.wds_ie);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
@@ -2615,6 +2638,14 @@ int hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
 			return len;
 		len += ret;
 	}
+
+	/* WDS IE status - always reported */
+	ret = os_snprintf(buf + len, buflen - len,
+			  "wds_ie=%d\n",
+			  hapd->conf->bss_extn.wds_ie);
+	if (os_snprintf_error(buflen - len, ret))
+		return len;
+	len += ret;
 
 	return len;
 }

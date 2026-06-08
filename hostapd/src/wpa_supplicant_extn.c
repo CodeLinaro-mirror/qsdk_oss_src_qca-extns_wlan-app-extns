@@ -19,6 +19,7 @@
 #include "wpa_supplicant_extn.h"
 #include "common/defs.h"
 #include "cmn.h"
+#include "../wpa_supplicant/config.h"
 
 /*
  * IEEE 802.11 action frame/IE constants used by wpa_drv_send_uplink_csa().
@@ -58,6 +59,94 @@
 #define UPLINK_CSA_MODE_STOP_TX 1
 
 #define UPLINK_CSA_DUMP_ACTION_FRAME 0
+
+
+/**
+ * wpa_ctrl_set_wds_ie_extn - Set wds_ie for the current network profile
+ *
+ * Handles the "WDS_IE <0|1>" ctrl_iface command.  Sets ssid->wds_ie for
+ * the currently selected network and updates wpa_s->wds_ie_ap to 0 so
+ * that the next association will re-negotiate WDS capability.
+ *
+ * @wpa_s:      wpa_supplicant instance
+ * @buf:        Command argument string ("0" or "1")
+ * @reply:      Output buffer for the response
+ * @reply_size: Size of @reply
+ *
+ * Returns number of bytes written to @reply on success, -1 on error.
+ */
+int wpa_ctrl_set_wds_ie_extn(struct wpa_supplicant *wpa_s, int val)
+{
+	struct wpa_ssid *ssid;
+	int count = 0;
+
+	if (!wpa_s)
+		return -1;
+
+	if (val < 0 || val > 1) {
+		wpa_printf(MSG_ERROR,
+			   "WDS IE: WDS_IE: invalid value %d (expected 0 or 1)",
+			   val);
+		return -1;
+	}
+
+	/* Apply to every configured network profile so the setting is
+	 * effective regardless of whether the STA is currently associated. */
+	if (wpa_s->conf) {
+		for (ssid = wpa_s->conf->ssid; ssid; ssid = ssid->next) {
+			ssid->wds_ie = val;
+			count++;
+			wpa_printf(MSG_DEBUG,
+				   "WDS IE: WDS_IE set to %d for network id=%d",
+				   val, ssid->id);
+		}
+	}
+
+	if (count == 0)
+		wpa_printf(MSG_DEBUG,
+			   "WDS IE: WDS_IE: no configured networks found");
+	else
+		wpa_printf(MSG_INFO,
+			   "WDS IE: WDS_IE set to %d across %d network profile(s)",
+			   val, count);
+
+	/* Reset the AP-side WDS IE flag so the next association
+	 * re-negotiates WDS capability. */
+	wpa_s->wds_ie_ap = 0;
+
+	return 0;
+}
+
+/**
+ * wpa_ctrl_get_wds_ie_extn - Get wds_ie state for the current network
+ *
+ * Handles the "GET_WDS_IE" ctrl_iface command.  Returns the current
+ * wds_ie value for the selected network and the AP-side WDS IE flag.
+ *
+ * @wpa_s:      wpa_supplicant instance
+ * @reply:      Output buffer for the response
+ * @reply_size: Size of @reply
+ *
+ * Returns number of bytes written to @reply on success, -1 on error.
+ */
+int wpa_ctrl_get_wds_ie_extn(struct wpa_supplicant *wpa_s,
+			     char *reply, int reply_size)
+{
+	int ssid_wds_ie = 0, res;
+
+	if (!wpa_s)
+		return -1;
+
+	if (wpa_s->current_ssid)
+		ssid_wds_ie = wpa_s->current_ssid->wds_ie;
+
+	res = os_snprintf(reply, reply_size,
+			  "wds_ie=%d\nwds_ie_ap=%d\n",
+			  ssid_wds_ie, wpa_s->wds_ie_ap);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+	return res;
+}
 
 bool wpas_ap_link_address_extn(struct wpa_supplicant *wpa_s, const u8 *addr)
 {

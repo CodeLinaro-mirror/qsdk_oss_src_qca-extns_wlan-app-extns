@@ -30,7 +30,8 @@ OBJS += \
 	qcn_extns/qcn_ie_extn.o \
 	qcn_extns/ttlm_extn.o \
 	qcn_extns/wpa_config_extn.o \
-	qcn_extns/dfs_rcsa_extn.o
+	qcn_extns/dfs_rcsa_extn.o \
+	qcn_extns/wds_ie.o
 
 ifdef CONFIG_ACS
 	OBJS += qcn_extns/acs_extn.o

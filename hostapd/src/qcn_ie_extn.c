@@ -12,6 +12,7 @@
 #include "../wpa_supplicant/wpa_supplicant_i.h"
 #include "../wpa_supplicant/bss.h"
 #include "cmn.h"
+#include "wds_ie.h"
 #include "qcn_ie_extn.h"
 #include "../wpa_supplicant/config.h"
 #include "240mhz.h"
@@ -115,6 +116,22 @@ int ieee802_11_parse_vendor_specific_elems_extn(struct ieee802_11_elems *elems,
 				elems, oui_flag, pos, elen);
 		ret = ieee802_11_parse_qcn_he_mcs_12_13_ie(&elems->elems_extn, pos, elen);
 		return ret;
+	case OUI_WDS_IE:
+		/*
+		 * WDS vendor IE: OUI(3) + Type(1) + Cap(1) + Ver(1) = 6 bytes.
+		 * pos[3] is the OUI type byte.
+		 */
+		if (elen >= WDS_IE_PAYLOAD_LEN &&
+		    pos[3] == WDS_IE_OUI_TYPE) {
+			elems->elems_extn.wds_ie     = pos;
+			elems->elems_extn.wds_ie_len = (u8)elen;
+			wpa_printf(MSG_DEBUG,
+				   "WDS IE: parsed vendor IE from frame "
+				   "(cap=0x%02x ver=%u)",
+				   pos[4], pos[5]);
+			return 0;
+		}
+		return -1;
 	default:
 		return ret;
 	}

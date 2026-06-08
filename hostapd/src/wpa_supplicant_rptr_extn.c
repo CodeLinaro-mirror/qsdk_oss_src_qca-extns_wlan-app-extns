@@ -20,6 +20,7 @@
 #include "../wpa_supplicant/ubus.h"
 #include "../wpa_supplicant/bss.h"
 #include "../wpa_supplicant/scan.h"
+#include "../wpa_supplicant/driver_i.h"
 #include "wpa_supplicant_rptr_extn.h"
 #include "240mhz.h"
 #include "qcn_ie_extn.h"
@@ -1250,4 +1251,169 @@ bool wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s,
 		return false;
 	}
 	return wpas_check_link_nol_extn(wpa_s, bss->freq, bw, cf1, cf2);
+}
+
+#include "wds_ie.h"
+
+/**
+ * wds_ie_assoc_req_len_extn - Return WDS IE wire length for assoc request
+ *
+ * @wpa_s: wpa_supplicant instance
+ * @ssid:  Network profile
+ *
+ * Returns WDS_IE_TOTAL_LEN when ssid->wds_ie is enabled, 0 otherwise.
+ */
+size_t wds_ie_assoc_req_len_extn(struct wpa_supplicant *wpa_s,
+				 struct wpa_ssid *ssid)
+{
+	if (!wpa_s || !ssid)
+		return 0;
+
+	if (!ssid->wds_ie)
+		return 0;
+
+	return WDS_IE_TOTAL_LEN;
+}
+
+
+/**
+ * wds_ie_populate_assoc_req_extn - Append WDS IE to an association request
+ *
+ * Writes the WDS IE advertising WDS_IE_CAP_STA when ssid->wds_ie is enabled.
+ *
+ * @wpa_s:  wpa_supplicant instance
+ * @ssid:   Network profile
+ * @pos:    Current write position in the IE buffer
+ * @avail:  Remaining bytes available at @pos
+ *
+ * Returns the updated write pointer.
+ */
+u8 *wds_ie_populate_assoc_req_extn(struct wpa_supplicant *wpa_s,
+				   struct wpa_ssid *ssid,
+				   u8 *pos, size_t avail)
+{
+	size_t wds_ie_len;
+
+	if (!wpa_s || !ssid || !pos)
+		return pos;
+
+	if (!ssid->wds_ie)
+		return pos;
+
+	wds_ie_len = wds_ie_build(pos, avail, WDS_IE_CAP_STA);
+	if (wds_ie_len < WDS_IE_TOTAL_LEN) {
+		wpa_printf(MSG_WARNING,
+			   "WDS IE: STA - failed to build WDS IE for assoc req "
+			   "(buffer too small, avail=%zu)", avail);
+		return pos;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "WDS IE: STA - added WDS STA capability IE to assoc req");
+
+	return pos + wds_ie_len;
+}
+
+
+bool wds_ie_set_params(struct wpa_supplicant *wpa_s,
+		       const u8 *wds_ie, u8 elen)
+{
+	struct wds_ie_params params;
+	bool found = false;
+
+	if (wds_ie_parse(wds_ie, elen, &params) == 0) {
+		if (params.capability & WDS_IE_CAP_AP) {
+			wpa_s->wds_ie_ap = 1;
+			wpa_printf(MSG_INFO,
+				   "WDS IE: STA - AP advertises WDS IE capability "
+				   "(cap=0x%02x ver=%u) - ",
+				   params.capability, params.version);
+		} else {
+			wpa_printf(MSG_DEBUG,
+				  "WDS IE: STA - AP WDS IE present but WDS_IE_CAP_AP "
+				  "not set (cap=0x%02x)", params.capability);
+		}
+		return true;
+	}
+
+	return found;
+}
+
+/**
+ * wds_ie_process_assoc_resp_extn - Parse WDS IE from an association response
+ *                                  and enable 4-address mode on mutual WDS
+ *
+ * Searches the association response IEs for the WDS vendor IE.  When found
+ * and the AP advertises WDS_IE_CAP_AP, sets wpa_s->wds_ie_ap = 1 and
+ * enables 4-address mode via wpa_drv_set_4addr_mode() to complete the
+ * mutual WDS capability negotiation on the STA side.
+ *
+ * Mutual WDS activation requires BOTH:
+ *   - STA has wds_ie=1 configured (ssid->wds_ie)
+ *   - AP advertises WDS_IE_CAP_AP in its association response
+ *
+ * @wpa_s:    wpa_supplicant instance
+ * @ies:      IEs from the association response frame
+ * @ies_len:  Length of @ies in bytes
+ */
+void wds_ie_process_assoc_resp_extn(struct wpa_supplicant *wpa_s,
+				    const u8 *ies, size_t ies_len)
+{
+	const u8 *pos;
+	size_t remaining;
+
+	if (!wpa_s)
+		return;
+
+	wpa_s->wds_ie_ap = 0;
+
+	/* Only process if the STA profile has wds_ie enabled */
+	if (!wpa_s->current_ssid || !wpa_s->current_ssid->wds_ie)
+		return;
+
+	if (!wpa_s->enabled_4addr_mode) {
+		if (wpa_drv_set_4addr_mode(wpa_s, 1) == 0) {
+			wpa_s->enabled_4addr_mode = 1;
+			wpa_printf(MSG_INFO, "WDS IE: STA - 4-address mode enabled");
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "WDS IE: STA - failed to enable 4-address mode");
+		}
+	} else {
+		wpa_printf(MSG_DEBUG,
+			  "WDS IE: STA - 4-address mode already enabled");
+	}
+
+	if (!ies || ies_len < WDS_IE_TOTAL_LEN)
+		return;
+
+	/* Walk the IE list looking for our WDS vendor IE */
+	pos = ies;
+	remaining = ies_len;
+
+	while (remaining >= 2) {
+		u8 eid  = pos[0];
+		u8 elen = pos[1];
+
+		if (2u + elen > remaining)
+			break;
+
+		if (eid == WLAN_EID_VENDOR_SPECIFIC &&
+		    elen >= WDS_IE_PAYLOAD_LEN) {
+			/*
+			 * pos + 2 points to the OUI byte.
+			 * wds_ie_parse() will verify OUI and type.
+			 */
+			if (wds_ie_set_params(wpa_s, (pos + 2), elen))
+				break;
+		}
+
+		pos += 2 + elen;
+		remaining -= 2 + elen;
+	}
+
+	if (!wpa_s->wds_ie_ap) {
+		wpa_printf(MSG_DEBUG,
+			   "WDS IE: STA - AP did not advertise WDS capability");
+	}
 }
