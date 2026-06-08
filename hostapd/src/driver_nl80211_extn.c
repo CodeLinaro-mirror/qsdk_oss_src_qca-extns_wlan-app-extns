@@ -192,6 +192,113 @@ fail:
 	return -EINVAL;
 }
 
+static int nl80211_get_agile_capable_handler(struct nl_msg *msg, void *arg)
+{
+	u8 *val = arg;
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct nlattr *vendor_data;
+
+	if (nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		      genlmsg_attrlen(gnlh, 0), NULL)) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to parse netlink attributes");
+		return NL_SKIP;
+	}
+
+	vendor_data = tb[NL80211_ATTR_VENDOR_DATA];
+	if (vendor_data) {
+		struct nlattr *vendor_tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1];
+
+		if (nla_parse(vendor_tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+			      nla_data(vendor_data), nla_len(vendor_data),
+			      NULL)) {
+			wpa_printf(MSG_ERROR, "nl80211: Failed to parse vendor attrs");
+			return NL_SKIP;
+		}
+
+		if (vendor_tb[QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE])
+			*val = nla_get_u8(vendor_tb[QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE]);
+	}
+
+	return NL_SKIP;
+}
+
+int hostapd_get_agile_capable_extn(struct hostapd_iface *iface)
+{
+	struct hostapd_data *hapd;
+	struct i802_bss *bss;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg = NULL;
+	struct nlattr *params;
+	u8 radio_idx = 0;
+	u8 val = 1;
+	int ret;
+
+	if (!iface || !iface->bss || !iface->bss[0]) {
+		wpa_printf(MSG_ERROR, "invalid iface for agile capable fetch");
+		return -EINVAL;
+	}
+
+	hapd = iface->bss[0];
+	bss = hapd->drv_priv;
+	if (!bss || !bss->drv) {
+		wpa_printf(MSG_ERROR, "driver not initialized");
+		return -ENODEV;
+	}
+
+	drv = bss->drv;
+
+	if (iface->num_multi_hws) {
+		/* Multi-radio: query only if current radio is known */
+		if (!iface->current_hw_info) {
+			wpa_printf(MSG_DEBUG,
+				   "agile capable: no current_hw_info, skipping query");
+			return 0;
+		}
+		radio_idx = iface->current_hw_info->hw_idx;
+	}
+	/* else: single radio — query for radio_idx 0 */
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE, 0))
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX, radio_idx))
+		goto fail;
+
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_resp(drv, msg, nl80211_get_agile_capable_handler,
+				 &val);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "failed to get agile capable ret=%d", ret);
+		iface->iface_extn.agile_capable = true;
+		return ret;
+	}
+
+	iface->iface_extn.agile_capable = !!val;
+	wpa_printf(MSG_DEBUG, "agile capable=%u radio_idx=%u",
+		   iface->iface_extn.agile_capable, radio_idx);
+
+	return 0;
+
+fail:
+	if (msg)
+		nlmsg_free(msg);
+	iface->iface_extn.agile_capable = true;
+	return -EINVAL;
+}
+
 /* This function sends a NL message only if extension parameters exist;
  * otherwise it just returns.
  */
@@ -821,12 +928,66 @@ static int hw_blocked_chans_process_event_extn(struct nl_msg *msg, void *arg)
 	return NL_SKIP;
 }
 
+static int qca_nl80211_handle_wiphy_config_evt_extn(struct i802_bss *bss,
+						    u8 *data, size_t len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {0};
+	union wpa_event_data event;
+	u8 radio_idx = 0;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR, "nl80211: bss is NULL!");
+		return -EINVAL;
+	}
+
+	if (!(data && len)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid data for wiphy config event");
+		return -EINVAL;
+	}
+
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+		      (struct nlattr *)data, len, NULL)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to parse wiphy config event attributes");
+		return -EINVAL;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE])
+		return 0;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX])
+		radio_idx = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX]);
+
+	if (bss != bss->drv->first_bss) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Ignore AGILE_CAPABLE for radio_idx %u on %s",
+			   radio_idx, bss->ifname);
+		return 0;
+	}
+
+	os_memset(&event, 0, sizeof(event));
+	event.event_data_extn.agile_capable.adfs_capable =
+		nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE]);
+	event.event_data_extn.agile_capable.radio_idx = radio_idx;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: AGILE_CAPABLE event: radio_idx=%u adfs_capable=%d",
+		   radio_idx, event.event_data_extn.agile_capable.adfs_capable);
+
+	wpa_supplicant_event(bss->drv->ctx, EVENT_AGILE_CAPABLE, &event);
+	return 0;
+}
+
 int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 				  u32 subcmd, u8 *data, size_t len)
 {
 	switch (subcmd) {
 	case QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION:
 		qca_nl80211_handle_wifi_config_evt_extn(bss, data, len);
+		break;
+	case QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION:
+		qca_nl80211_handle_wiphy_config_evt_extn(bss, data, len);
 		break;
 	case QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG:
 		qca_nl80211_handle_dcs_config_evt_extn(bss, data, len);

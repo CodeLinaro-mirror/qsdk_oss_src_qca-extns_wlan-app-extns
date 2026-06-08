@@ -327,6 +327,10 @@ union wpa_event_data_extn {
 	struct dcs_intf_event dcs_intf_event;
 	struct hostapd_hw_blocklist_info hw_blocklist_info;
 	struct scan_results_event scan_results_event;
+	struct {
+		u8 adfs_capable;
+		u8 radio_idx;
+	} agile_capable;
 };
 
 #define EXTN_MAX_BLOCK_CHAN_LIST 255
@@ -711,6 +715,8 @@ struct hostapd_iface_extn {
 	unsigned int num_hw_blocklist;
 	bool check_hw_blocklist;
 	struct hostapd_rcsa_ctx rcsa_ctx;
+
+	bool agile_capable;
 };
 
 struct hostapd_channel_data_extn {
@@ -1230,6 +1236,12 @@ hostapd_iface_set_supplicant_channel_extn(struct hostapd_iface *hapd_iface)
 static inline int
 nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 			      u32 subcmd, u8 *data, size_t len)
+{
+	return -1;
+}
+
+static inline int
+hostapd_get_agile_capable_extn(struct hostapd_iface *iface)
 {
 	return -1;
 }
@@ -2332,8 +2344,10 @@ void wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s);
  * Return: 0 if threshold frequency was fetched successfully, else error code.
  */
 int hostapd_get_6ghz_thresh_priority_freq_extn(struct hostapd_iface *iface);
+int hostapd_get_agile_capable_extn(struct hostapd_iface *iface);
 bool nl80211_is_6ghz_hw_blocked_chans_supported_extn(void *priv);
 int nl80211_fetch_hw_blocked_chans_extn(void *priv, int radio_idx);
+
 void wiphy_info_qca_vendor_command_extn(struct wpa_driver_nl80211_data *drv,
 					const struct nl80211_vendor_cmd_info *vinfo);
 void hostapd_query_hw_blocklist_extn(struct hostapd_iface *iface,

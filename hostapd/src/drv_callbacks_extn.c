@@ -7,6 +7,7 @@
 #include "utils/common.h"
 #include "ap/hostapd.h"
 #include "ap/dfs.h"
+#include "ap/ap_drv_ops.h"
 #include "esp.h"
 #include "dcs.h"
 #include "dfs_extn.h"
@@ -47,6 +48,71 @@ void hostapd_sync_country_from_driver(struct hostapd_data *hapd)
 	hapd->iconf->country[1] = alpha2[1];
 }
 
+static void hostapd_handle_agile_capable_event_extn(struct hostapd_data *hapd,
+						    union wpa_event_data *data)
+{
+	u8 radio_idx = data->event_data_extn.agile_capable.radio_idx;
+	u8 adfs_capable = data->event_data_extn.agile_capable.adfs_capable;
+	const char *phy_name = hostapd_drv_get_radio_name(hapd);
+	struct hostapd_iface *iface = NULL;
+	unsigned int i;
+
+	if (!phy_name)
+		return;
+
+	/* Find the iface on the same phy whose radio matches radio_idx */
+	for (i = 0; i < hapd->iface->interfaces->count; i++) {
+		struct hostapd_iface *h = hapd->iface->interfaces->iface[i];
+		const char *h_phy_name;
+
+		if (!h || !h->bss || !h->bss[0] || !h->current_hw_info)
+			continue;
+		h_phy_name = hostapd_drv_get_radio_name(h->bss[0]);
+		if (!h_phy_name || os_strcmp(h_phy_name, phy_name) != 0)
+			continue;
+		if (h->current_hw_info->hw_idx == radio_idx) {
+			iface = h;
+			break;
+		}
+	}
+
+	if (!iface) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: No iface matched radio_idx=%u for AGILE_CAPABLE",
+			   radio_idx);
+		return;
+	}
+
+	if (adfs_capable) {
+		iface->iface_extn.agile_capable = true;
+		if (iface->state == HAPD_IFACE_ENABLED) {
+			wpa_printf(MSG_INFO,
+				   "DFS: Chainmask is agile-capable - restarting background CAC");
+			hostapd_abort_background_cac(iface);
+			hostapd_start_background_cac(iface);
+		} else {
+			wpa_printf(MSG_INFO,
+				   "DFS: Chainmask is agile-capable - deferring background CAC until interface is enabled (state=%d)",
+				   iface->state);
+		}
+	} else {
+		wpa_printf(MSG_INFO,
+			   "DFS: Chainmask is NOT agile-capable - background CAC disabled");
+		iface->iface_extn.agile_capable = false;
+		if (iface->radar_background.cac_started ||
+		    iface->radar_background.freq > 0) {
+			wpa_printf(MSG_INFO,
+				   "DFS: Aborting background CAC (chan=%d freq=%d) - chainmask not agile-capable",
+				   iface->radar_background.channel,
+				   iface->radar_background.freq);
+			hostapd_stop_background_cac(iface->bss[0]);
+		}
+		iface->radar_background.cac_started = 0;
+		iface->radar_background.channel = -1;
+		iface->radar_background.freq = 0;
+	}
+}
+
 int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 			   union wpa_event_data *data)
 {
@@ -68,6 +134,9 @@ int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 		break;
 	case EVENT_SCAN_RESULTS_EXTN:
 		hostapd_cbs_handle_scan_complete(hapd, data);
+		break;
+	case EVENT_AGILE_CAPABLE:
+		hostapd_handle_agile_capable_event_extn(hapd, data);
 		break;
 	default:
 		return -EINVAL;
