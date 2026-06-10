@@ -517,6 +517,7 @@ struct hostapd_config_extn {
 	 */
 	bool rptr_allow_chan_sw;
 	u32 acs_periodic_interval;
+	bool disable_iface_during_cac; /* Disable iface creation during DFS CAC (boot-up CAC feature off) */
 
 	/* Indicates whether HE MCS 12/13 support is enabled
 	 * (the support is enabled by default)

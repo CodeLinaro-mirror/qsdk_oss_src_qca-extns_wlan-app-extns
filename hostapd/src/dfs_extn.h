@@ -39,6 +39,9 @@ int dfs_decode_nol_ie(const u8 *ie, size_t ie_len,
 int dfs_encode_nol_ie(const dfs_nol_ie_info *nol_info, u8 *buf,
 		      size_t buf_len);
 int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface);
+bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface);
+void hostapd_bootup_cac_complete_extn(struct hostapd_iface *iface);
+bool hostapd_bss_rnr_eligible_extn(struct hostapd_data *bss);
 bool hostapd_is_backhaul_sta_configured(struct hostapd_iface *iface);
 void hostapd_trigger_backhaul_sta_disconnect(void *eloop_data, void *user_data);
 void hostapd_rcsa_trigger_channal_change(void *eloop_data, void *user_data);

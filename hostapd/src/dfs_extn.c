@@ -1564,3 +1564,67 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 
 	return 0;
 }
+
+/**
+ * hostapd_bootup_cac_complete_extn - Finalize boot-up CAC on an interface.
+ *
+ * Clears the CAC-in-progress flags, transitions the interface to ENABLED
+ * state, and triggers ieee802_11_set_beacons() to bring-up the interfaces
+ * after CAC is completed.
+ */
+void hostapd_bootup_cac_complete_extn(struct hostapd_iface *iface)
+{
+	iface->cac_started = 0;
+	iface->bootup_cac_in_progress = 0;
+	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+	wpa_printf(MSG_DEBUG,
+		   "Boot-up CAC complete for %s: state->ENABLED, calling set_beacons for %zu BSS",
+		   iface->bss[0]->conf->iface, iface->num_bss);
+	ieee802_11_set_beacons(iface);
+}
+
+/**
+ * hostapd_bss_rnr_eligible_extn - Extension check for RNR eligibility.
+ *
+ * Called from hostapd_bss_rnr_eligible() after the BSS started/beacon_set_done
+ * checks have already passed.  Returns true when the BSS is in the boot-up
+ * CAC window. The beacon template has been sent to the driver
+ * (NL80211_CMD_START_AP) but beacon_set_done may not yet be set on partner
+ * ifaces that are building their RNR before the 5 GHz cross-update fires.
+ * Allowing inclusion here ensures the 5 GHz link appears in partner beacons
+ * from the very first beacon transmission.
+ */
+bool hostapd_bss_rnr_eligible_extn(struct hostapd_data *bss)
+{
+	if (bss->iface && bss->iface->bootup_cac_in_progress)
+		return true;
+	return false;
+}
+
+/**
+ * hostapd_bootup_cac_start_extn - Start boot-up CAC if the driver and config allow it.
+ *
+ * When the driver advertises WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC and
+ * disable_iface_during_cac is not set, bypass hostapd_handle_dfs so that all
+ * 5 GHz BSSes are created immediately while the mac80211 CAC timer runs.
+ *
+ * Returns true if the boot-up CAC path was taken (caller skips hostapd_handle_dfs),
+ * false if the normal DFS path should proceed.
+ */
+bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
+{
+	if (!iface || !iface->conf)
+		return false;
+
+	if (!((iface->drv_flags2 & WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC) &&
+	      !iface->conf->conf_extn.disable_iface_during_cac &&
+	      is_5ghz_freq(iface->freq)))
+		return false;
+
+	wpa_printf(MSG_DEBUG,
+		   "Boot-up CAC: bypassing hostapd_handle_dfs for 5 GHz DFS channel %d MHz, creating all BSS immediately",
+		   iface->freq);
+	hostapd_set_state(iface, HAPD_IFACE_DFS);
+	iface->bootup_cac_in_progress = 1;
+	return true;
+}
