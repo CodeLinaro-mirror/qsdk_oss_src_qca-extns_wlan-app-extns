@@ -17,4 +17,5 @@ int wpa_drv_send_action_extn(struct wpa_supplicant *wpa_s, unsigned int freq,
 int wpa_ctrl_set_wds_ie_extn(struct wpa_supplicant *wpa_s, int val);
 int wpa_ctrl_get_wds_ie_extn(struct wpa_supplicant *wpa_s,
 			     char *reply, int reply_size);
+int wpa_ctrl_set_allow_3addr_mc_extn(struct wpa_supplicant *wpa_s, int val);
 #endif /* WPA_SUPPLICANT_EXTN_H */

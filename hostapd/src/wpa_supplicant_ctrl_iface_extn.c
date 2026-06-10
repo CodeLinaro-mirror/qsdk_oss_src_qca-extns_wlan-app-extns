@@ -130,6 +130,9 @@ int wpas_ctrl_iface_set_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 		enable = atoi(value);
 		wpa_printf(MSG_ERROR, "ENABLE %d", enable);
 		ret = wpa_ctrl_set_wds_ie_extn(wpa_s, enable);
+	} else if (os_strcasecmp(cmd, "allow_3addr_mc") == 0) {
+		enable = atoi(value);
+		ret = wpa_ctrl_set_allow_3addr_mc_extn(wpa_s, enable);
 	} else {
 		*is_extn_cmd = false;
 	}
@@ -153,6 +156,9 @@ int wpas_ctrl_iface_get_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 			return -1;
 	} else if (os_strcmp(cmd, "wds_ie") == 0) {
 		ret = wpa_ctrl_get_wds_ie_extn(wpa_s, buf, buflen);
+	} else if (os_strcasecmp(cmd, "allow_3addr_mc") == 0) {
+		ret = os_snprintf(buf, buflen, "allow_3addr_mc = %u\n",
+				  wpa_s->conf->conf_extn.allow_3addr_mc);
 	} else {
 		*is_extn_cmd = false;
 	}

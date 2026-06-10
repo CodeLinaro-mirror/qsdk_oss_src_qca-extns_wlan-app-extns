@@ -676,6 +676,7 @@ struct hostapd_bss_config_extn {
 	 * 1 = WDS IE enabled
 	 */
 	int wds_ie;
+	int allow_3addr_mc;
 };
 
 struct esp_extn {
@@ -800,6 +801,7 @@ struct wpa_supplicant_extn {
  */
 struct wpa_config_extn {
 	bool he_mcs_12_13_enabled;
+	int allow_3addr_mc;
 };
 
 int get_centre_freq_6g(int chan_idx, int chan_width, int *centre_freq);
@@ -1645,6 +1647,18 @@ hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 	return -1;
 }
 
+static inline int
+nl80211_set_allow_3addr_mc_extn(void *priv, u8 val)
+{
+	return -1;
+}
+
+static inline int
+wpa_ctrl_set_allow_3addr_mc_extn(struct wpa_supplicant *wpa_s, int val)
+{
+	return -1;
+}
+
 static inline bool
 hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface)
 {
@@ -2263,6 +2277,8 @@ bool hostapd_ht40_intolerant_snr_below_threshold_extn(
 int wpa_ctrl_set_wds_ie_extn(struct wpa_supplicant *wpa_s, int val);
 int wpa_ctrl_get_wds_ie_extn(struct wpa_supplicant *wpa_s,
 			     char *reply, int reply_size);
+int nl80211_set_allow_3addr_mc_extn(void *priv, u8 val);
+int wpa_ctrl_set_allow_3addr_mc_extn(struct wpa_supplicant *wpa_s, int val);
 #ifdef HOSTAPD
 struct hostapd_data *
 switch_link_hapd(struct hostapd_data *hapd, int link_id);

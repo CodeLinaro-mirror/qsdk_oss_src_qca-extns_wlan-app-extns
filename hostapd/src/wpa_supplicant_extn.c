@@ -148,6 +148,44 @@ int wpa_ctrl_get_wds_ie_extn(struct wpa_supplicant *wpa_s,
 	return res;
 }
 
+/**
+ * wpa_ctrl_set_allow_3addr_mc_extn - Set INTF_ALLOW_3ADDR_MC via vendor command
+ *
+ * Handles the "INTF_ALLOW_3ADDR_MC <0|1>" ctrl_iface command.  Sends
+ * QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION with
+ * QCA_WLAN_VENDOR_ATTR_CONFIG_INTF_ALLOW_3ADDR_MC attribute to the driver.
+ *
+ * @wpa_s:      wpa_supplicant instance
+ * @buf:        Command argument string ("0" or "1")
+ * @reply:      Output buffer for the response
+ * @reply_size: Size of @reply
+ *
+ * Returns number of bytes written to @reply on success, -1 on error.
+ */
+int wpa_ctrl_set_allow_3addr_mc_extn(struct wpa_supplicant *wpa_s, int val)
+{
+	if (!wpa_s)
+		return -1;
+
+	if (val < 0 || val > 1) {
+		wpa_printf(MSG_ERROR,
+			   "INTF_ALLOW_3ADDR_MC: invalid value %d"
+			   " (expected 0 or 1)", val);
+		return -1;
+	}
+
+	if (nl80211_set_allow_3addr_mc_extn(wpa_s->drv_priv, (u8)val)) {
+		wpa_printf(MSG_ERROR,
+			   "ALLOW_3ADDR_MC: driver command failed");
+		return -1;
+	}
+
+	wpa_s->conf->conf_extn.allow_3addr_mc = val;
+	wpa_printf(MSG_INFO, "ALLOW_3ADDR_MC: set to %d", val);
+
+	return 0;
+}
+
 bool wpas_ap_link_address_extn(struct wpa_supplicant *wpa_s, const u8 *addr)
 {
 	int i;

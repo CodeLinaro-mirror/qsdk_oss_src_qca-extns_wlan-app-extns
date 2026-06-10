@@ -2576,6 +2576,19 @@ int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *valu
 				   "WDS IE: Failed to update beacons after wds_ie change");
 			return -1;
 		}
+	} else if (os_strcmp(cmd, "allow_3addr_mc") == 0) {
+		val = atoi(value);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR,
+				   "invalid allow_3addr_mc value %d "
+				   "(expected 0 or 1)",  val);
+			return -1;
+		}
+		hapd->conf->bss_extn.allow_3addr_mc = val;
+		if (nl80211_set_allow_3addr_mc_extn(hapd->drv_priv, (u8)val))
+			return -1;
+		wpa_printf(MSG_DEBUG, "allow_3addr_mc: %s allow_3addr_mc=%d",
+			   hapd->conf->iface, val);
 	}
 
 	return 0;
@@ -2607,6 +2620,12 @@ int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcasecmp(cmd, "wds_ie") == 0) {
 		res = os_snprintf(buf, buflen, "wds_ie=%d\n",
 				  hapd->conf->bss_extn.wds_ie);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcmp(cmd, "allow_3addr_mc") == 0) {
+		res = os_snprintf(buf, buflen, "allow_3addr_mc=%d\n",
+				  hapd->conf->bss_extn.allow_3addr_mc);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
