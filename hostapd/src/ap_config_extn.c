@@ -117,6 +117,7 @@ hostapd_config_defaults_bss_extn(struct hostapd_bss_config *bss)
 	bss_extn->pureg_bss = false;
 	memset(&bss_extn->puren_bss, 0, sizeof(bss_extn->puren_bss));
 	memset(&bss_extn->pure11ac_bss, 0, sizeof(bss_extn->pure11ac_bss));
+	memset(&bss_extn->pure11ax_bss, 0, sizeof(bss_extn->pure11ax_bss));
 	/* WDS vendor IE: disabled by default */
 	bss_extn->wds_ie = 0;
 }
