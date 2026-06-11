@@ -1367,6 +1367,9 @@ void wds_ie_process_assoc_resp_extn(struct wpa_supplicant *wpa_s,
 
 	wpa_s->wds_ie_ap = 0;
 
+	if (wpa_s->current_ssid)
+		wpa_s->conf->conf_extn.allow_3addr_mc = wpa_s->current_ssid->allow_3addr_mc;
+
 	if (nl80211_set_allow_3addr_mc_extn(wpa_s->drv_priv,
 					    (u8)wpa_s->conf->conf_extn.allow_3addr_mc))
 		wpa_printf(MSG_DEBUG,
