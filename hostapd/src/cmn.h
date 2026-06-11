@@ -2509,7 +2509,7 @@ int hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 			   struct driver_dcs_config *params);
 void dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap);
 
-int hostapd_validate_mbssid_group_size_extn(struct hostapd_data *hapd);
+int hostapd_validate_mbssid_configuration_extn(struct hostapd_data *hapd);
 
 int hostapd_get_channel_idx(struct hostapd_hw_modes *mode, int channel_num);
 
@@ -2645,6 +2645,8 @@ int wpas_set_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq);
 void wpa_config_alloc_empty_extn(struct wpa_config *config);
 
 #define MGMT_MIN_FRAME_SIZE_REQUIRED_MLO_MBSSID 2000
+#define EMA_MLO_BSS_MAX_LIMIT 8
+
 #define DEFAULT_HE_MCS_12_13_SUPPORT true
 
 /* Primary channel list APIs  */
