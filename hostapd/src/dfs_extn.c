@@ -1574,7 +1574,6 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
  */
 void hostapd_bootup_cac_complete_extn(struct hostapd_iface *iface)
 {
-	iface->cac_started = 0;
 	iface->bootup_cac_in_progress = 0;
 	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
 	wpa_printf(MSG_DEBUG,
@@ -1618,13 +1617,19 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 
 	if (!((iface->drv_flags2 & WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC) &&
 	      !iface->conf->conf_extn.disable_iface_during_cac &&
-	      is_5ghz_freq(iface->freq)))
+	      hostapd_is_cac_required(iface)))
+		return false;
+
+	if (hostapd_set_dfs_cac_time(iface))
 		return false;
 
 	wpa_printf(MSG_DEBUG,
 		   "Boot-up CAC: bypassing hostapd_handle_dfs for 5 GHz DFS channel %d MHz, creating all BSS immediately",
 		   iface->freq);
+
 	hostapd_set_state(iface, HAPD_IFACE_DFS);
 	iface->bootup_cac_in_progress = 1;
+	os_get_reltime(&iface->dfs_cac_start);
+
 	return true;
 }
