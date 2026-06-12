@@ -36,7 +36,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->cswopts = 0;
 	conf_extn->same_ssid = 0;
 	conf_extn->repeater = 0;
-	conf_extn->disable_iface_during_cac = true; /* Boot-up CAC is enabled by default */
+	conf_extn->disable_iface_during_cac = false; /* Boot-up CAC is enabled by default */
 
 	/*configure qacs_default here*/
 	conf_extn->qacs_enable = 1;                 /* QACS enabled */
