@@ -20,6 +20,18 @@ typedef struct dfs_nol_ie_info_extn dfs_nol_ie_info;
 #define IEEE80211_CSA_IE_COUNT_OFFSET 4
 #define IEEE80211_CSA_IE_TOTAL_LEN 5
 
+/* NOL IE constants - aligned with RCSA design */
+#define DFS_MAX_20M_SUB_CH 8
+#define DFS_NOL_IE_TIMEOUT_MS 1800000  /* 30 minutes */
+#define MIN_DFS_SUBCHAN_BW 20          /* 20 MHz minimum subchannel */
+
+#define DFS_NOL_IE_SINGLE_SUBCHAN_BITMAP BIT(0)
+
+#define DFS_NOL_IE_U32_LEN 4
+#define DFS_NOL_IE_U16_LEN 2
+
+#define DFS_NOL_IE_BITMAP_MASK(n_subchans) ((u16)((1U << (n_subchans)) - 1))
+
 enum dfs_nol_ie_bw_mhz {
 	DFS_NOL_IE_BW_20_MHZ = 20,
 	DFS_NOL_IE_BW_40_MHZ = 40,

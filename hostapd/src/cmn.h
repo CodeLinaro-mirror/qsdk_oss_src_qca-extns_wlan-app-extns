@@ -2721,6 +2721,34 @@ u8 *wds_ie_populate_assoc_req_extn(struct wpa_supplicant *wpa_s,
 void wds_ie_process_assoc_resp_extn(struct wpa_supplicant *wpa_s,
 				    const u8 *ies, size_t ies_len);
 
+/**
+ * wpa_rcsa_handle_radar - Handle DFS radar event and send RCSA
+ * @wpa_s: wpa_supplicant context for the associated interface
+ * @radar: DFS radar event describing the detected radar
+ */
+void wpa_rcsa_handle_radar(struct wpa_supplicant *wpa_s,
+			   const struct dfs_event *radar);
+
+/**
+ * hostapd_build_rcsa_optional_ies - Build optional IEs for RCSA notification
+ * @nol_ie: pointer to NOL IE buffer, or NULL if not present
+ * @nol_ie_len: length of the NOL IE buffer
+ * @include_ml_ie: whether to include Multi-Link IE information
+ * @link_id_bitmap: bitmap of link IDs to include in ML IE
+ * @buf: output buffer for the constructed optional IEs
+ * @buf_len: length of the output buffer
+ *
+ * Returns: length of the optional IEs written to @buf.
+ */
+size_t hostapd_build_rcsa_optional_ies(const u8 *nol_ie,
+				       size_t nol_ie_len,
+				       bool include_ml_ie,
+				       u16 link_id_bitmap,
+				       u8 *buf, size_t buf_len);
+
+int wpas_set_dfs_state(struct wpa_supplicant *wpa_s, int freq,
+		       int ht_enabled, int chan_offset, int chan_width,
+		       int cf1, int cf2, u32 state, u16 radar_bitmap);
 
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
