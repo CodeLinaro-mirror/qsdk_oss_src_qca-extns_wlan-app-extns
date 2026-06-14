@@ -1576,6 +1576,12 @@ void hostapd_bootup_cac_complete_extn(struct hostapd_iface *iface)
 {
 	iface->bootup_cac_in_progress = 0;
 	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+
+#ifdef CONFIG_MESH
+	if (iface->mconf)
+		return;
+#endif /* CONFIG_MESH */
+
 	wpa_printf(MSG_DEBUG,
 		   "Boot-up CAC complete for %s: state->ENABLED, calling set_beacons for %zu BSS",
 		   iface->bss[0]->conf->iface, iface->num_bss);
