@@ -14,6 +14,8 @@ int wpa_drv_send_action_extn(struct wpa_supplicant *wpa_s, unsigned int freq,
 			unsigned int wait, const u8 *dst, const u8 *src,
 			const u8 *bssid, const u8 *data, size_t data_len,
 			int no_cck, int link_id);
+int wpa_drv_send_rrm_action_extn(struct wpa_supplicant *wpa_s,
+				 const u8 *data, size_t data_len, int no_cck);
 int wpa_ctrl_set_wds_ie_extn(struct wpa_supplicant *wpa_s, int val);
 int wpa_ctrl_get_wds_ie_extn(struct wpa_supplicant *wpa_s,
 			     char *reply, int reply_size);

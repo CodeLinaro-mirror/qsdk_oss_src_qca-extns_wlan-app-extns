@@ -249,6 +249,56 @@ static s8 wpas_extn_get_hw_idx_by_freq(struct wpa_supplicant *wpa_s,
 	return -1;
 }
 
+static int wpas_rrm_get_request_link(struct wpa_supplicant *wpa_s)
+{
+	int i;
+	s8 target_hw_idx;
+
+	if (!wpa_s->valid_links || !wpa_s->rrm.req_freq)
+		return -1;
+
+	if (wpa_s->valid_links) {
+		target_hw_idx = wpas_extn_get_hw_idx_by_freq(wpa_s,
+							     wpa_s->rrm.req_freq);
+		for_each_link(wpa_s->valid_links, i) {
+			if (wpa_s->links[i].disabled)
+				continue;
+			if (target_hw_idx == wpas_extn_get_hw_idx_by_freq(wpa_s,
+									  wpa_s->links[i].freq))
+				return i;
+		}
+	}
+
+	return -1;
+}
+
+
+int wpa_drv_send_rrm_action_extn(struct wpa_supplicant *wpa_s,
+				 const u8 *data, size_t data_len, int no_cck)
+{
+	const u8 *bssid = wpa_s->bssid;
+	unsigned int freq = wpa_s->assoc_freq;
+	int link_id;
+
+	link_id = wpas_rrm_get_request_link(wpa_s);
+	if (link_id >= 0 && link_id < MAX_NUM_MLD_LINKS &&
+	    (wpa_s->valid_links & BIT(link_id)) &&
+	    !wpa_s->links[link_id].disabled &&
+	    wpa_s->links[link_id].freq) {
+		freq = wpa_s->links[link_id].freq;
+		bssid = wpa_s->links[link_id].bssid;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "RRM: Send Radio Measurement report req_freq=%u freq=%u link_id=%d dst="
+		   MACSTR " src=" MACSTR,
+		   wpa_s->rrm.req_freq, freq, link_id, MAC2STR(bssid),
+		   MAC2STR(wpa_s->own_addr));
+
+	return wpa_drv_send_action_extn(wpa_s, freq, 0, bssid, wpa_s->own_addr,
+					bssid, data, data_len, no_cck, link_id);
+}
+
 static bool wpas_uplink_csa_freq_band_match(struct wpa_supplicant *wpa_s,
 					    unsigned int ref_freq,
 					    unsigned int link_freq)
