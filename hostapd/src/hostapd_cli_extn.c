@@ -76,6 +76,67 @@ int hostapd_cli_cmd_get_rnr_6ghz_colocated_extn(struct wpa_ctrl *ctrl,
 	return wpa_ctrl_command(ctrl, "GET_RNR_6GHZ_COLOCATED");
 }
 
+int hostapd_cli_cmd_set_channel_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid set_channel command: needs exactly one argument (channel)\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_CHANNEL %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Too long SET_CHANNEL command.\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+int hostapd_cli_cmd_set_opclass_tbl_idx_extn(struct wpa_ctrl *ctrl, int argc,
+					      char *argv[])
+{
+	char cmd[64];
+	char *end;
+	long idx;
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: set_opclass_tbl <0-6>\n");
+		return -1;
+	}
+
+	errno = 0;
+	idx = strtol(argv[0], &end, 10);
+	if (errno != 0 || end == argv[0] || *end != '\0' || idx < 0 ||
+	    idx > 6) {
+		printf("Invalid opclass table index '%s' (expected 0-6)\n",
+		       argv[0]);
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_OPCLASS_TBL_IDX %ld", idx);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("set_opclass_tbl cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+int hostapd_cli_cmd_get_opclass_tbl_idx_extn(struct wpa_ctrl *ctrl, int argc,
+					      char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid get_opclass_tbl command: no arguments expected\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "GET_OPCLASS_TBL_IDX");
+}
+
 int hostapd_cli_cmd_countryie_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	char cmd[32];
@@ -123,6 +184,16 @@ int hostapd_cli_cmd_ignorecac_extn(struct wpa_ctrl *ctrl, int argc,
 {
 	/* With no argument, return current configured value. */
 	return hostapd_cli_cmd(ctrl, "IGNORECAC", 0, argc, argv);
+}
+
+int hostapd_cli_cbs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc < 1) {
+		printf("Invalid CBS command: needs at least 1 argument\n");
+		return -1;
+	}
+
+	return hostapd_cli_cmd(ctrl, "CBS", 1, argc, argv);
 }
 
 #ifdef CONFIG_IEEE80211AC
@@ -237,6 +308,37 @@ int hostapd_cli_cmd_get_dfs_no_wradar_extn(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, "GET_DFS_NO_WRADAR");
 }
 
+int hostapd_cli_cmd_set_allow_scan_on_dfs_chan_extn(struct wpa_ctrl *ctrl, int argc,
+						    char *argv[])
+{
+	char buf[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid allow_scan_on_dfs_chan command: needs one argument (0|1)\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "ALLOW_SCAN_ON_DFS_CHAN %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("Too long ALLOW_SCAN_ON_DFS_CHAN command.\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_allow_scan_on_dfs_chan_extn(struct wpa_ctrl *ctrl, int argc,
+						    char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid get_allow_scan_on_dfs_chan command: no arguments expected\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "GET_ALLOW_SCAN_ON_DFS_CHAN");
+}
+
 int hostapd_cli_cmd_dcs_extn(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	if (argc < 1) {
@@ -348,6 +450,38 @@ int hostapd_cli_cmd_get_primary_chans(struct wpa_ctrl *ctrl,
 				      int argc, char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "GET_PRIMARY_CHANS");
+}
+
+int hostapd_cli_cmd_disable_opclass_chans(struct wpa_ctrl *ctrl,
+					  int argc, char *argv[])
+{
+	char cmd[512];
+	int i, pos, res;
+
+	if (argc < 3) {
+		printf("Usage: disable_opclass_chans <0|1> <opclass> <ch1> [<ch2> ...]\n");
+		return -1;
+	}
+
+	if (os_strcmp(argv[0], "0") != 0 && os_strcmp(argv[0], "1") != 0) {
+		printf("Invalid disable flag '%s' (expected 0 or 1)\n", argv[0]);
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "DISABLE_OPCLASS_CHANS %s %s",
+			  argv[0], argv[1]);
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+
+	pos = res;
+	for (i = 2; i < argc; i++) {
+		res = os_snprintf(cmd + pos, sizeof(cmd) - pos, " %s", argv[i]);
+		if (os_snprintf_error(sizeof(cmd) - pos, res))
+			return -1;
+		pos += res;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
 }
 
 int hostapd_cli_cmd_set_ht40intol(struct wpa_ctrl *ctrl, int argc, char *argv[])
@@ -567,4 +701,52 @@ int hostapd_cli_cmd_set_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *ar
 int hostapd_cli_cmd_get_disablecoexist(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "GET_DISABLECOEXIST");
+}
+
+int hostapd_cli_cmd_set_pure11ac(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char buf[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: set_pure11ac <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "SET_PURE11AC %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("set_pure11ac cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_pure11ac(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_PURE11AC");
+}
+
+int hostapd_cli_cmd_set_pure11ax(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char buf[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Usage: set_pure11ax <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "SET_PURE11AX %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("set_pure11ax cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+int hostapd_cli_cmd_get_pure11ax(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_PURE11AX");
 }

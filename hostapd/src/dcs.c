@@ -20,6 +20,7 @@
 #include "cmn.h"
 #include "dcs.h"
 #include "common/hw_features_common.h"
+#include "cbs.h"
 
 static void hostapd_dcs_reenable_timeout(void *eloop_ctx, void *timeout_ctx);
 static void hostapd_dcs_apply_enable_bitmap(struct hostapd_iface *iface,
@@ -114,7 +115,7 @@ static void hostapd_dcs_apply_enable_bitmap(struct hostapd_iface *iface,
 	struct hostapd_data *hapd;
 	struct hostapd_iface_extn *iface_extn;
 
-	if (!iface || !iface->conf || !iface->bss || !iface->num_bss)
+	if (!iface || !iface->conf || !iface->bss || iface->num_bss < 1)
 		return;
 
 	hapd = iface->bss[0];
@@ -261,7 +262,10 @@ static void hostapd_dcs_reenable_timeout(void *eloop_ctx, void *timeout_ctx)
 	struct hostapd_iface *iface = eloop_ctx;
 	struct hostapd_iface_extn *iface_extn;
 
-	if (!iface || !iface->conf)
+	(void) timeout_ctx;
+
+	if (!iface || !iface->conf || !iface->bss ||
+	    iface->num_bss < 1 || !iface->bss[0])
 		return;
 
 	iface_extn = &iface->iface_extn;
@@ -285,6 +289,25 @@ static void hostapd_dcs_reenable_timeout(void *eloop_ctx, void *timeout_ctx)
 	iface_extn->dcs_disabled_excessive_triggers = false;
 	iface_extn->dcs_excess_trigger_enable_bitmap = 0;
 	iface_extn->dcs_excess_trigger_restore_bitmap = 0;
+}
+
+void hostapd_dcs_iface_deinit_extn(struct hostapd_iface *iface)
+{
+	struct hostapd_iface_extn *iface_extn;
+
+	if (!iface)
+		return;
+
+	iface_extn = &iface->iface_extn;
+	eloop_cancel_timeout(hostapd_dcs_reenable_timeout, iface, NULL);
+	iface_extn->dcs_reenable_timer_set = false;
+	iface_extn->dcs_trigger_count = 0;
+	os_memset(iface_extn->dcs_trigger_ts, 0,
+		  sizeof(iface_extn->dcs_trigger_ts));
+	iface_extn->dcs_disabled_excessive_triggers = false;
+	iface_extn->dcs_excess_trigger_enable_bitmap = 0;
+	iface_extn->dcs_excess_trigger_restore_bitmap = 0;
+	iface_extn->dcs_in_progress = false;
 }
 
 static int
@@ -521,6 +544,7 @@ static int hostapd_ctrl_iface_set_wlan_intr_params(struct hostapd_data *hapd,
 
 	os_memset(&conf, 0, sizeof(conf));
 	conf.cmd_type = SET_DCS_CONFIG;
+	conf.dcs_enable = conf_extn->dcs_conf.enable_bitmap;
 
 	/* No defaults here; only send user-configured overrides via valid_mask */
 
@@ -1481,9 +1505,13 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 
 		if (!hostapd_dcs_set_in_progress(iface, type))
 			return;
-		acs_ret = hostapd_trigger_dynamic_acs(link_hapd,
-						      CHANNEL_CHANGE_CSA);
-		if (acs_ret < 0) {
+
+		acs_ret = hostapd_cbs_trigger_csa(link_hapd);
+		if (acs_ret)
+			acs_ret = hostapd_trigger_dynamic_acs(link_hapd,
+				CHANNEL_CHANGE_CSA);
+
+		if (acs_ret) {
 			hostapd_dcs_restore_extn(iface,
 						 "dynamic ACS start failed");
 			return;
@@ -1494,7 +1522,9 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 	}
 
 	if (type != DCS_OBSS_INTF) {
-		intf_bitmap = DCS_SEG_PRI20;
+		intf_bitmap = dcs_intf_event->chan_bw_interference_bitmap ?
+			      dcs_intf_event->chan_bw_interference_bitmap :
+			      DCS_SEG_PRI20;
 
 		ret = find_random_channel(iface, &new_freq, freq, cf1, cf2,
 					  intf_bitmap, ch_width, &new_chan_width,
@@ -1553,6 +1583,19 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 
 	if (!hostapd_dcs_set_in_progress(iface, type))
 		return;
+
+	if (hostapd_is_bh_sta_connecting_or_connected_extn(iface)) {
+		if (iface->conf->conf_extn.rptr_allow_chan_sw) {
+			wpa_printf(MSG_DEBUG, "Rptr BH STA is connected, "
+				   "disconnect BH STA and allow DCS channel switch");
+			hostapd_ucode_trigger_bhsta_disconnect(iface);
+		} else {
+			wpa_printf(MSG_ERROR, "Rptr BH STA is connected, "
+				   "discard DCS channel switch");
+			return;
+		}
+	}
+
 	ret = hostapd_dcs_channel_change(&settings, link_hapd->iface, new_chan_width, new_centre_freq);
 	if (ret) {
 		hostapd_dcs_restore_extn(iface, "CSA trigger failed");
@@ -1592,6 +1635,41 @@ bool dcs_get_bw_reduction_ctrl_extn(struct hostapd_config *conf,
 		return true;
 
 	return false;
+}
+
+bool hostapd_dcs_awgn_handle_rand_chan_disabled_extn(struct hostapd_iface *iface)
+{
+	struct hostapd_data *link_hapd;
+	int acs_ret;
+
+	if (!iface || !iface->conf || !iface->bss || iface->num_bss < 1)
+		return false;
+
+	if (iface->conf->conf_extn.dcs_conf.dcs_random_chan_bitmap & DCS_AWGN_INTF)
+		return false;
+
+	link_hapd = iface->bss[0];
+
+	if (!link_hapd) {
+		wpa_printf(MSG_ERROR,
+			   "AWGN: random channel selection disabled but no link hapd available");
+		return false;
+	}
+
+	wpa_printf(MSG_DEBUG, "AWGN: triggering CSA/ACS");
+
+	acs_ret = hostapd_cbs_trigger_csa(link_hapd);
+	if (acs_ret)
+		acs_ret = hostapd_trigger_dynamic_acs(link_hapd,
+					     CHANNEL_CHANGE_CSA);
+
+	if (acs_ret) {
+		wpa_printf(MSG_ERROR,
+			   "AWGN: failed to start CSA/ACS when random channel selection disabled");
+		return false;
+	}
+
+	return true;
 }
 
 struct hostapd_channel_data *
@@ -1639,9 +1717,53 @@ bool awgn_bw_range_available(struct hostapd_hw_modes *mode,
 	return true;
 }
 
-void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
-		struct hostapd_hw_modes *mode,
-		u32 chan_bw_interference_bitmap)
+static bool
+awgn_bw_hwbl_available(struct hostapd_iface *iface,
+		       struct hostapd_channel_data *chan_data,
+		       int chan_width)
+{
+	int center_freq;
+	int bw;
+	int target_pwr_mode;
+
+	if (!iface || !chan_data)
+		return false;
+
+	if (!is_6ghz_freq(chan_data->freq))
+		return true;
+
+	if (get_centre_freq(chan_data, chan_width, &center_freq))
+		return false;
+
+	bw = channel_width_to_int(chan_width == CHAN_WIDTH_20_NOHT ?
+				  CHAN_WIDTH_20 : chan_width);
+	if (bw <= 0)
+		return false;
+
+	target_pwr_mode = iface->conf->he_6ghz_reg_pwr_type;
+	if (iface->conf->enable_best_power_mode) {
+		int best_power_mode;
+
+		best_power_mode =
+			hostapd_get_best_ap_6ghz_power_mode(iface,
+							    chan_data->freq,
+							    center_freq, bw, 0);
+		if (best_power_mode < NL80211_REG_NUM_POWER_MODES)
+			target_pwr_mode = best_power_mode;
+	}
+
+	if (target_pwr_mode >= NL80211_REG_NUM_POWER_MODES)
+		return false;
+
+	return hostapd_validate_chan_bw_in_pwr_mode(iface, chan_data->freq,
+						     center_freq, bw, 0,
+						     target_pwr_mode);
+}
+
+void reduced_chan_width(struct hostapd_iface *iface, int *new_chan_width,
+			int chan_width, int freq,
+			struct hostapd_hw_modes *mode,
+			u32 chan_bw_interference_bitmap)
 {
 	struct hostapd_channel_data *chan_data;
 
@@ -1655,7 +1777,7 @@ void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
 		wpa_printf(MSG_ERROR,
 			   "AWGN: reduced_chan_width: no channel found for freq %d",
 			   freq);
-		*new_chan_width = CHAN_WIDTH_20;
+		*new_chan_width = chan_width;
 		return;
 	}
 
@@ -1676,8 +1798,12 @@ void reduced_chan_width(int *new_chan_width, int chan_width, int freq,
 	}
 
 	while (*new_chan_width > CHAN_WIDTH_20 &&
-	       !awgn_bw_range_available(mode, chan_data, *new_chan_width))
+	       (!awgn_bw_range_available(mode, chan_data, *new_chan_width) ||
+		!awgn_bw_hwbl_available(iface, chan_data, *new_chan_width)))
 		*new_chan_width = get_next_max_width(*new_chan_width);
+
+	if (!awgn_bw_hwbl_available(iface, chan_data, *new_chan_width))
+		*new_chan_width = chan_width;
 
 	wpa_printf(MSG_DEBUG,
 		   "AWGN: reduced bandwidth %d -> %d on channel %d (%d) bitmap=0x%x",

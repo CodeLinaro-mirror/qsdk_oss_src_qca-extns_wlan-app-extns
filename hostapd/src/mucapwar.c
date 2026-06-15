@@ -122,7 +122,7 @@ void hostapd_mu_cap_war_expire_queries(struct hostapd_data *hapd)
 
 
 void hostapd_mu_cap_war_update_db_extn(struct hostapd_data *hapd, const u8 *addr,
-				       const u8 *vht_cap_offset)
+				       u8 *vht_cap_offset)
 {
 	struct hostapd_data_extn *h_ext;
 	struct hostapd_mu_cap_war_sta_entry_extn *e;
@@ -230,4 +230,3 @@ void hostapd_mu_cap_war_mu_state_changed_extn(struct hostapd_data *hapd)
 }
 
 #endif /* CONFIG_IEEE80211AC */
-

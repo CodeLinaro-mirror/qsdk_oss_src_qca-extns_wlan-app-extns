@@ -93,6 +93,17 @@ void wpas_drv_set_peer_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int f
 	wpas_set_he_mcs_12_13_peer_cap_extn(wpa_s, freq);
 }
 
+static int wpas_strict_passive_scan(struct wpa_supplicant *wpa_s, bool val)
+{
+	if (wpa_s->conf->conf_extn.strict_passive_scan == val)
+		return 0;
+
+	wpa_s->conf->conf_extn.strict_passive_scan = val;
+	wpa_printf(MSG_INFO, "strict_passive_scan set to %d", val);
+
+	return 0;
+}
+
 static int wpas_he_mcs_12_13_supp(struct wpa_supplicant *wpa_s, bool val)
 {
 	if (wpa_s->conf->conf_extn.he_mcs_12_13_enabled == val)
@@ -116,7 +127,7 @@ static int wpas_he_mcs_12_13_supp(struct wpa_supplicant *wpa_s, bool val)
 int wpas_ctrl_iface_set_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 			     const char *value, bool *is_extn_cmd)
 {
-	int ret = -1;
+	int ret = -1, enable;
 	bool val;
 
 	if (!is_extn_cmd)
@@ -126,6 +137,16 @@ int wpas_ctrl_iface_set_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 	if (os_strcasecmp(cmd, "he_mcs_12_13_supp") == 0) {
 		val = !!atoi(value);
 		ret = wpas_he_mcs_12_13_supp(wpa_s, val);
+	} else if (os_strcasecmp(cmd, "wds_ie") == 0) {
+		enable = atoi(value);
+		wpa_printf(MSG_ERROR, "ENABLE %d", enable);
+		ret = wpa_ctrl_set_wds_ie_extn(wpa_s, enable);
+	} else if (os_strcasecmp(cmd, "allow_3addr_mc") == 0) {
+		enable = atoi(value);
+		ret = wpa_ctrl_set_allow_3addr_mc_extn(wpa_s, enable);
+	} else if (os_strcasecmp(cmd, "strict_passive_scan") == 0) {
+		val = !!atoi(value);
+		ret = wpas_strict_passive_scan(wpa_s, val);
 	} else {
 		*is_extn_cmd = false;
 	}
@@ -145,6 +166,16 @@ int wpas_ctrl_iface_get_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 	if (os_strcasecmp(cmd, "he_mcs_12_13_supp") == 0) {
 		ret = os_snprintf(buf, buflen, "he_mcs_12_13_supp = %u\n",
 				  wpa_s->conf->conf_extn.he_mcs_12_13_enabled);
+		if (os_snprintf_error(buflen, ret))
+			return -1;
+	} else if (os_strcmp(cmd, "wds_ie") == 0) {
+		ret = wpa_ctrl_get_wds_ie_extn(wpa_s, buf, buflen);
+	} else if (os_strcasecmp(cmd, "allow_3addr_mc") == 0) {
+		ret = os_snprintf(buf, buflen, "allow_3addr_mc = %u\n",
+				  wpa_s->conf->conf_extn.allow_3addr_mc);
+	} else if (os_strcasecmp(cmd, "strict_passive_scan") == 0) {
+		ret = os_snprintf(buf, buflen, "%u",
+				  wpa_s->conf->conf_extn.strict_passive_scan);
 		if (os_snprintf_error(buflen, ret))
 			return -1;
 	} else {

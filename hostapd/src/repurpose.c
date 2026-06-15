@@ -10,6 +10,9 @@
 #include "ap/hostapd.h"
 #include "cmn.h"
 #include "ap/beacon.h"
+#ifdef CONFIG_IEEE80211BE
+#include "common/hw_features_common.h"
+#endif /* CONFIG_IEEE80211BE */
 
 int
 hostapd_config_check_bss_repurpose_mode_extn(const struct hostapd_config *conf,
@@ -69,7 +72,8 @@ hostapd_config_check_bss_repurpose_mode_extn(const struct hostapd_config *conf,
 bool
 hostapd_is_repurpose_disabled_11ax_extn(const struct hostapd_bss_config *bss)
 {
-	if (hostapd_is_valid_repurpose_mode_extn(bss->bss_extn.repurpose_mode) &&
+	if (bss &&
+	    hostapd_is_valid_repurpose_mode_extn(bss->bss_extn.repurpose_mode) &&
 	    bss->bss_extn.repurpose_mode < REPURPOSE_11AX)
 		return true;
 
@@ -92,7 +96,8 @@ hostapd_is_repurpose_disabled_11ax_extn(const struct hostapd_bss_config *bss)
 bool
 hostapd_is_repurpose_disabled_11be_extn(const struct hostapd_bss_config *bss)
 {
-	if (hostapd_is_valid_repurpose_mode_extn(bss->bss_extn.repurpose_mode) &&
+	if (bss &&
+	    hostapd_is_valid_repurpose_mode_extn(bss->bss_extn.repurpose_mode) &&
 	    bss->bss_extn.repurpose_mode < REPURPOSE_11BE)
 		return true;
 
@@ -256,4 +261,398 @@ hostapd_get_non_repurposed_link_of_mld_extn(struct hostapd_data *hapd)
 	}
 
 	return NULL;
+}
+
+
+bool hostapd_config_check_repurpose_width_extn(struct hostapd_config *conf)
+{
+	u16 oper_width;
+	enum oper_chan_width oper_chwidth;
+
+	if (!conf->ieee80211be)
+		return true;
+
+	if (is_6ghz_op_class(conf->op_class))
+		oper_chwidth = op_class_to_ch_width(conf->op_class);
+	else
+		oper_chwidth = conf->eht_oper_chwidth;
+
+	oper_width =
+		hostapd_get_width_from_oper_chwidth_extn(oper_chwidth,
+							 conf->secondary_channel);
+
+	if (conf->conf_extn.user_repurpose_he_width) {
+		conf->conf_extn.repurpose_he_width =
+			MIN(conf->conf_extn.user_repurpose_he_width, oper_width);
+	} else {
+		if (oper_width == 320)
+			conf->conf_extn.repurpose_he_width = 160;
+		else
+			conf->conf_extn.repurpose_he_width = oper_width;
+		wpa_printf(MSG_DEBUG,
+			   "Repurpose: internally derived repurpose HE width = %d",
+			   conf->conf_extn.repurpose_he_width);
+	}
+
+	if (conf->conf_extn.user_repurpose_vht_width) {
+		conf->conf_extn.repurpose_vht_width =
+			MIN(conf->conf_extn.user_repurpose_vht_width,
+			    conf->conf_extn.repurpose_he_width);
+	} else {
+		conf->conf_extn.repurpose_vht_width = conf->conf_extn.repurpose_he_width;
+		wpa_printf(MSG_DEBUG,
+			   "Repurpose: internally derived repurpose vht width = %d",
+			   conf->conf_extn.repurpose_vht_width);
+	}
+
+	return true;
+}
+
+
+void hostapd_set_repurpose_oper_chwidth_extn(struct hostapd_config *conf,
+					     enum oper_chan_width oper_chwidth)
+{
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_config_extn *conf_extn = &conf->conf_extn;
+	u16 oper_width;
+
+	if (!conf->ieee80211be)
+		return;
+
+	/* 320 mhz not supported on lower mode, downgrade chwidth to 160MHz */
+	if (oper_chwidth == CONF_OPER_CHWIDTH_320MHZ)
+		oper_chwidth = CONF_OPER_CHWIDTH_160MHZ;
+
+	oper_width = hostapd_get_width_from_oper_chwidth_extn(
+				oper_chwidth,
+				conf->secondary_channel);
+
+	if (!conf_extn->user_repurpose_he_width) {
+		wpa_printf(MSG_DEBUG,
+			   "Repurpose: User not configured repurpose_he_width, set it now to %d",
+			   oper_width);
+		conf_extn->repurpose_he_width = oper_width;
+	} else {
+		conf_extn->repurpose_he_width =
+			MIN(conf_extn->user_repurpose_he_width, oper_width);
+		wpa_printf(MSG_DEBUG,
+			   "Repurpose: repurpose_he_width set to %d (user %d, oper %d)",
+			   conf_extn->repurpose_he_width,
+			   conf_extn->user_repurpose_he_width, oper_width);
+	}
+
+	if (!conf_extn->user_repurpose_vht_width) {
+		wpa_printf(MSG_DEBUG,
+			   "Repurpose: User not configured repurpose_vht_width, set it now to %d",
+			   oper_width);
+		conf_extn->repurpose_vht_width = oper_width;
+	} else {
+		conf_extn->repurpose_vht_width =
+			MIN(conf_extn->user_repurpose_vht_width,
+			    conf_extn->repurpose_he_width);
+		wpa_printf(MSG_DEBUG,
+			   "Repurpose: repurpose_vht_width set to %d (user %d, he %d)",
+			   conf_extn->repurpose_vht_width,
+			   conf_extn->user_repurpose_vht_width,
+			   conf_extn->repurpose_he_width);
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "Repurpose: repurpose he width = %d vht width = %d",
+		   conf_extn->repurpose_he_width,
+		   conf_extn->repurpose_vht_width);
+#endif /* CONFIG_IEEE80211BE */
+}
+
+static void
+repurpose_reduce_contig_bw_extn(u8 pri, enum oper_chan_width *width,
+				u8 *seg0, u8 *seg1)
+{
+	switch (*width) {
+	case CONF_OPER_CHWIDTH_320MHZ:
+		*width = CONF_OPER_CHWIDTH_160MHZ;
+		if (pri < *seg0)
+			*seg0 -= 16;
+		else
+			*seg0 += 16;
+		*seg1 = 0;
+		break;
+	case CONF_OPER_CHWIDTH_160MHZ:
+		*width = CONF_OPER_CHWIDTH_80MHZ;
+		if (pri < *seg0)
+			*seg0 -= 8;
+		else
+			*seg0 += 8;
+		*seg1 = 0;
+		break;
+	case CONF_OPER_CHWIDTH_80MHZ:
+		*width = CONF_OPER_CHWIDTH_USE_HT;
+		if (pri < *seg0)
+			*seg0 -= 4;
+		else
+			*seg0 += 4;
+		*seg1 = 0;
+		break;
+	default:
+		break;
+	}
+}
+
+/**
+ * hostapd_oper_info_of_repurposed_bss_helper_extn - Apply repurpose width cap
+ * @hapd: BSS context whose repurpose configuration is used
+ * @primary_channel: Primary operating channel to derive the legacy info for
+ * @secondary_channel: Secondary channel offset of the operating channel
+ * @oper_chwidth: Maximum advertisable legacy operating channel width
+ * @seg0: Center frequency segment 0 index for the operating channel
+ * @seg1: Center frequency segment 1 index for the operating channel
+ *
+ * Apply the repurpose bandwidth cap to the caller supplied legacy operating
+ * channel information. The caller is expected to pass already-adjusted values
+ * when puncturing or 320 MHz to 160 MHz downgrade handling is needed.
+ */
+static void
+hostapd_oper_info_of_repurposed_bss_helper_extn(struct hostapd_data *hapd,
+						u8 primary_channel,
+						int secondary_channel,
+						enum oper_chan_width *oper_chwidth,
+						u8 *seg0,
+						u8 *seg1)
+{
+	u16 oper_width;
+	u16 repurpose_width;
+
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return;
+
+	if (*seg0 == 0)
+		*seg0 = primary_channel;
+
+	/* If chan width is 20/40, then check if seg0 passed is same as pri
+	 * channel. If so, the operating bandwidth is 20. Skip deriving based
+	 * on secondary channel.
+	 */
+	if (*oper_chwidth == CONF_OPER_CHWIDTH_USE_HT &&
+	    *seg0 == primary_channel)
+		oper_width = 20;
+	else
+		oper_width = hostapd_get_width_from_oper_chwidth_extn(
+				      *oper_chwidth,
+				      secondary_channel);
+
+	if (hostapd_is_repurpose_disabled_11ax_extn(hapd->conf))
+		repurpose_width =
+			hapd->iconf->conf_extn.repurpose_vht_width;
+	else
+		repurpose_width =
+			hapd->iconf->conf_extn.repurpose_he_width;
+
+	if (repurpose_width >= oper_width ||
+	    !repurpose_width) {
+		wpa_printf(MSG_DEBUG,
+			   "Repurpose: rep_bw %d, oper_bw %d, does not rederive bss info",
+			   repurpose_width, oper_width);
+		return;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "Repurpose : rep_bw %d < oper_bw %d, rederive...",
+		   repurpose_width,
+		   oper_width);
+	while (oper_width > repurpose_width) {
+		if (*oper_chwidth == CONF_OPER_CHWIDTH_USE_HT) {
+			/* 20 MHz */
+			*seg1 = 0;
+			*seg0 = primary_channel;
+			break;
+		}
+		repurpose_reduce_contig_bw_extn(primary_channel,
+						oper_chwidth,
+						seg0, seg1);
+		oper_width = hostapd_get_width_from_oper_chwidth_extn(
+					*oper_chwidth,
+					secondary_channel);
+	}
+	wpa_printf(MSG_DEBUG,
+		   "Repurpose: updated oper_chwidth = %d seg0 = %d seg1 = %d",
+		   *oper_chwidth, *seg0, *seg1);
+
+}
+
+
+
+/* hostapd_get_oper_info_of_repurposed_bss_extn derives the channel operation
+ * information that can be advertised in management frames of repurposed BSS
+ * by considering the repurpose_he_width or repurpose_vht_width configured on
+ * the interface based on the repurpose mode configured on the BSS.
+ *
+ * Callers must pass the current maximum-advertisable legacy operating channel
+ * information for the BSS. In particular, if the radio is punctured or the
+ * BSS is EHT-disabled on a 320 MHz interface, width/seg0/seg1 must already be
+ * adjusted for those constraints before this function is called.
+ *
+ * This function only applies the additional repurpose bandwidth cap. It does
+ * not recompute puncture-derived operating information. Hence, callers must
+ * also ensure to call this only when BSS is repurposed.
+ */
+void hostapd_get_oper_info_of_repurposed_bss_extn(struct hostapd_data *hapd,
+						  enum oper_chan_width *oper_chwidth,
+						  u8 *seg0,
+						  u8 *seg1)
+{
+	hostapd_oper_info_of_repurposed_bss_helper_extn(hapd,
+							hapd->iconf->channel,
+							hapd->iconf->secondary_channel,
+							oper_chwidth,
+							seg0,
+							seg1);
+}
+
+
+/**
+ * hostapd_get_csa_info_of_repurposed_bss_extn - Derive repurposed CSA info
+ * @hapd: BSS context whose repurpose configuration is used
+ * @primary_channel: Primary channel of the CSA target channel definition
+ * @secondary_channel: Secondary channel offset of the CSA target channel
+ * @oper_chwidth: Maximum advertisable legacy operating channel width for CSA
+ * @seg0: Center frequency segment 0 index for the CSA target channel
+ * @seg1: Center frequency segment 1 index for the CSA target channel
+ *
+ * Apply the repurpose bandwidth cap to caller supplied CSA target channel
+ * information so that ECSA/CSA operating class derivation uses the target BSS
+ * bandwidth instead of the interface bandwidth.
+ */
+void hostapd_get_csa_info_of_repurposed_bss_extn(struct hostapd_data *hapd,
+						 u8 primary_channel,
+						 int secondary_channel,
+						 enum oper_chan_width *oper_chwidth,
+						 u8 *seg0,
+						 u8 *seg1)
+{
+	hostapd_oper_info_of_repurposed_bss_helper_extn(hapd,
+							primary_channel,
+							secondary_channel,
+							oper_chwidth,
+							seg0,
+							seg1);
+}
+
+void
+hostapd_repurpose_update_ht_capabilities_extn(struct hostapd_data *hapd,
+					      struct ieee80211_ht_capabilities *cap)
+{
+	/* Clear HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET if repurposed BSS has
+	 * disabled 40MHz
+	 */
+	if (cap->ht_capabilities_info & HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET) {
+		if (hostapd_is_repurpose_disabled_11ax_extn(hapd->conf)) {
+			if (hapd->iconf->conf_extn.repurpose_vht_width == 20)
+				cap->ht_capabilities_info &=
+					~HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET;
+		} else if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+			if (hapd->iconf->conf_extn.repurpose_he_width == 20)
+				cap->ht_capabilities_info &=
+					~HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET;
+		}
+	}
+}
+
+
+u8 hostapd_get_repurpose_width_extn(struct hostapd_data *hapd)
+{
+	if (!hapd->iconf)
+		return 0;
+
+	/* return repurpose width as per the repurpose mode. If BSS is not
+	 * repurposed, return operating channel width of the radio.
+	 */
+	if (hostapd_is_repurpose_disabled_11ax_extn(hapd->conf))
+		return hapd->iconf->conf_extn.repurpose_vht_width;
+
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return hapd->iconf->conf_extn.repurpose_he_width;
+
+	return hostapd_get_width_from_oper_chwidth_extn
+			(hostapd_get_oper_chwidth(hapd->iconf),
+			 hapd->iconf->secondary_channel);
+}
+
+
+void
+hostapd_repurpose_get_vht_legacy_chan_info_extn(struct hostapd_data *hapd,
+						enum oper_chan_width *chwidth,
+						u8 *seg0,
+						u8 *seg1)
+{
+#ifdef CONFIG_IEEE80211BE
+	u16 punct_bitmap = hostapd_get_punct_bitmap(hapd);
+#endif /* CONFIG_IEEE80211BE */
+
+	*chwidth = hapd->iconf->vht_oper_chwidth;
+	*seg0 = hapd->iconf->vht_oper_centr_freq_seg0_idx;
+	*seg1 = hapd->iconf->vht_oper_centr_freq_seg1_idx;
+
+#ifdef CONFIG_IEEE80211BE
+	if (punct_bitmap) {
+		hostapd_get_oper_center_freq_seg_extn(hapd->iconf,
+						      seg0,
+						      seg1,
+						      chwidth);
+		punct_update_legacy_bw(punct_bitmap,
+				       hapd->iconf->channel,
+				       chwidth,
+				       seg0,
+				       seg1);
+	}
+#endif /* CONFIG_IEEE80211BE */
+}
+
+
+bool
+hostapd_repurpose_update_ht_operation_mode_extn(struct hostapd_data *hapd,
+						le32 vht_capabilities_info,
+						struct ieee80211_ht_operation *oper)
+{
+	enum oper_chan_width chwidth;
+	u8 seg0, seg1;
+
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return false;
+
+	if (!(vht_capabilities_info & VHT_CAP_EXTENDED_NSS_BW_SUPPORT))
+		return false;
+
+	hostapd_repurpose_get_vht_legacy_chan_info_extn(hapd, &chwidth,
+							&seg0, &seg1);
+	hostapd_get_oper_info_of_repurposed_bss_extn(hapd, &chwidth,
+						     &seg0, &seg1);
+	if (chwidth == CHANWIDTH_160MHZ)
+		oper->operation_mode = host_to_le16(seg0);
+
+	return true;
+}
+
+void
+hostapd_repurpose_update_vht_capabilities_extn(struct hostapd_data *hapd,
+					       u8 *chwidth,
+					       struct ieee80211_vht_capabilities *cap)
+{
+	enum oper_chan_width repurpose_chwidth;
+	u8 seg0, seg1;
+
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return;
+
+	hostapd_repurpose_get_vht_legacy_chan_info_extn(hapd, &repurpose_chwidth,
+							&seg0, &seg1);
+	hostapd_get_oper_info_of_repurposed_bss_extn(hapd, &repurpose_chwidth,
+						     &seg0, &seg1);
+	*chwidth = repurpose_chwidth;
+	if (*chwidth != CHANWIDTH_160MHZ &&
+	    *chwidth != CHANWIDTH_80P80MHZ) {
+		cap->vht_capabilities_info &=
+			~(host_to_le32(VHT_CAP_SUPP_CHAN_WIDTH_MASK));
+		cap->vht_capabilities_info &=
+			~(host_to_le32(VHT_CAP_SHORT_GI_160));
+	}
 }

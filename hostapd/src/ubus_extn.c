@@ -48,17 +48,17 @@ static void phy_status_cb(struct ubus_request *req, int type, struct blob_attr *
 	if (tb[STATUS_STA_STATE]) {
 		char *state = blobmsg_get_string(tb[STATUS_STA_STATE]);
 
-		if (strlen(state) == 0) {
+		if (!state || !strlen(state)) {
 			*result = 0;
 			return;
 		}
 
 		wpa_printf(MSG_INFO, "state of station is %s", state);
 
-		if (state && strcmp(state, "UNKNOWN") == 0)
-			*result = 0;
-		else
+		if (!strcmp(state, "COMPLETED"))
 			*result = 1;
+		else
+			*result = 0;
 	}
 }
 

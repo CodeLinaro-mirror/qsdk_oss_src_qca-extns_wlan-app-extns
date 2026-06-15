@@ -20,6 +20,7 @@
 #include "../wpa_supplicant/ubus.h"
 #include "../wpa_supplicant/bss.h"
 #include "../wpa_supplicant/scan.h"
+#include "../wpa_supplicant/driver_i.h"
 #include "wpa_supplicant_rptr_extn.h"
 #include "240mhz.h"
 #include "qcn_ie_extn.h"
@@ -623,10 +624,9 @@ void sme_pre_connect_timer_extn(void *eloop_ctx, void *timeout_ctx)
  * @link_id: Link ID index to update in the MLD link array
  *
  * Use Reduced Neighbor Report (RNR) information to update per-link
- * information for Multi-Link Device (MLD) APs in the BSS structure. In
- * Independent Repeater mode, use the neighbor BSS entry to populate
- * frequency, width, center frequency indices and puncturing bitmap for
- * the link.
+ * information for Multi-Link Device (MLD) APs in the BSS structure.
+ * When a neighbor BSS entry is available, also populate channel width,
+ * center frequency indices and puncturing bitmap for the link.
  */
 void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 					  struct wpa_bss *bss,
@@ -643,21 +643,13 @@ void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 	if (!neigh_bss)
 		neigh_bss = wpa_bss_get_bssid(wpa_s, bssid_ptr);
 
-	if (!wpa_s->conf->ind_rptr) {
-		bss->valid_links |= BIT(link_id);
-		l = &bss->mld_links[link_id];
-		os_memcpy(l->bssid, bssid_ptr, ETH_ALEN);
-		l->disabled = mld_params[2] & RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
-		l->freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
-		return;
-	}
+	bss->valid_links |= BIT(link_id);
+	l = &bss->mld_links[link_id];
+	os_memcpy(l->bssid, bssid_ptr, ETH_ALEN);
+	l->disabled = mld_params[2] & RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
+	l->freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
 
 	if (neigh_bss) {
-		bss->valid_links |= BIT(link_id);
-		l = &bss->mld_links[link_id];
-		os_memcpy(l->bssid, bssid_ptr, ETH_ALEN);
-		l->disabled = mld_params[2] & RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
-		l->freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
 		l->center_freq1_idx = neigh_bss->center_freq1_idx;
 		l->center_freq2_idx = neigh_bss->center_freq2_idx;
 		l->width = neigh_bss->max_cw;
@@ -665,25 +657,771 @@ void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 		wpa_printf(MSG_DEBUG, "%s: link_id=%u freq=%d cf1=%d cf2=%d width=%d punc=%d",
 			   __func__, link_id, l->freq, l->center_freq1_idx, l->center_freq2_idx,
 			   l->width, l->punc_bitmap);
+	} else {
+		wpa_printf(MSG_DEBUG, "%s: link_id=%u freq=%d (no neigh_bss, "
+			   "channel info unavailable)", __func__, link_id, l->freq);
 	}
 }
 
 /**
- * wpa_supplicant_start_sta_scan - Handle repeater AP ACS timeout for repeater
+ * wpa_supplicant_start_sta_scan - Handle repeater AP ACS/CSA timeout for repeater
  * @eloop_ctx: Eloop context, cast to struct wpa_supplicant pointer
  * @timeout_ctx: Unused timeout context (reserved for future use)
  *
  * Invoked by the eloop timeout mechanism while in WPA_DISCONNECTED state to
- * detect when repeater AP ACS attempts have timed out. On timeout, set the
- * acs_complete and requests a fresh scan to continue repeater connect logic.
+ * detect when either repeater AP ACS attempts have timed out or repeater AP
+ * CSA has timed out. On timeout, set the acs_complete flag or reset the
+ * hold_scan_csa flag accordingly and requests a fresh scan to
+ * continue repeater connect logic.
  */
 void wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx)
 {
 	struct wpa_supplicant *wpa_s = eloop_ctx;
 
 	if (wpa_s->wpa_state == WPA_DISCONNECTED) {
-		wpa_msg(wpa_s, MSG_DEBUG, "Repeater ACS timeout");
-		wpa_s->acs_complete = 1;
+		if (IS_CSH_IGNORE_CSA_DFS_ENABLED(wpa_s->conf->cswopts) &&
+		    wpa_s->hold_scan_csa) {
+			wpa_msg(wpa_s, MSG_DEBUG, "Repeater CSA timed out for CSwOpts %s",
+				convert_cswopts_to_str(CSH_OPT_IGNORE_CSA_DFS));
+			wpa_s->hold_scan_csa = false;
+		} else {
+			wpa_msg(wpa_s, MSG_DEBUG, "Repeater ACS timeout");
+			wpa_s->acs_complete = 1;
+		}
 		wpa_supplicant_req_scan(wpa_s, 0, 0);
+	}
+}
+
+/**
+ * wpa_config_process_cswopts_extn - Parse and apply CSwOpts from config file
+ * @config: Pointer to wpa_config structure
+ * @line: Line number in the configuration file (for error messages)
+ * @pos: String value to parse (decimal or hex with 0x prefix)
+ *
+ * Validate and store the Channel Switch Options bitmap from the configuration
+ * file into wpa_config::cswopts.
+ *
+ * Return: 0 on success, -1 on invalid value.
+ */
+int wpa_config_process_cswopts_extn(struct wpa_config *config, int line,
+				    const char *pos)
+{
+	long int val = strtol(pos, NULL, 0);
+
+	if (!cswopts_validate(val)) {
+		wpa_printf(MSG_ERROR,
+			   "Line %d: Invalid CSwOpts value 0x%lx: valid mask is 0x%x",
+			   line, val, CSH_OPT_VALID_MASK);
+		return -1;
+	}
+
+	config->cswopts = (unsigned int)val;
+	wpa_printf(MSG_INFO, "CSwOpts set to 0x%x", config->cswopts);
+	if (IS_CSH_APRIORI_NEXT_CHANNEL_ENABLED(config->cswopts))
+		wpa_printf(MSG_INFO,
+			   "CSwOpts: Apriori next channel (0x40) - Apriori channel selection feature is not yet supported");
+
+	return 0;
+}
+
+/** wpas_set_dfs_state_freq - Set DFS state for a single 20 MHz channel
+ * @wpa_s: wpa_supplicant context
+ * @freq: Channel frequency in MHz
+ * @state: New DFS state (HOSTAPD_CHAN_DFS_UNAVAILABLE or HOSTAPD_CHAN_DFS_USABLE)
+ *
+ * Iterates over all hardware modes and sets the DFS state bits in chan->flag
+ * for the channel matching @freq.  Only acts on channels that have the
+ * HOSTAPD_CHAN_RADAR flag set.
+ *
+ * Returns 1 if the channel was found and updated, 0 otherwise.
+ */
+int wpas_set_dfs_state_freq(struct wpa_supplicant *wpa_s, int freq, u32 state)
+{
+	int i, j;
+
+	if (!wpa_s->hw.modes || !wpa_s->hw.num_modes)
+		return 0;
+
+	for (j = 0; j < wpa_s->hw.num_modes; j++) {
+		struct hostapd_hw_modes *mode = &wpa_s->hw.modes[j];
+
+		for (i = 0; i < mode->num_channels; i++) {
+			struct hostapd_channel_data *chan = &mode->channels[i];
+
+			if (chan->freq == freq && (chan->flag & HOSTAPD_CHAN_RADAR)) {
+				wpa_dbg(wpa_s, MSG_DEBUG,
+					"DFS: wpas_set_dfs_state_freq: "
+					"freq=%d MHz old_dfs_state=0x%X new_dfs_state=0x%X",
+					freq,
+					chan->flag & HOSTAPD_CHAN_DFS_MASK,
+					state);
+				chan->flag &= ~HOSTAPD_CHAN_DFS_MASK;
+				chan->flag |= state;
+				return 1;
+			}
+		}
+	}
+	wpa_printf(MSG_WARNING,
+		   "DFS: wpas_set_dfs_state_freq: cannot set state for "
+		   "freq %d MHz (not a radar channel or not found)", freq);
+	return 0;
+}
+
+/**
+ * wpa_supplicant_ctrl_iface_set_cswopts_extn - Handle SET CSwOpts command
+ * @wpa_s: Pointer to wpa_supplicant interface
+ * @value: String value to parse (decimal or hex with 0x prefix)
+ *
+ * Validate and apply the Channel Switch Options bitmap from the SET control
+ * interface command. A value of 0 clears all bits; non-zero values are OR'd
+ * into the existing bitmap.
+ *
+ * Return: 0 on success, -1 on invalid value.
+ */
+int wpa_supplicant_ctrl_iface_set_cswopts_extn(struct wpa_supplicant *wpa_s,
+					       const char *value)
+{
+	long int val = strtol(value, NULL, 0);
+
+	if (!cswopts_validate(val)) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid CSwOpts value 0x%lx: valid mask is 0x%x",
+			   val, CSH_OPT_VALID_MASK);
+		return -1;
+	}
+
+	if (val == 0)
+		wpa_s->conf->cswopts = 0;
+	else {
+		if ((IS_CSH_RCSA_TO_UPLINK_ENABLED(*value) ||
+		     IS_CSH_PROCESS_RCSA_ENABLED(*value)) &&
+		    wpa_s->conf->uplink_csa) {
+			wpa_printf(MSG_INFO, "RCSA and Uplink CSA cann't co-exists! disabling");
+			return -1;
+		}
+
+		wpa_s->conf->cswopts |= (unsigned int)val;
+	}
+
+	wpa_printf(MSG_INFO, "Updated CSwOpts to 0x%x", wpa_s->conf->cswopts);
+	if (IS_CSH_APRIORI_NEXT_CHANNEL_ENABLED(wpa_s->conf->cswopts))
+		wpa_printf(MSG_INFO,
+			   "CSwOpts: Apriori next channel (0x40) - Apriori channel selection feature is not yet supported");
+
+	return 0;
+}
+
+/** wpas_set_dfs_state - Set DFS state for all sub-channels of a channel block
+ * @wpa_s: wpa_supplicant context
+ * @freq: Primary channel frequency in MHz
+ * @ht_enabled: Whether HT is enabled (unused, kept for API symmetry)
+ * @chan_offset: HT40 secondary channel offset (unused, kept for API symmetry)
+ * @chan_width: Channel width (enum chan_width)
+ * @cf1: Center frequency 1 in MHz
+ * @cf2: Center frequency 2 in MHz (non-zero for 80P80 and 5G 240 MHz)
+ * @state: New DFS state (HOSTAPD_CHAN_DFS_UNAVAILABLE or HOSTAPD_CHAN_DFS_USABLE)
+ * @radar_bitmap: Bitmap of affected sub-channels (0 = all sub-channels)
+ *
+ * Mirrors the logic of set_dfs_state() in src/ap/dfs.c but operates on
+ * wpa_s->hw.modes instead of iface->current_mode.  Used in STA-only mode
+ * (no AP iface) to keep the channel table in sync with the kernel NOL state.
+ *
+ * For 5G 320MHz-2 (240 MHz, non-contiguous):
+ *   cf1 = center of the 160 MHz segment (8 x 20 MHz sub-channels)
+ *   cf2 = center of the  80 MHz segment (4 x 20 MHz sub-channels)
+ *   radar_bitmap bits  0-7  -> 160 MHz segment sub-channels
+ *   radar_bitmap bits  8-11 ->  80 MHz segment sub-channels
+ *
+ * Returns the number of channels successfully updated.
+ */
+int wpas_set_dfs_state(struct wpa_supplicant *wpa_s, int freq,
+		       int ht_enabled, int chan_offset, int chan_width,
+		       int cf1, int cf2, u32 state, u16 radar_bitmap)
+{
+	int n_chans = 1, i;
+	int frequency = freq;
+	int frequency2 = 0;
+	int ret = 0;
+
+	switch (chan_width) {
+	case CHAN_WIDTH_20_NOHT:
+	case CHAN_WIDTH_20:
+		n_chans = 1;
+		if (frequency == 0)
+			frequency = cf1;
+		break;
+	case CHAN_WIDTH_40:
+		n_chans = 2;
+		frequency = cf1 - 10;
+		break;
+	case CHAN_WIDTH_80:
+		n_chans = 4;
+		frequency = cf1 - 30;
+		break;
+	case CHAN_WIDTH_80P80:
+		n_chans = 4;
+		frequency = cf1 - 30;
+		frequency2 = cf2 - 30;
+		break;
+	case CHAN_WIDTH_160:
+		n_chans = 8;
+		frequency = cf1 - 70;
+		break;
+	default:
+		if (!hostapd_get_n_chans_and_frequency_extn(
+			hostapd_get_oper_chwidth_from_width_extn(
+				channel_width_to_int(chan_width)),
+			cf1, &n_chans, &frequency))
+			break;
+
+		wpa_printf(MSG_INFO,
+				   "DFS: wpas_set_dfs_state: chan_width %d not supported, "
+				   "treating as 20 MHz",
+				   chan_width);
+		n_chans = 1;
+		if (frequency == 0)
+			frequency = cf1;
+		break;
+	}
+
+	wpa_dbg(wpa_s, MSG_DEBUG,
+			"DFS: wpas_set_dfs_state: start_freq=%d MHz n_chans=%d "
+			"state=0x%X radar_bitmap=0x%04X",
+			frequency, n_chans, state, radar_bitmap);
+
+	for (i = 0; i < n_chans; i++) {
+		if (radar_bitmap && state == HOSTAPD_CHAN_DFS_UNAVAILABLE) {
+			if (radar_bitmap & (1 << i)) {
+				wpa_dbg(wpa_s, MSG_DEBUG,
+						"DFS: wpas_set_dfs_state: marking "
+						"freq=%d MHz UNAVAILABLE (bit %d set)",
+						frequency, i);
+				ret += wpas_set_dfs_state_freq(wpa_s, frequency, state);
+			} else {
+				wpa_dbg(wpa_s, MSG_DEBUG,
+						"DFS: wpas_set_dfs_state: skipping "
+						"freq=%d MHz (bit %d not set)",
+						frequency, i);
+			}
+			frequency += 20;
+			if (chan_width == CHAN_WIDTH_80P80) {
+				if (radar_bitmap & (1 << (i + 4)))
+					ret += wpas_set_dfs_state_freq(wpa_s, frequency2, state);
+				frequency2 += 20;
+			}
+		} else {
+			ret += wpas_set_dfs_state_freq(wpa_s, frequency, state);
+			frequency += 20;
+			if (chan_width == CHAN_WIDTH_80P80) {
+				ret += wpas_set_dfs_state_freq(wpa_s, frequency2, state);
+				frequency2 += 20;
+			}
+		}
+	}
+
+	return ret;
+}
+
+/**
+ * wpas_dfs_radar_detected_sta_mode - Handle radar detection in STA-only mode
+ * @wpa_s: wpa_supplicant context
+ * @radar: DFS event data from the driver
+ *
+ * Called when EVENT_DFS_RADAR_DETECTED is received but no AP/mesh iface is
+ * present.  Replicates the hostapd_dfs_radar_detected -> set_dfs_state ->
+ * set_dfs_state_freq path directly on wpa_s->hw.modes so that the channel
+ * table reflects the NOL state and subsequent BSS selection correctly avoids
+ * radar-impacted channels.
+ *
+ * When device-level parameters differ from the operating bandwidth (e.g.,
+ * EHT 320 MHz device operating at 160 MHz), the device parameters are used
+ * to determine which sub-channels are affected, matching hostapd behaviour.
+ */
+void wpas_dfs_radar_detected_sta_mode(struct wpa_supplicant *wpa_s,
+				      struct dfs_event *radar)
+{
+	bool use_device_params =
+		radar->cf_device && radar->chan_width_device &&
+		radar->chan_width_device != radar->chan_width &&
+		radar->cf_device != radar->cf1;
+
+	wpa_dbg(wpa_s, MSG_DEBUG,
+			"DFS: radar detected on %d MHz (no AP iface) - "
+			"updating hw channel states directly: "
+			"ht_enabled=%d chan_offset=%d chan_width=%d "
+			"cf1=%d cf2=%d radar_bitmap=0x%04X "
+			"chan_width_device=%d cf_device=%d",
+			radar->freq, radar->ht_enabled, radar->chan_offset,
+			radar->chan_width, radar->cf1, radar->cf2,
+			radar->radar_bitmap,
+			radar->chan_width_device, radar->cf_device);
+
+	if (use_device_params) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"DFS: using device params for NOL update: "
+			"chan_width_device=%d cf_device=%d",
+			radar->chan_width_device, radar->cf_device);
+		wpas_set_dfs_state(wpa_s, radar->freq,
+				   radar->ht_enabled, radar->chan_offset,
+				   radar->chan_width_device, radar->cf_device,
+				   radar->cf2,
+				   HOSTAPD_CHAN_DFS_UNAVAILABLE,
+				   radar->radar_bitmap);
+	} else {
+		wpas_set_dfs_state(wpa_s, radar->freq,
+				   radar->ht_enabled, radar->chan_offset,
+				   radar->chan_width, radar->cf1, radar->cf2,
+				   HOSTAPD_CHAN_DFS_UNAVAILABLE,
+				   radar->radar_bitmap);
+	}
+}
+
+/**
+ * wpas_dfs_nop_finished_sta_mode - Handle NOP expiry in STA-only mode
+ * @wpa_s: wpa_supplicant context
+ * @radar: DFS event data from the driver
+ *
+ * Called when EVENT_DFS_NOP_FINISHED is received but no AP/mesh iface is
+ * present.  Replicates the hostapd_dfs_nop_finished -> set_dfs_state ->
+ * set_dfs_state_freq path directly on wpa_s->hw.modes so that the channel
+ * table reflects the USABLE state once the Non-Occupancy Period has expired,
+ * allowing the STA to consider these channels again for future connections.
+ *
+ * Note: radar_bitmap is not used for NOP-finished (channels become usable
+ * again unconditionally), matching hostapd behaviour.
+ */
+void wpas_dfs_nop_finished_sta_mode(struct wpa_supplicant *wpa_s,
+				    struct dfs_event *radar)
+{
+	bool use_device_params =
+		radar->cf_device && radar->chan_width_device &&
+		radar->chan_width_device != radar->chan_width &&
+		radar->cf_device != radar->cf1;
+
+	wpa_dbg(wpa_s, MSG_DEBUG,
+			"DFS: NOP finished on %d MHz (no AP iface) - "
+			"updating hw channel states directly: "
+			"ht_enabled=%d chan_offset=%d chan_width=%d "
+			"cf1=%d cf2=%d chan_width_device=%d cf_device=%d",
+			radar->freq, radar->ht_enabled, radar->chan_offset,
+			radar->chan_width, radar->cf1, radar->cf2,
+			radar->chan_width_device, radar->cf_device);
+
+	if (use_device_params) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+				"DFS: using device params for USABLE update: "
+				"chan_width_device=%d cf_device=%d",
+				radar->chan_width_device, radar->cf_device);
+		wpas_set_dfs_state(wpa_s, radar->freq,
+				   radar->ht_enabled, radar->chan_offset,
+				   radar->chan_width_device, radar->cf_device,
+				   radar->cf2,
+				   HOSTAPD_CHAN_DFS_USABLE, 0);
+	} else {
+		wpas_set_dfs_state(wpa_s, radar->freq,
+				   radar->ht_enabled, radar->chan_offset,
+				   radar->chan_width, radar->cf1, radar->cf2,
+				   HOSTAPD_CHAN_DFS_USABLE, 0);
+	}
+}
+
+/**
+ * wpas_is_chan_nol_extn - Check if a frequency is in the NOL
+ * @wpa_s: wpa_supplicant context
+ * @freq: Frequency in MHz
+ * Returns: true if the channel is marked HOSTAPD_CHAN_DFS_UNAVAILABLE,
+ *          false otherwise
+ *
+ * Uses chan->flag DFS bits directly instead of the legacy nol_flag field.
+ */
+static bool wpas_is_chan_nol_extn(struct wpa_supplicant *wpa_s, int freq)
+{
+	struct hostapd_hw_modes *mode;
+	struct hostapd_channel_data *chan;
+	int i, j;
+
+	if (!wpa_s->hw.modes || !wpa_s->hw.num_modes)
+		return 0;
+
+	for (i = 0; i < wpa_s->hw.num_modes; i++) {
+		mode = &wpa_s->hw.modes[i];
+
+		for (j = 0; j < mode->num_channels; j++) {
+			chan = &mode->channels[j];
+
+			if (chan->freq == freq &&
+				(chan->flag & HOSTAPD_CHAN_RADAR) &&
+				(chan->flag & HOSTAPD_CHAN_DFS_MASK) ==
+					HOSTAPD_CHAN_DFS_UNAVAILABLE)
+				return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * wpas_freq_range_uses_nol_extn - Check if any 20 MHz sub-channel in a
+ *   contiguous bandwidth block is in the NOL.
+ * @wpa_s: wpa_supplicant context
+ * @center_freq: Center frequency of the block in MHz
+ * @bandwidth: Bandwidth in MHz (20, 40, 80, 160, 320)
+ * Returns: true if any channel in the range is in NOL, false otherwise
+ *
+ * 20 MHz channel centers within a block of bandwidth @bandwidth centered
+ * at @center_freq are at:
+ *   center - bw/2 + 10,  center - bw/2 + 30,  ...,  center + bw/2 - 10
+ * i.e. start = center - bw/2 + 10,  end = center + bw/2 - 10.
+ */
+static bool wpas_freq_range_uses_nol_extn(struct wpa_supplicant *wpa_s,
+					  int center_freq, int bandwidth)
+{
+	int start_freq, end_freq, freq;
+
+	if (bandwidth <= 20)
+		return wpas_is_chan_nol_extn(wpa_s, center_freq);
+
+	start_freq = center_freq - (bandwidth / 2) + 10;
+	end_freq = center_freq + (bandwidth / 2) - 10;
+
+	for (freq = start_freq; freq <= end_freq; freq += 20) {
+		if (wpas_is_chan_nol_extn(wpa_s, freq)) {
+			wpa_printf(MSG_DEBUG,
+				   "NOL: Freq %d in range [%d-%d] (bw=%d, cf=%d) is in NOL",
+				   freq, start_freq, end_freq, bandwidth, center_freq);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * wpas_get_channel_info_extn - Extract channel info from frequency and indices
+ * @freq: Primary frequency in MHz
+ * @width: Channel width enum
+ * @center_freq1_idx: Center frequency 1 index
+ * @center_freq2_idx: Center frequency 2 index
+ * @center_freq1: Output for center frequency 1 in MHz
+ * @center_freq2: Output for center frequency 2 in MHz (80+80 only)
+ * Returns: Bandwidth in MHz (20, 40, 80, 160, 320), or -1 on error
+ *
+ * Common helper function to extract bandwidth and center frequencies from
+ * pre-parsed channel information. Used for both BSS and MLO link processing.
+ */
+static int wpas_get_channel_info_extn(int freq, enum chan_width width,
+				      u8 center_freq1_idx, u8 center_freq2_idx,
+				      int *center_freq1, int *center_freq2)
+{
+	int bw;
+	u8 op_class, channel;
+
+	if (!center_freq1 || !center_freq2)
+		return -1;
+
+	*center_freq1 = 0;
+	*center_freq2 = 0;
+
+	/* Convert channel width enum to MHz */
+	bw = channel_width_to_int(width);
+
+	/* Calculate center frequencies from indices if available */
+	if (center_freq1_idx) {
+		ieee80211_freq_to_channel_ext(freq, 0, 1, &op_class, &channel);
+		*center_freq1 = ieee80211_chan_to_freq(NULL, op_class, center_freq1_idx);
+	}
+
+	if (center_freq2_idx) {
+		ieee80211_freq_to_channel_ext(freq, 0, 1, &op_class, &channel);
+		*center_freq2 = ieee80211_chan_to_freq(NULL, op_class, center_freq2_idx);
+	}
+
+	/* If no center freq calculated, use primary freq */
+	if (*center_freq1 == 0)
+		*center_freq1 = freq;
+
+	return bw;
+}
+
+/**
+ * wpas_check_link_nol_extn - Check if a single link uses NOL channels
+ * @wpa_s: wpa_supplicant context
+ * @freq: Primary channel frequency in MHz
+ * @bw: Bandwidth in MHz (20, 40, 80, 160, 320)
+ * @cf1: Center frequency 1 in MHz
+ *       - 20/40/80/160/320 MHz contiguous: center of the full channel
+ *       - 80+80 MHz: center of the first 80 MHz segment
+ *       - 5G 240 MHz (320-2): center of the 160 MHz segment
+ * @cf2: Center frequency 2 in MHz (0 if not applicable)
+ *       - 80+80 MHz: center of the second 80 MHz segment
+ *       - 160 MHz (VHT): center of the upper 80 MHz segment
+ *         (cf1 is the 160 MHz center; cf2 is NOT needed for the range check)
+ *       - 5G 240 MHz (320-2): center of the 80 MHz segment
+ * Returns: true if link uses any NOL channel, false otherwise
+ */
+static bool wpas_check_link_nol_extn(struct wpa_supplicant *wpa_s,
+				     int freq, int bw, int cf1, int cf2)
+{
+	/* Check primary channel */
+	if (wpas_is_chan_nol_extn(wpa_s, freq)) {
+		wpa_printf(MSG_DEBUG, "NOL: Primary freq %d is in NOL", freq);
+		return true;
+	}
+
+	/* For 20 MHz, only primary matters */
+	if (bw <= 20)
+		return false;
+
+	if (bw == 80 && cf2 > 0) {
+		/*
+		 * 80+80 MHz: two independent 80 MHz segments.
+		 * cf1 = center of first segment, cf2 = center of second.
+		 */
+		wpa_dbg(wpa_s, MSG_DEBUG,
+				"NOL: 80+80 MHz (cf1=%d, cf2=%d)", cf1, cf2);
+		if (cf1 > 0 && wpas_freq_range_uses_nol_extn(wpa_s, cf1, 80))
+			return true;
+		if (wpas_freq_range_uses_nol_extn(wpa_s, cf2, 80))
+			return true;
+	} else if (bw == 320 && cf2 > 0) {
+		/*
+		 * 5G 320MHz-2 (240 MHz): non-contiguous 160 MHz + 80 MHz.
+		 * cf1 = center of 160 MHz segment, cf2 = center of 80 MHz segment.
+		 */
+		wpa_dbg(wpa_s, MSG_DEBUG,
+				"NOL: 5G 240MHz (cf1=%d 160MHz, cf2=%d 80MHz)",
+				cf1, cf2);
+		if (cf1 > 0 && wpas_freq_range_uses_nol_extn(wpa_s, cf1, 160))
+			return true;
+		if (wpas_freq_range_uses_nol_extn(wpa_s, cf2, 80))
+			return true;
+	} else if (bw == 160 && cf2 > 0) {
+		/* 160 MHz: cf2 is the actual center frequency */
+		wpa_printf(MSG_DEBUG,
+				   "NOL: Checking 160 MHz MHz (cf1=%d, cf2=%d)",
+				   cf1, cf2);
+		if (wpas_freq_range_uses_nol_extn(wpa_s, cf2, 160))
+			return true;
+	} else {
+		/*
+		 * Standard contiguous bandwidths: 40, 80, 160, 320 MHz.
+		 * cf1 is the center of the full channel.
+		 *
+		 * For VHT 160 MHz: cf1 = center of the 160 MHz band (seg0),
+		 * cf2 = center of the upper 80 MHz segment (seg1).  cf2 is
+		 * NOT needed here because cf1 already covers the full range.
+		 */
+		if (cf1 > 0 && wpas_freq_range_uses_nol_extn(wpa_s, cf1, bw))
+			return true;
+	}
+
+	return false;
+}
+
+/**
+ * wpas_bss_uses_nol_channel_extn - Check if BSS assoc link uses NOL channels
+ * @wpa_s: wpa_supplicant context
+ * @bss: BSS to check (Legacy, SLO, or MLO assoc link)
+ * Returns: true if the assoc link uses a NOL channel, false otherwise
+ *
+ * Checks whether the BSS primary (assoc) link frequency is in the NOL.
+ * For MLO, only the assoc link is checked here; partner link NOL handling
+ * is done earlier in wpa_bss_update_scan_rnr_res() by excluding NOL partner
+ * links from the connection attempt.
+ */
+bool wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s,
+				    struct wpa_bss *bss)
+{
+	int bw, cf1, cf2;
+
+	if (!bss)
+		return false;
+
+	wpa_printf(MSG_DEBUG, "NOL: Checking BSS " MACSTR " (freq=%d)",
+			   MAC2STR(bss->bssid), bss->freq);
+
+	/* Only 5G channels are subject to NOL */
+	if (!is_5ghz_freq(bss->freq))
+		return false;
+
+	bw = wpas_get_channel_info_extn(bss->freq, bss->max_cw,
+					bss->center_freq1_idx,
+					bss->center_freq2_idx, &cf1, &cf2);
+	if (bw < 0) {
+		wpa_printf(MSG_DEBUG, "NOL: Failed to get bandwidth info");
+		return false;
+	}
+	return wpas_check_link_nol_extn(wpa_s, bss->freq, bw, cf1, cf2);
+}
+
+#include "wds_ie.h"
+
+/**
+ * wds_ie_assoc_req_len_extn - Return WDS IE wire length for assoc request
+ *
+ * @wpa_s: wpa_supplicant instance
+ * @ssid:  Network profile
+ *
+ * Returns WDS_IE_TOTAL_LEN when ssid->wds_ie is enabled, 0 otherwise.
+ */
+size_t wds_ie_assoc_req_len_extn(struct wpa_supplicant *wpa_s,
+				 struct wpa_ssid *ssid)
+{
+	if (!wpa_s || !ssid)
+		return 0;
+
+	if (!ssid->wds_ie)
+		return 0;
+
+	return WDS_IE_TOTAL_LEN;
+}
+
+
+/**
+ * wds_ie_populate_assoc_req_extn - Append WDS IE to an association request
+ *
+ * Writes the WDS IE advertising WDS_IE_CAP_STA when ssid->wds_ie is enabled.
+ *
+ * @wpa_s:  wpa_supplicant instance
+ * @ssid:   Network profile
+ * @pos:    Current write position in the IE buffer
+ * @avail:  Remaining bytes available at @pos
+ *
+ * Returns the updated write pointer.
+ */
+u8 *wds_ie_populate_assoc_req_extn(struct wpa_supplicant *wpa_s,
+				   struct wpa_ssid *ssid,
+				   u8 *pos, size_t avail)
+{
+	size_t wds_ie_len;
+
+	if (!wpa_s || !ssid || !pos)
+		return pos;
+
+	if (!ssid->wds_ie)
+		return pos;
+
+	wds_ie_len = wds_ie_build(pos, avail, WDS_IE_CAP_STA);
+	if (wds_ie_len < WDS_IE_TOTAL_LEN) {
+		wpa_printf(MSG_WARNING,
+			   "WDS IE: STA - failed to build WDS IE for assoc req "
+			   "(buffer too small, avail=%zu)", avail);
+		return pos;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "WDS IE: STA - added WDS STA capability IE to assoc req");
+
+	return pos + wds_ie_len;
+}
+
+
+bool wds_ie_set_params(struct wpa_supplicant *wpa_s,
+		       const u8 *wds_ie, u8 elen)
+{
+	struct wds_ie_params params;
+	bool found = false;
+
+	if (wds_ie_parse(wds_ie, elen, &params) == 0) {
+		if (params.capability & WDS_IE_CAP_AP) {
+			wpa_s->wds_ie_ap = 1;
+			wpa_printf(MSG_INFO,
+				   "WDS IE: STA - AP advertises WDS IE capability "
+				   "(cap=0x%02x ver=%u) - ",
+				   params.capability, params.version);
+		} else {
+			wpa_printf(MSG_DEBUG,
+				  "WDS IE: STA - AP WDS IE present but WDS_IE_CAP_AP "
+				  "not set (cap=0x%02x)", params.capability);
+		}
+		return true;
+	}
+
+	return found;
+}
+
+/**
+ * wds_ie_process_assoc_resp_extn - Parse WDS IE from an association response
+ *                                  and enable 4-address mode on mutual WDS
+ *
+ * Searches the association response IEs for the WDS vendor IE.  When found
+ * and the AP advertises WDS_IE_CAP_AP, sets wpa_s->wds_ie_ap = 1 and
+ * enables 4-address mode via wpa_drv_set_4addr_mode() to complete the
+ * mutual WDS capability negotiation on the STA side.
+ *
+ * Mutual WDS activation requires BOTH:
+ *   - STA has wds_ie=1 configured (ssid->wds_ie)
+ *   - AP advertises WDS_IE_CAP_AP in its association response
+ *
+ * @wpa_s:    wpa_supplicant instance
+ * @ies:      IEs from the association response frame
+ * @ies_len:  Length of @ies in bytes
+ */
+void wds_ie_process_assoc_resp_extn(struct wpa_supplicant *wpa_s,
+				    const u8 *ies, size_t ies_len)
+{
+	const u8 *pos;
+	size_t remaining;
+
+	if (!wpa_s)
+		return;
+
+	wpa_s->wds_ie_ap = 0;
+
+	if (wpa_s->current_ssid)
+		wpa_s->conf->conf_extn.allow_3addr_mc = wpa_s->current_ssid->allow_3addr_mc;
+
+	if (nl80211_set_allow_3addr_mc_extn(wpa_s->drv_priv,
+					    (u8)wpa_s->conf->conf_extn.allow_3addr_mc))
+		wpa_printf(MSG_DEBUG,
+			   "ALLOW_3ADDR_MC: driver command failed");
+
+	/* Only process if the STA profile has wds_ie enabled */
+	if (!wpa_s->current_ssid || !wpa_s->current_ssid->wds_ie)
+		return;
+
+	if (!wpa_s->enabled_4addr_mode) {
+		if (wpa_drv_set_4addr_mode(wpa_s, 1) == 0) {
+			wpa_s->enabled_4addr_mode = 1;
+			wpa_printf(MSG_INFO, "WDS IE: STA - 4-address mode enabled");
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "WDS IE: STA - failed to enable 4-address mode");
+		}
+	} else {
+		wpa_printf(MSG_DEBUG,
+			  "WDS IE: STA - 4-address mode already enabled");
+	}
+
+	if (!ies || ies_len < WDS_IE_TOTAL_LEN)
+		return;
+
+	/* Walk the IE list looking for our WDS vendor IE */
+	pos = ies;
+	remaining = ies_len;
+
+	while (remaining >= 2) {
+		u8 eid  = pos[0];
+		u8 elen = pos[1];
+
+		if (2u + elen > remaining)
+			break;
+
+		if (eid == WLAN_EID_VENDOR_SPECIFIC &&
+		    elen >= WDS_IE_PAYLOAD_LEN) {
+			/*
+			 * pos + 2 points to the OUI byte.
+			 * wds_ie_parse() will verify OUI and type.
+			 */
+			if (wds_ie_set_params(wpa_s, (pos + 2), elen))
+				break;
+		}
+
+		pos += 2 + elen;
+		remaining -= 2 + elen;
+	}
+
+	if (!wpa_s->wds_ie_ap) {
+		wpa_printf(MSG_DEBUG,
+			   "WDS IE: STA - AP did not advertise WDS capability");
 	}
 }

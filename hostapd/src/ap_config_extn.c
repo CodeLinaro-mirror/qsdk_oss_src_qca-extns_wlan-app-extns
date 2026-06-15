@@ -33,9 +33,13 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->skip_cac = 0;
 	conf_extn->ignorecac = 0;
 	conf_extn->ind_rptr = 0;
+	conf_extn->cswopts = 0;
+	conf_extn->same_ssid = 0;
+	conf_extn->repeater = 0;
+	conf_extn->disable_iface_during_cac = true; /* Boot-up CAC is enabled by default */
 
 	/*configure qacs_default here*/
-	conf_extn->qacs_enable = 0;                 /* QACS disabled */
+	conf_extn->qacs_enable = 1;                 /* QACS enabled */
 	conf_extn->qacs_conf.wradar = 1;            /* wradar reject enabled */
 	conf_extn->qacs_conf.rep_txpower_policy = 0;/* Option pwr disabled */
 	conf_extn->qacs_conf.rank_en = 1;           /* rank enabled */
@@ -44,6 +48,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->qacs_conf.dwelltime = 200;   /* msec */
         conf_extn->qacs_conf.dbg_module_bitmap = 0x00; /* bitmap of QACS debug modules id */
 	conf_extn->qacs_conf.dbg_level = 0; /* QACS debug level */
+	conf_extn->block_chan_list.n_chan = 0;
 
 	/* DCS defaults: initialize values; valid_mask reflects only user overrides */
 	os_memset(&conf_extn->dcs_conf, 0, sizeof(conf_extn->dcs_conf));
@@ -69,9 +74,18 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	/* OBSS SNR threshold defaults */
 	conf_extn->obss_snr_threshold = 0;
 	conf_extn->obss_rx_snr_threshold = 0;
+	conf_extn->opclass_tbl_idx = OPCLS_TAB_IDX_GLOBAL;
 
 	/* DCS BW reduction control default */
 	conf_extn->dcs_conf.bw_reduction_ctrl = 0;
+
+	/* Configure CBS defaults here */
+	conf_extn->cbs_params.cbs_enable = 0;
+	conf_extn->cbs_params.resttime = 500;
+	conf_extn->cbs_params.dwellrest = 500;
+	conf_extn->cbs_params.waittime = 1000;
+	conf_extn->cbs_params.dwellsplit = 50;
+	conf_extn->cbs_params.totaldwell = 200;
 
 	conf_extn->eht_config_ccfs0 = false;
 
@@ -95,11 +109,17 @@ hostapd_config_defaults_bss_extn(struct hostapd_bss_config *bss)
 	bss_extn->nontx_vendor_elem_size =
 		MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE;
 
+	memset(&bss_extn->ht40_intol, 0, sizeof(bss_extn->ht40_intol));
 	bss_extn->tpe_common_psd = true;
 	bss_extn->tpe_tx_pwr_interp = TPE_REG_EIRP_PSD;
 	bss_extn->tpe_punct_channel_tx_pwr = false;
 	bss_extn->ecsa_opclass = 0;
 	bss_extn->pureg_bss = false;
+	memset(&bss_extn->puren_bss, 0, sizeof(bss_extn->puren_bss));
+	memset(&bss_extn->pure11ac_bss, 0, sizeof(bss_extn->pure11ac_bss));
+	memset(&bss_extn->pure11ax_bss, 0, sizeof(bss_extn->pure11ax_bss));
+	/* WDS vendor IE: disabled by default */
+	bss_extn->wds_ie = 0;
 }
 
 int
@@ -131,6 +151,12 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "athnewind") == 0) {
 		conf_extn->ind_rptr = atoi(pos);
 		return 0;
+	} else if (os_strcmp(buf, "repeater") == 0) {
+		conf_extn->repeater = atoi(pos);
+		return 0;
+	} else if (os_strcmp(buf, "same_ssid") == 0) {
+		conf_extn->same_ssid = atoi(pos);
+		return 0;
 	} else if (os_strcmp(buf, "skip_cac") == 0) {
 		conf_extn->skip_cac = atoi(pos);
 		return 0;
@@ -138,7 +164,23 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		conf_extn->ignorecac = atoi(pos);
 		return 0;
 	} else if (os_strcmp(buf, "uplink_csa") == 0) {
+		if ((IS_CSH_RCSA_TO_UPLINK_ENABLED(conf_extn->cswopts) ||
+		     IS_CSH_PROCESS_RCSA_ENABLED(conf_extn->cswopts)) &&
+		     atoi(pos)) {
+			wpa_printf(MSG_ERROR,
+				   "Rejecting uplink_csa config, RCSA is already enabled");
+			return 0;
+		}
 		conf_extn->uplink_csa = atoi(pos);
+		return 0;
+	} else if (os_strcmp(buf, "rpt_max_phy") == 0) {
+		conf_extn->rpt_max_phy = atoi(pos);
+		return 0;
+	} else if (os_strcmp(buf, "rptr_allow_chan_sw") == 0) {
+		conf_extn->rptr_allow_chan_sw = atoi(pos);
+		return 0;
+	} else if (os_strcmp(buf, "disable_iface_during_cac") == 0) {
+		conf_extn->disable_iface_during_cac = !!atoi(pos);
 		return 0;
 	} else if (os_strcmp(buf, "qacs_enable") == 0) {
 		conf_extn->qacs_enable = atoi(pos);
@@ -155,6 +197,28 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		bss->bss_extn.repurpose_mode = (u8) mode;
+	} else if (os_strcmp(buf, "repurpose_he_width") == 0) {
+		u16 val = (u16) atoi(pos);
+
+		if (val != 20 && val != 40 && val != 80 && val != 160) {
+			wpa_printf(MSG_ERROR,
+				   "Repurpose: invalid repurpose he width configured");
+			return -1;
+		}
+		conf_extn->repurpose_he_width = val;
+		conf_extn->user_repurpose_he_width = val;
+		return 0;
+	} else if (os_strcmp(buf, "repurpose_vht_width") == 0) {
+		u16 val = (u16) atoi(pos);
+
+		if (val != 20 && val != 40 && val != 80 && val != 160) {
+			wpa_printf(MSG_ERROR,
+				   "Repurpose: invalid repurpose vht width configured");
+			return -1;
+		}
+		conf_extn->repurpose_vht_width = val;
+		conf_extn->user_repurpose_vht_width = val;
+		return 0;
 	} else if (os_strcmp(buf, "acs_wradar") == 0) {
 		conf_extn->qacs_conf.wradar = atoi(pos);
 	} else if (os_strcmp(buf, "acs_txpwr_opt") == 0) {
@@ -198,6 +262,16 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			dt = conf_extn->qacs_conf.max_dwell;
 
 		conf_extn->qacs_conf.dwelltime = dt;
+
+	} else if (os_strcmp(buf, "acs_2g_scan_all") == 0) {
+		/*
+		 * Control 2.4 GHz ACS selection set:
+		 * 0 = restrict to non-overlapping primaries (1/6/11) for 20 MHz
+		 * 1 = allow all available 2.4 GHz channels for 20 MHz
+		 * 40 MHz constraints (1/6 for 40+, 6/11 for 40−) stay enforced.
+		 */
+		int v = atoi(pos);
+		conf_extn->qacs_conf.acs_2g_scan_all = (v != 0);
 
 	} else if (os_strcmp(buf, "dcs_enable") == 0) {
 		char *endptr;
@@ -387,6 +461,20 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		conf_extn->dcs_conf.bw_reduction_ctrl = bw_ctrl_val;
 		wpa_printf(MSG_DEBUG, "DCS: bw_reduction_ctrl set to 0x%04x",
 			   conf_extn->dcs_conf.bw_reduction_ctrl);
+
+	} else if (os_strcmp(buf, "cbs_enable") == 0) {
+		conf_extn->cbs_params.cbs_enable = atoi(pos);
+	} else if (os_strcmp(buf, "cbs_resttime") == 0) {
+		conf_extn->cbs_params.resttime = atoi(pos);
+	} else if (os_strcmp(buf, "cbs_dwellrest") == 0) {
+		conf_extn->cbs_params.dwellrest = atoi(pos);
+	} else if (os_strcmp(buf, "cbs_waittime") == 0) {
+		conf_extn->cbs_params.waittime = atoi(pos);
+	} else if (os_strcmp(buf, "cbs_dwellsplit") == 0) {
+		conf_extn->cbs_params.dwellsplit = atoi(pos);
+	} else if (os_strcmp(buf, "cbs_totaldwell") == 0) {
+		conf_extn->cbs_params.totaldwell = atoi(pos);
+
 	} else if (os_strcmp(buf, "vap_submode") == 0) {
 		u8 val = atoi(pos);
 		if (val > QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MAX) {
@@ -403,7 +491,49 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		conf->conf_extn.he_mcs_12_13_enabled = val;
+	} else if (os_strcasecmp(buf, "CSwOpts") == 0) {
+		if (hostapd_set_cswopts_extn(conf_extn, pos) < 0)
+			return 1;
+	} else if (os_strcmp(buf, "acs_periodic_interval") == 0) {
+		val = atoi(pos);
+		if (val < 60 || val > 86400) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid acs_periodic_interval %d (expected 60..86400)",
+				   line, val);
+			return -1;
+		}
+		conf_extn->acs_periodic_interval = val;
+	} else if (os_strcmp(buf, "wds_ie") == 0) {
+		/*
+		 * wds_ie - WDS vendor IE advertisement control
+		 *
+		 * 0 = disabled (default)
+		 * 1 = enabled: AP advertises WDS vendor IE (OUI 00:13:84,
+		 *     type 0x01) in beacon, probe response, and association
+		 *     response frames.  Enables WDS mode for stations that
+		 *     mutually advertise WDS_IE_CAP_STA.
+		 */
+		val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid wds_ie value %d (expected 0 or 1)", val);
+			return -1;
+		}
+		bss->bss_extn.wds_ie = val;
+		wpa_printf(MSG_DEBUG, "WDS IE: %s wds_ie=%d", bss->iface, val);
+	} else if (os_strcmp(buf, "allow_3addr_mc") == 0) {
+		val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid allow_3addr_mc value %d (expected 0 or 1)",
+				   val);
+			return -1;
+		}
+		bss->bss_extn.allow_3addr_mc = val;
+		wpa_printf(MSG_DEBUG, "allow_3addr_mc: %s allow_3addr_mc=%d",
+			   bss->iface, val);
 	} else {
+		wpa_printf(MSG_INFO, "%s:%d> error buf %s =====> Not found", __func__, __LINE__, buf);
 		return -1;
 	}
 

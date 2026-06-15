@@ -27,8 +27,10 @@
 #include "ap/hostapd.h"
 #include "ap/hw_features.h"
 #include "esp.h"
+#include "cbs.h"
 #include "dcs.h"
 #include "rropinfo.h"
+#include "reg_extn.h"
 
 
 struct hostapd_sta_add_params;
@@ -190,6 +192,113 @@ fail:
 	return -EINVAL;
 }
 
+static int nl80211_get_agile_capable_handler(struct nl_msg *msg, void *arg)
+{
+	u8 *val = arg;
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct nlattr *vendor_data;
+
+	if (nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		      genlmsg_attrlen(gnlh, 0), NULL)) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to parse netlink attributes");
+		return NL_SKIP;
+	}
+
+	vendor_data = tb[NL80211_ATTR_VENDOR_DATA];
+	if (vendor_data) {
+		struct nlattr *vendor_tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1];
+
+		if (nla_parse(vendor_tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+			      nla_data(vendor_data), nla_len(vendor_data),
+			      NULL)) {
+			wpa_printf(MSG_ERROR, "nl80211: Failed to parse vendor attrs");
+			return NL_SKIP;
+		}
+
+		if (vendor_tb[QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE])
+			*val = nla_get_u8(vendor_tb[QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE]);
+	}
+
+	return NL_SKIP;
+}
+
+int hostapd_get_agile_capable_extn(struct hostapd_iface *iface)
+{
+	struct hostapd_data *hapd;
+	struct i802_bss *bss;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg = NULL;
+	struct nlattr *params;
+	u8 radio_idx = 0;
+	u8 val = 1;
+	int ret;
+
+	if (!iface || !iface->bss || !iface->bss[0]) {
+		wpa_printf(MSG_ERROR, "invalid iface for agile capable fetch");
+		return -EINVAL;
+	}
+
+	hapd = iface->bss[0];
+	bss = hapd->drv_priv;
+	if (!bss || !bss->drv) {
+		wpa_printf(MSG_ERROR, "driver not initialized");
+		return -ENODEV;
+	}
+
+	drv = bss->drv;
+
+	if (iface->num_multi_hws) {
+		/* Multi-radio: query only if current radio is known */
+		if (!iface->current_hw_info) {
+			wpa_printf(MSG_DEBUG,
+				   "agile capable: no current_hw_info, skipping query");
+			return 0;
+		}
+		radio_idx = iface->current_hw_info->hw_idx;
+	}
+	/* else: single radio — query for radio_idx 0 */
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE, 0))
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX, radio_idx))
+		goto fail;
+
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_resp(drv, msg, nl80211_get_agile_capable_handler,
+				 &val);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "failed to get agile capable ret=%d", ret);
+		iface->iface_extn.agile_capable = true;
+		return ret;
+	}
+
+	iface->iface_extn.agile_capable = !!val;
+	wpa_printf(MSG_DEBUG, "agile capable=%u radio_idx=%u",
+		   iface->iface_extn.agile_capable, radio_idx);
+
+	return 0;
+
+fail:
+	if (msg)
+		nlmsg_free(msg);
+	iface->iface_extn.agile_capable = true;
+	return -EINVAL;
+}
+
 /* This function sends a NL message only if extension parameters exist;
  * otherwise it just returns.
  */
@@ -285,6 +394,591 @@ fail:
 	return;
 }
 
+static u16 nl80211_hw_blocked_chans_bw_to_mhz_extn(u32 max_bw)
+{
+	switch (max_bw) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+	case NL80211_CHAN_WIDTH_20:
+		return 20;
+	case NL80211_CHAN_WIDTH_40:
+		return 40;
+	case NL80211_CHAN_WIDTH_80:
+		return 80;
+	case NL80211_CHAN_WIDTH_160:
+		return 160;
+	case NL80211_CHAN_WIDTH_320:
+		return 320;
+	default:
+		return 0;
+	}
+}
+
+static u32 nl80211_hw_blocked_chans_puncture_mask_extn(u32 max_bw)
+{
+	switch (max_bw) {
+	case NL80211_CHAN_WIDTH_80:
+		return 0x0000000F;
+	case NL80211_CHAN_WIDTH_160:
+		return 0x00000FFF;
+	case NL80211_CHAN_WIDTH_320:
+		return 0x00FFFFFF;
+	default:
+		return 0;
+	}
+}
+
+static bool nl80211_hw_blocked_chans_valid_pwr_mode_extn(u8 pwr_mode_id)
+{
+	return (pwr_mode_id == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR ||
+		pwr_mode_id == HE_REG_INFO_6GHZ_AP_TYPE_SP ||
+		pwr_mode_id == HE_REG_INFO_6GHZ_AP_TYPE_VLP);
+}
+
+static int
+qca_nl80211_parse_hw_blocked_chans_fb_chans_extn(
+	struct nlattr *fb_list,
+	struct hostapd_hw_blocklist_pwr_mode *pwr_mode)
+{
+	struct nlattr *nl;
+	struct nlattr *fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_MAX + 1];
+	struct hostapd_hw_blocklist_fb_chan *fb_chans = NULL;
+	int rem;
+	u32 count = 0;
+
+	nla_for_each_nested(nl, fb_list, rem) {
+		struct hostapd_hw_blocklist_fb_chan *new_fb_chans;
+
+		if (nla_parse_nested(fb,
+				     QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_MAX,
+				     nl, NULL)) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: Invalid HW blocked channels FB channel entry");
+			os_free(fb_chans);
+			return -EINVAL;
+		}
+
+		new_fb_chans = os_realloc_array(fb_chans, count + 1,
+						sizeof(*new_fb_chans));
+		if (!new_fb_chans) {
+			os_free(fb_chans);
+			return -ENOMEM;
+		}
+
+		fb_chans = new_fb_chans;
+		os_memset(&fb_chans[count], 0, sizeof(fb_chans[count]));
+
+		if (fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_BW]) {
+			u32 max_bw =
+				nla_get_u32(fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_BW]);
+
+			if (!nl80211_hw_blocked_chans_bw_to_mhz_extn(max_bw)) {
+				wpa_printf(MSG_ERROR,
+					   "nl80211: Invalid HW blocked channels FB max_bw %u",
+					   max_bw);
+				os_free(fb_chans);
+				return -EINVAL;
+			}
+			fb_chans[count].max_bw = max_bw;
+		}
+		if (fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_CENTER_FREQ])
+			fb_chans[count].center_freq =
+				nla_get_u16(fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_CENTER_FREQ]);
+		if (fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_PRI20_BITMAP])
+			fb_chans[count].pri20_bitmap =
+				nla_get_u16(fb[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_FB_CHAN_PRI20_BITMAP]);
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: HW blocked channels FB chan[%u]: pri20_bitmap=0x%x center_freq=%u max_bw=%u",
+			   count, fb_chans[count].pri20_bitmap,
+			   fb_chans[count].center_freq, fb_chans[count].max_bw);
+		count++;
+	}
+
+	pwr_mode->fb_chans = fb_chans;
+	pwr_mode->num_fb_chans = count;
+	return 0;
+}
+
+static int
+qca_nl80211_parse_hw_blocked_chans_pc_chans_extn(
+	struct nlattr *pc_list,
+	struct hostapd_hw_blocklist_pwr_mode *pwr_mode)
+{
+	struct nlattr *nl;
+	struct nlattr *pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_MAX + 1];
+	struct hostapd_hw_blocklist_pc_chan *pc_chans = NULL;
+	int rem;
+	u32 count = 0;
+
+	nla_for_each_nested(nl, pc_list, rem) {
+		struct hostapd_hw_blocklist_pc_chan *new_pc_chans;
+
+		if (nla_parse_nested(pc,
+				     QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_MAX,
+				     nl, NULL)) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: Invalid HW blocked channels PC channel entry");
+			os_free(pc_chans);
+			return -EINVAL;
+		}
+
+		new_pc_chans = os_realloc_array(pc_chans, count + 1,
+						sizeof(*new_pc_chans));
+		if (!new_pc_chans) {
+			os_free(pc_chans);
+			return -ENOMEM;
+		}
+
+		pc_chans = new_pc_chans;
+		os_memset(&pc_chans[count], 0, sizeof(pc_chans[count]));
+
+		if (pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_BW]) {
+			u32 max_bw =
+				nla_get_u32(pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_BW]);
+
+			if (!nl80211_hw_blocked_chans_bw_to_mhz_extn(max_bw)) {
+				wpa_printf(MSG_ERROR,
+					   "nl80211: Invalid HW blocked channels PC max_bw %u",
+					   max_bw);
+				os_free(pc_chans);
+				return -EINVAL;
+			}
+			pc_chans[count].max_bw = max_bw;
+		}
+		if (pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_CENTER_FREQ])
+			pc_chans[count].center_freq =
+				nla_get_u16(pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_CENTER_FREQ]);
+		if (pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_PUNC_PATTERN_BITMAP])
+			/* Bitmap of puncture patterns (BIT(idx)). */
+			pc_chans[count].punc_pat_bmap =
+				nla_get_u32(pc[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PC_CHAN_PUNC_PATTERN_BITMAP]);
+		if (pc_chans[count].punc_pat_bmap &&
+		    (pc_chans[count].punc_pat_bmap &
+		     ~nl80211_hw_blocked_chans_puncture_mask_extn(
+			     pc_chans[count].max_bw))) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: Invalid HW blocked channels PC puncture-pattern bitmap 0x%x bw=%u",
+				   pc_chans[count].punc_pat_bmap,
+				   pc_chans[count].max_bw);
+			os_free(pc_chans);
+			return -EINVAL;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: HW blocked channels PC chan[%u]: center_freq=%u max_bw=%u puncture_pattern_bitmap=0x%x",
+			   count, pc_chans[count].center_freq,
+			   pc_chans[count].max_bw, pc_chans[count].punc_pat_bmap);
+		count++;
+	}
+
+	pwr_mode->pc_chans = pc_chans;
+	pwr_mode->num_pc_chans = count;
+	return 0;
+}
+
+static void
+qca_nl80211_free_hw_blocked_chans_info_extn(
+	struct hostapd_hw_blocklist_info *hw_blocklist_info)
+{
+	u8 i;
+
+	if (!hw_blocklist_info || !hw_blocklist_info->pwr_modes)
+		return;
+
+	for (i = 0; i < hw_blocklist_info->num_pwr_modes; i++) {
+		os_free(hw_blocklist_info->pwr_modes[i].fb_chans);
+		os_free(hw_blocklist_info->pwr_modes[i].pc_chans);
+	}
+
+	os_free(hw_blocklist_info->pwr_modes);
+	hw_blocklist_info->pwr_modes = NULL;
+	hw_blocklist_info->num_pwr_modes = 0;
+}
+
+static int
+qca_nl80211_handle_hw_blocked_chans_info_extn(struct i802_bss *bss,
+					      struct nlattr **attr,
+					      bool check_first_bss)
+{
+	union wpa_event_data event;
+	struct hostapd_hw_blocklist_info hw_blocklist_info;
+	struct nlattr *band_nl;
+	struct nlattr *nl;
+	struct hostapd_hw_blocklist_pwr_mode *new_pwr_modes;
+	u32 band_id;
+	u32 num_pwr_modes = 0;
+	int band_rem;
+	int rem;
+	int hw_idx;
+	int ret = 0;
+
+	if (!attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RADIO_RADIO_INDEX]) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: HW blocked channels payload missing radio index");
+		return -EINVAL;
+	}
+
+	hw_idx = nla_get_s32(attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RADIO_RADIO_INDEX]);
+	if (hw_idx < 0 || hw_idx > NL80211_WIPHY_RADIO_ID_MAX) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid HW blocked channels radio index %d",
+			   hw_idx);
+		return -EINVAL;
+	}
+	if (check_first_bss && bss != bss->drv->first_bss) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Ignore HW blocked channels payload for hw_idx %u on %s",
+			   hw_idx, bss->ifname);
+		return 0;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Handling HW blocked channels payload for hw_idx %u on %s",
+		   hw_idx, bss->ifname);
+
+	os_memset(&hw_blocklist_info, 0, sizeof(hw_blocklist_info));
+	hw_blocklist_info.hw_idx = (u8)hw_idx;
+
+	if (!attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RADIO_BAND_LIST]) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: HW blocked channels payload has no band list");
+		goto notify;
+	}
+
+	nla_for_each_nested(band_nl,
+			    attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RADIO_BAND_LIST],
+			    band_rem) {
+		struct nlattr *band[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_BAND_MAX + 1];
+
+		if (nla_parse_nested(band,
+				     QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_BAND_MAX,
+				     band_nl, NULL)) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: Invalid HW blocked channels band entry");
+			ret = -EINVAL;
+			goto fail;
+		}
+
+		if (!band[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_BAND_ID]) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: Skip HW blocked channels band entry without band ID");
+			continue;
+		}
+
+		band_id =
+			nla_get_u32(band[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_BAND_ID]);
+		if (band_id != NL80211_BAND_6GHZ) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: Ignore HW blocked channels band %u (6 GHz only)",
+				   band_id);
+			continue;
+		}
+
+		if (!band[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_BAND_PWR_MODE_LIST]) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: 6 GHz blocked channels band entry has no power-mode list");
+			continue;
+		}
+
+		nla_for_each_nested(nl,
+				    band[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_BAND_PWR_MODE_LIST],
+				    rem) {
+			struct hostapd_hw_blocklist_pwr_mode *pwr_mode;
+			struct nlattr *mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_MAX + 1];
+			u8 pwr_mode_id;
+
+			if (nla_parse_nested(mode,
+					     QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_MAX,
+					     nl, NULL)) {
+				wpa_printf(MSG_ERROR,
+					   "nl80211: Invalid HW blocked channels power-mode entry");
+				ret = -EINVAL;
+				goto fail;
+			}
+
+			if (!mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_ID]) {
+				wpa_printf(MSG_DEBUG,
+					   "nl80211: Skip HW blocked channels power-mode entry without power-mode ID");
+				continue;
+			}
+
+			new_pwr_modes = os_realloc_array(hw_blocklist_info.pwr_modes,
+							 num_pwr_modes + 1,
+							 sizeof(*new_pwr_modes));
+			if (!new_pwr_modes) {
+				ret = -ENOMEM;
+				goto fail;
+			}
+
+			hw_blocklist_info.pwr_modes = new_pwr_modes;
+			pwr_mode = &hw_blocklist_info.pwr_modes[num_pwr_modes];
+			os_memset(pwr_mode, 0, sizeof(*pwr_mode));
+			hw_blocklist_info.num_pwr_modes = num_pwr_modes + 1;
+
+			pwr_mode_id =
+				nla_get_u8(mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_ID]);
+			if (!nl80211_hw_blocked_chans_valid_pwr_mode_extn(pwr_mode_id)) {
+				wpa_printf(MSG_ERROR,
+					   "nl80211: Invalid HW blocked channels power-mode ID %u",
+					   pwr_mode_id);
+				ret = -EINVAL;
+				goto fail;
+			}
+			pwr_mode->pwr_mode_id = pwr_mode_id;
+			wpa_printf(MSG_DEBUG, "nl80211: HW blocked channels pwr_mode=%u",
+				   pwr_mode_id);
+
+			if (mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_FB_CHAN_LIST]) {
+				ret = qca_nl80211_parse_hw_blocked_chans_fb_chans_extn(
+					mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_FB_CHAN_LIST],
+					pwr_mode);
+				if (ret)
+					goto fail;
+			}
+
+			if (mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_PC_CHAN_LIST]) {
+				ret = qca_nl80211_parse_hw_blocked_chans_pc_chans_extn(
+					mode[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_PWR_MODE_PC_CHAN_LIST],
+					pwr_mode);
+				if (ret)
+					goto fail;
+			}
+
+			num_pwr_modes++;
+		}
+	}
+
+	hw_blocklist_info.num_pwr_modes = num_pwr_modes;
+
+notify:
+	os_memset(&event, 0, sizeof(event));
+	event.event_data_extn.hw_blocklist_info = hw_blocklist_info;
+	wpa_supplicant_event(bss->ctx, EVENT_HW_BLOCKED_CHANS_NOTIFY, &event);
+	qca_nl80211_free_hw_blocked_chans_info_extn(&hw_blocklist_info);
+	return 0;
+
+fail:
+	qca_nl80211_free_hw_blocked_chans_info_extn(&hw_blocklist_info);
+	return ret;
+}
+
+static int qca_nl80211_handle_hw_blocked_chans_events_extn(struct i802_bss *bss,
+							   u8 *data,
+							   size_t len,
+							   bool check_first_bss)
+{
+	struct nlattr *attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RESP_MAX + 1];
+	struct nlattr *nl;
+	int rem;
+	int ret;
+
+	if (!(data && len)) {
+		wpa_printf(MSG_ERROR, "nl80211: Invalid HW blocked channels payload");
+		return -EINVAL;
+	}
+
+	if (nla_parse(attr, QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RESP_MAX,
+		      (struct nlattr *) data, len, NULL)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to parse HW blocked channels payload attributes");
+		return -EINVAL;
+	}
+
+	if (!attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RESP_RADIO_LIST]) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: HW blocked channels payload missing radio list");
+		return -EINVAL;
+	}
+
+	nla_for_each_nested(nl, attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RESP_RADIO_LIST],
+			    rem) {
+		struct nlattr *radio_attr[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RADIO_MAX + 1];
+
+		if (nla_parse_nested(radio_attr,
+				     QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_RADIO_MAX,
+				     nl, NULL)) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: Invalid HW blocked channels radio entry");
+			return -EINVAL;
+		}
+
+		ret = qca_nl80211_handle_hw_blocked_chans_info_extn(bss, radio_attr,
+								    check_first_bss);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+int qca_nl80211_scan_done_event_extn(struct i802_bss *bss, u8 *data, size_t len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_SCAN_MAX + 1] = {0};
+	union wpa_event_data event = {};
+	struct cbs_event *cbs_evt;
+	struct nlattr *nl;
+	int rem;
+
+	cbs_evt = &event.event_data_extn.scan_results_event.cbs_event;
+	cbs_evt->scan_complete_freq = 0;
+	cbs_evt->status = 0;
+	cbs_evt->link_id = 0;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR, "nl80211: bss is NULL!");
+		return -EINVAL;
+	}
+
+	if (!(data && len)) {
+		wpa_printf(MSG_ERROR, "nl80211: Invalid data for scan done event");
+		return -EINVAL;
+	}
+
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_SCAN_MAX,
+		      (struct nlattr *) data, len, NULL)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to parse scan done attributes");
+		return -EINVAL;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SCAN_LINK_ID]) {
+		cbs_evt->link_id =
+			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SCAN_LINK_ID]);
+		bss->bss_extn.scan_link_extn =
+			nl80211_get_link(bss, cbs_evt->link_id);
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SCAN_FREQUENCIES]) {
+		nla_for_each_nested(nl,
+				    tb[QCA_WLAN_VENDOR_ATTR_SCAN_FREQUENCIES],
+				    rem) {
+			if (nla_len(nl) >= (int) sizeof(u32)) {
+				cbs_evt->scan_complete_freq
+					= nla_get_u32(nl);
+				break;
+			}
+		}
+	}
+
+	if (!cbs_evt->scan_complete_freq) {
+		wpa_printf(MSG_DEBUG, "nl80211: CBS scan complete freq is not set");
+		return -EINVAL;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SCAN_STATUS]) {
+			cbs_evt->status = (enum scan_status)
+				nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SCAN_STATUS]);
+	}
+
+	wpa_printf(MSG_INFO,
+		   "nl80211: scan done event: scan_complete_freq=%u status=%u link_id=%u",
+		   cbs_evt->scan_complete_freq,
+		   cbs_evt->status, cbs_evt->link_id);
+
+	wpa_supplicant_event(bss->ctx, EVENT_SCAN_RESULTS_EXTN, &event);
+	return 0;
+}
+
+void *wpa_driver_nl80211_get_survey_extn(struct i802_bss *bss, void *ctx)
+{
+	if (!bss)
+		return ctx;
+
+	if (bss->bss_extn.scan_link_extn && bss->bss_extn.scan_link_extn->ctx) {
+		ctx = bss->bss_extn.scan_link_extn->ctx;
+		bss->bss_extn.scan_link_extn = NULL;
+		wpa_printf(MSG_DEBUG, "nl80211: survey results processing for scan_link: %p", ctx);
+	}
+
+	return ctx;
+}
+
+static int hw_blocked_chans_process_event_extn(struct nl_msg *msg, void *arg)
+{
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	u8 *data;
+	size_t len;
+	struct i802_bss *bss = arg;
+	int ret;
+
+	ret = nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+			genlmsg_attrlen(gnlh, 0), NULL);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Failed to parse HW blocked channels attributes: %d",
+			   ret);
+		return NL_SKIP;
+	}
+
+	if (!tb[NL80211_ATTR_VENDOR_DATA]) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: No vendor data in HW blocked channels reply");
+		return NL_SKIP;
+	}
+
+	data = nla_data(tb[NL80211_ATTR_VENDOR_DATA]);
+	len = nla_len(tb[NL80211_ATTR_VENDOR_DATA]);
+	ret = qca_nl80211_handle_hw_blocked_chans_events_extn(bss, data, len, false);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Failed to handle HW blocked channels reply: %d",
+			   ret);
+	}
+
+	return NL_SKIP;
+}
+
+static int qca_nl80211_handle_wiphy_config_evt_extn(struct i802_bss *bss,
+						    u8 *data, size_t len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {0};
+	union wpa_event_data event;
+	u8 radio_idx = 0;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR, "nl80211: bss is NULL!");
+		return -EINVAL;
+	}
+
+	if (!(data && len)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid data for wiphy config event");
+		return -EINVAL;
+	}
+
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+		      (struct nlattr *)data, len, NULL)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to parse wiphy config event attributes");
+		return -EINVAL;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE])
+		return 0;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX])
+		radio_idx = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX]);
+
+	if (bss != bss->drv->first_bss) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Ignore AGILE_CAPABLE for radio_idx %u on %s",
+			   radio_idx, bss->ifname);
+		return 0;
+	}
+
+	os_memset(&event, 0, sizeof(event));
+	event.event_data_extn.agile_capable.adfs_capable =
+		nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE]);
+	event.event_data_extn.agile_capable.radio_idx = radio_idx;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: AGILE_CAPABLE event: radio_idx=%u adfs_capable=%d",
+		   radio_idx, event.event_data_extn.agile_capable.adfs_capable);
+
+	wpa_supplicant_event(bss->drv->ctx, EVENT_AGILE_CAPABLE, &event);
+	return 0;
+}
+
 int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 				  u32 subcmd, u8 *data, size_t len)
 {
@@ -292,9 +986,21 @@ int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 	case QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION:
 		qca_nl80211_handle_wifi_config_evt_extn(bss, data, len);
 		break;
+	case QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION:
+		qca_nl80211_handle_wiphy_config_evt_extn(bss, data, len);
+		break;
 	case QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG:
 		qca_nl80211_handle_dcs_config_evt_extn(bss, data, len);
 		break;
+	case QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS:
+		qca_nl80211_handle_hw_blocked_chans_events_extn(bss, data, len,
+								true);
+		break;
+#ifndef CONFIG_DRIVER_NL80211_QCA
+	case QCA_NL80211_VENDOR_SUBCMD_SCAN_DONE:
+		qca_nl80211_scan_done_event_extn(bss, data, len);
+		break;
+#endif
 	default:
 		return -EINVAL;
 	}
@@ -384,6 +1090,75 @@ int qca_nl80211_handle_dcs_config_evt_extn(struct i802_bss *bss,
 	wpa_supplicant_event(bss->ctx, EVENT_DCS_INTF, &event);
 
 	return 0;
+}
+
+int nl80211_fetch_hw_blocked_chans_extn(void *priv, int radio_idx)
+{
+	struct nl_msg *msg;
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nlattr *params;
+	int ret = -ENOBUFS;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Fetching HW blocked channels (radio_idx=%d)",
+		   radio_idx);
+	if (radio_idx < -1)
+		return -EINVAL;
+
+	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR)) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS))
+		goto error;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto error;
+	if (radio_idx >= 0 &&
+	    nla_put_s32(msg, QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_REQ_RADIO_INDEX,
+			radio_idx))
+		goto error;
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_resp(drv, msg, hw_blocked_chans_process_event_extn, bss);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: HW blocked channels fetch failed err=%d (%s)",
+			   ret, strerror(-ret));
+	}
+
+	return ret;
+
+error:
+	nlmsg_free(msg);
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Could not fetch HW blocked channels on radio: %d",
+		   radio_idx);
+	return ret;
+}
+
+bool nl80211_is_6ghz_hw_blocked_chans_supported_extn(void *priv)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+
+	return drv->vendor_6ghz_hw_blocked_chans_support;
+}
+
+void wiphy_info_qca_vendor_command_extn(struct wpa_driver_nl80211_data *drv,
+					const struct nl80211_vendor_cmd_info *vinfo)
+{
+	if (!drv || !vinfo || vinfo->vendor_id != OUI_QCA)
+		return;
+
+	switch (vinfo->subcmd) {
+	case QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS:
+		drv->vendor_6ghz_hw_blocked_chans_support = 1;
+		break;
+	default:
+		break;
+	}
 }
 
 int wpa_driver_nl80211_vendor_bss_addr(void *priv, u8 radio_idx, u8 bss_id,
@@ -600,6 +1375,104 @@ error:
 	return -1;
 }
 
+/**
+ * nl80211_notify_radar_detected_extn - Notify cfg80211 of radar detection
+ * via NL80211_CMD_NOTIFY_RADAR for a channel described by hostapd_freq_params.
+ *
+ * Called from DFS extn NOL processing path when an uplink CSA NOL IE
+ * is processed, so that cfg80211 marks the channel DFS_UNAVAILABLE and
+ * propagates the event to all registered radios.
+ *
+ * @priv: private driver data (struct i802_bss *)
+ * @freq: channel parameters including frequency, bandwidth and center freqs
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+int nl80211_notify_radar_detected_extn(void *priv,
+				      struct hostapd_freq_params *freq)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	int ret;
+
+	if (!bss || !freq) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid parameters for radar notification");
+		return -1;
+	}
+
+	drv = bss->drv;
+	if (!drv) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Driver data not available");
+		return -1;
+	}
+
+	if (freq->freq <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid frequency %d for radar notification",
+			   freq->freq);
+		return -1;
+	}
+
+	if (!(drv->capa.flags & WPA_DRIVER_FLAGS_RADAR)) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Driver does not support radar detection");
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Notify radar detected on %d MHz (ht_enabled=%d, vht_enabled=%d, bandwidth=%d MHz, cf1=%d MHz, cf2=%d MHz)",
+		   freq->freq, freq->ht_enabled, freq->vht_enabled,
+		   freq->bandwidth, freq->center_freq1, freq->center_freq2);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_NOTIFY_RADAR);
+	if (!msg) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to allocate message for radar notification");
+		return -1;
+	}
+
+	/*
+	 * Build frequency attributes directly — nl80211_put_freq_params() is
+	 * a static function in driver_nl80211.c and cannot be called here.
+	 * For NOL IE processing we always notify about individual 20 MHz
+	 * subchannels, so the attributes are straightforward.
+	 */
+	if (nla_put_u32(msg, NL80211_ATTR_WIPHY_FREQ, freq->freq) ||
+	    nla_put_u32(msg, NL80211_ATTR_CHANNEL_WIDTH, NL80211_CHAN_WIDTH_20) ||
+	    nla_put_u32(msg, NL80211_ATTR_CENTER_FREQ1, freq->freq)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to add frequency attributes");
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	if (nl80211_link_valid(bss->valid_links, freq->link_id)) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Radar notification on link_id=%d",
+			   freq->link_id);
+		if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, freq->link_id)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+	}
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret == 0) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Successfully notified radar on %d MHz",
+			   freq->freq);
+		return 0;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Failed to notify radar detection: %d (%s)",
+		   ret, strerror(-ret));
+	return -1;
+}
+
 static int rropinfo_handler(struct nl_msg *msg, void *arg)
 {
 	struct nlattr *tb[NL80211_ATTR_MAX + 1];
@@ -779,6 +1652,66 @@ error:
 	return -1;
 }
 
+/**
+ * nl80211_set_allow_3addr_mc_extn - Set ALLOW_3ADDR_MC via vendor command
+ * @priv: Pointer to struct i802_bss (driver private data)
+ * @val: Value to set (0 = disallow, 1 = allow 3-address multicast)
+ *
+ * Sends QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION with
+ * QCA_WLAN_VENDOR_ATTR_CONFIG_ALLOW_3ADDR_MC attribute.
+ *
+ * Returns: 0 on success, negative error code on failure
+ */
+int nl80211_set_allow_3addr_mc_extn(void *priv, u8 val)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	struct nlattr *params;
+	int ret;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR, "ALLOW_3ADDR_MC: BSS not initialized");
+		return -1;
+	}
+
+	drv = bss->drv;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_ALLOW_3ADDR_MC,
+		       val))
+		goto fail;
+
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "ALLOW_3ADDR_MC: vendor command failed: %s (%d)",
+			   strerror(-ret), ret);
+		return ret;
+	}
+
+	wpa_printf(MSG_DEBUG, "ALLOW_3ADDR_MC: set to %u", val);
+	return 0;
+
+fail:
+	wpa_printf(MSG_ERROR,
+		   "ALLOW_3ADDR_MC: Failed to build vendor command");
+	nlmsg_free(msg);
+	return -1;
+}
+
 int hostapd_drv_mark_vap_submode(struct hostapd_data *hapd,
 				 enum qca_wlan_vendor_vap_submode_type submode)
 {
@@ -893,6 +1826,60 @@ fail:
 	return -ENOBUFS;
 }
 
+/**
+ * nl80211_set_allow_scan_on_dfs_chan_extn - Enable/disable scanning on DFS
+ *	channels in the mac80211 kernel layer.
+ *
+ * Uses QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION with:
+ *   GENERIC_COMMAND = QCA_WLAN_VENDOR_WIFI_PARAM_ALLOW_SCAN_ON_DFS_CHAN
+ *   GENERIC_DATA    = u8 (1 = enable, 0 = disable)
+ *
+ * Returns: 0 on success, negative on failure.
+ */
+int nl80211_set_allow_scan_on_dfs_chan_extn(void *priv, bool enable)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	u8 val = enable ? 1 : 0;
+	struct nlattr *params;
+	struct nl_msg *msg;
+	int ret;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Set allow_scan_on_dfs_chan = %d", val);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND,
+			QCA_WLAN_VENDOR_WIFI_PARAM_ALLOW_SCAN_ON_DFS_CHAN) ||
+	    nla_put(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA,
+		    sizeof(val), &val)) {
+		nla_nest_end(msg, params);
+		goto fail;
+	}
+
+	nla_nest_end(msg, params);
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: allow_scan_on_dfs_chan set failed: %d", ret);
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
 static int nl80211_get_he_mcs_12_13_handler(struct nl_msg *msg, void *arg)
 {
 	u16 *radio_cap = arg;
@@ -917,6 +1904,114 @@ static int nl80211_get_he_mcs_12_13_handler(struct nl_msg *msg, void *arg)
 
 	*radio_cap = *(u16 *)nla_data(data_attr);
 	return NL_SKIP;
+}
+
+int wpa_driver_nl80211_cbs_trigger_scan(void *priv,
+				const struct cbs_params_extn *params,
+				int *freq_list, int link_id)
+{
+	struct nl_msg *msg = NULL;
+	struct nlattr *attr = NULL;
+	struct nlattr *cbs = NULL;
+	struct i802_bss *bss;
+	struct wpa_driver_nl80211_data *drv;
+	int ret = -ENOBUFS;
+
+	if (!priv || !params) {
+		wpa_printf(MSG_ERROR, "nl80211: Invalid args for CBS trigger scan");
+		return -EINVAL;
+	}
+
+	bss = priv;
+	drv = bss->drv;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_TRIGGER_SCAN)) {
+		goto fail;
+	}
+
+	attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!attr)
+		goto fail;
+
+	cbs = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN);
+	if (!cbs)
+		goto fail;
+
+	if (params->dwellsplit &&
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_DWELL,
+			params->dwellsplit))
+		goto fail;
+
+	if (params->dwellrest &&
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_DWELLREST,
+			params->dwellrest))
+		goto fail;
+
+	if (params->cbs_enable &&
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_TYPE,
+		       params->cbs_enable))
+		goto fail;
+
+	nla_nest_end(msg, cbs);
+
+	if (params->resttime &&
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_SCAN_RESTTIME,
+			params->resttime))
+		goto fail;
+
+	if (params->waittime &&
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_SCAN_WAITTIME,
+			params->waittime))
+		goto fail;
+
+	if (freq_list) {
+		struct nlattr *freqs;
+		int i;
+
+		freqs = nla_nest_start(msg,
+				       QCA_WLAN_VENDOR_ATTR_SCAN_FREQUENCIES);
+		if (!freqs)
+			goto fail;
+		for (i = 0; freq_list[i]; i++) {
+			if (nla_put_u32(msg, i + 1, freq_list[i]))
+				goto fail;
+		}
+		nla_nest_end(msg, freqs);
+	}
+
+	if (params->totaldwell &&
+	    nla_put_u64(msg, QCA_WLAN_VENDOR_ATTR_SCAN_DWELL_TIME,
+			params->totaldwell))
+		goto fail;
+
+	nla_nest_end(msg, attr);
+
+	if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id))
+		goto fail;
+
+	ret = send_and_recv_cmd(drv, msg);
+	msg = NULL;
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: CBS trigger scan vendor cmd failed: %s (%d)",
+			   strerror(-ret), ret);
+		return ret;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: CBS trigger scan sent: cbs_enable=%d resttime=%d dwellrest=%d waittime=%d dwellsp=%d totaldwell=%d",
+		   params->cbs_enable, params->resttime, params->dwellrest,
+		   params->waittime, params->dwellsplit, params->totaldwell);
+	return 0;
+
+fail:
+	if (msg)
+		nlmsg_free(msg);
+	return ret;
 }
 
 int nl80211_get_he_mcs_12_13_extn(void *priv, u8 radio_idx, u16 *radio_cap)
@@ -964,6 +2059,75 @@ int nl80211_get_he_mcs_12_13_extn(void *priv, u8 radio_idx, u16 *radio_cap)
 
 	*radio_cap = cap;
 	return 0;
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
+int nl80211_disable_opclass_chans_extn(void *priv, u8 link_id, u8 is_disable, u8 opclass,
+				       const u8 *chan_list, size_t chan_count)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	struct nlattr *params, *chan_attr;
+	size_t idx;
+	int ret;
+
+	if (!bss || !bss->drv || !chan_list || !chan_count ||
+	    (is_disable != 0 && is_disable != 1) || !opclass)
+		return -EINVAL;
+
+	drv = bss->drv;
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_REG_PARAMS))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_REG_PARAMS_CMD_EXTN,
+		       QCA_WLAN_VENDOR_REG_PARAMS_DISABLE_OPCLASS_CHANS_EXTN) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_REG_PARAMS_LINKID_EXTN, link_id) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_REG_PARAMS_DISABLE_EXTN, is_disable) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_REG_PARAMS_OPCLASS_EXTN, opclass))
+		goto fail_params;
+
+	chan_attr = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_REG_PARAMS_CHAN_LIST_EXTN);
+	if (!chan_attr)
+		goto fail_params;
+
+	for (idx = 0; idx < chan_count; idx++) {
+		if (nla_put_u8(msg, idx + 1, chan_list[idx]))
+			goto fail_chan;
+	}
+
+	nla_nest_end(msg, chan_attr);
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: DISABLE_OPCLASS_CHANS failed: %d (%s) disable=%u opclass=%u count=%zu",
+			   ret, strerror(-ret), is_disable, opclass, chan_count);
+		return ret;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: DISABLE_OPCLASS_CHANS sent disable=%u opclass=%u count=%zu",
+		   is_disable, opclass, chan_count);
+	return 0;
+
+fail_chan:
+	nla_nest_end(msg, chan_attr);
+fail_params:
+	nla_nest_end(msg, params);
 fail:
 	nlmsg_free(msg);
 	return -ENOBUFS;

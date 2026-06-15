@@ -11,13 +11,16 @@
 #include "cmn.h"
 #include "utils/os.h"
 #include "common/ieee802_11_defs.h"
+#include "common/hw_features_common.h"
 #include "ap/ap_config.h"
 #include "ap/beacon.h"
 #include "ap/dfs.h"
 #include "ap/hw_features.h"
 #include "ap/ap_drv_ops.h"
 #include "hostapd_rptr_extn.h"
+#include "block_channel.h"
 #include "cmn.h"
+#include "cbs.h"
 #include "ap/ieee802_11.h"
 #include "ap/sta_info.h"
 
@@ -56,7 +59,7 @@ static int hostapd_ctrl_iface_set_ht40intol_extn(struct hostapd_data *hapd, char
 	long value;
 	bool user_ht40intol, current_ht40intol;
 
-	if (!hapd || !hapd->iconf || !pos)
+	if (!hapd || !hapd->iconf || !hapd->conf || !pos)
 		return ret;
 
 	value = strtol(pos, &end, 10);
@@ -66,16 +69,17 @@ static int hostapd_ctrl_iface_set_ht40intol_extn(struct hostapd_data *hapd, char
 	}
 
 	user_ht40intol = (value == 1);
-	current_ht40intol = !!(hapd->iconf->ht_capab & HT_CAP_INFO_40MHZ_INTOLERANT);
+	current_ht40intol = hapd->conf->bss_extn.ht40_intol.is_overridden ?
+			    hapd->conf->bss_extn.ht40_intol.value :
+			    !!(hapd->iconf->ht_capab & HT_CAP_INFO_40MHZ_INTOLERANT);
+
+	hapd->conf->bss_extn.ht40_intol.is_overridden = true;
+	hapd->conf->bss_extn.ht40_intol.value = user_ht40intol;
+
 	if (current_ht40intol == user_ht40intol) {
 		wpa_printf(MSG_DEBUG, "Intolerance is already %d\n", current_ht40intol);
 		return 0;
 	}
-
-	if (user_ht40intol)
-		hapd->iconf->ht_capab |= HT_CAP_INFO_40MHZ_INTOLERANT;
-	else
-		hapd->iconf->ht_capab &= ~HT_CAP_INFO_40MHZ_INTOLERANT;
 
 	ret = ieee802_11_update_beacons(hapd->iface);
 	if (ret)
@@ -88,12 +92,17 @@ static int hostapd_ctrl_iface_get_ht40intol_extn(struct hostapd_data *hapd, char
 						 size_t buflen)
 {
 	int ret = -1;
+	bool ht40intol;
 
-	if (!hapd || !hapd->iconf)
+	if (!hapd || !hapd->iconf || !hapd->conf || !buf)
 		return ret;
 
+	ht40intol = hapd->conf->bss_extn.ht40_intol.is_overridden ?
+		    hapd->conf->bss_extn.ht40_intol.value :
+		    !!(hapd->iconf->ht_capab & HT_CAP_INFO_40MHZ_INTOLERANT);
+
 	ret = os_snprintf(buf, buflen, "ht40intol: %d\n",
-			  !!(hapd->iconf->ht_capab & HT_CAP_INFO_40MHZ_INTOLERANT));
+			  ht40intol);
 
 	return ret;
 }
@@ -305,7 +314,8 @@ static int hostapd_ctrl_iface_set_puren_extn(struct hostapd_data *hapd, char *po
 		return -1;
 	}
 
-	hapd->iconf->require_ht = (int)user_input;
+	hapd->conf->bss_extn.puren_bss.is_overridden = true;
+	hapd->conf->bss_extn.puren_bss.value = (user_input == 1);
 
 	return 0;
 }
@@ -319,6 +329,8 @@ static int hostapd_ctrl_iface_get_puren_extn(struct hostapd_data *hapd,
 		return ret;
 
 	ret = os_snprintf(buf, buflen, "puren %d\n",
+			  hapd->conf->bss_extn.puren_bss.is_overridden ?
+			  hapd->conf->bss_extn.puren_bss.value :
 			  hapd->iconf->require_ht);
 
 	return ret;
@@ -370,6 +382,78 @@ static int hostapd_ctrl_iface_get_disablecoexist_extn(struct hostapd_data *hapd,
 	ret = os_snprintf(buf, buflen, "disablecoexist %d\n",
 			  !!(hapd->iconf->no_ht_coex ||
 			     !hapd->iconf->obss_interval));
+
+	return ret;
+}
+
+static int hostapd_ctrl_iface_set_pure11ac_extn(struct hostapd_data *hapd, char *pos)
+{
+	char *end;
+	long user_input;
+
+	if (!hapd || !hapd->iconf || !hapd->conf || !pos)
+		return -1;
+
+	user_input = strtol(pos, &end, 10);
+	if (pos == end || *end != '\0' || user_input < 0 || user_input > 1) {
+		wpa_printf(MSG_ERROR, "Invalid input for set_pure11ac.\n");
+		return -1;
+	}
+
+	hapd->conf->bss_extn.pure11ac_bss.is_overridden = true;
+	hapd->conf->bss_extn.pure11ac_bss.value = (user_input == 1);
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_pure11ac_extn(struct hostapd_data *hapd,
+						char *buf, size_t buflen)
+{
+	int ret = -1;
+
+	if (!hapd || !hapd->conf || !buf)
+		return ret;
+
+	ret = os_snprintf(buf, buflen, "pure11ac %d\n",
+			  hapd->conf->bss_extn.pure11ac_bss.is_overridden ?
+			  hapd->conf->bss_extn.pure11ac_bss.value :
+			  hapd->iconf->require_vht);
+
+	return ret;
+}
+
+static int hostapd_ctrl_iface_set_pure11ax_extn(struct hostapd_data *hapd, char *pos)
+{
+	char *end;
+	long user_input;
+
+	if (!hapd || !hapd->iconf || !hapd->conf || !pos)
+		return -1;
+
+	user_input = strtol(pos, &end, 10);
+	if (pos == end || *end != '\0' || user_input < 0 || user_input > 1) {
+		wpa_printf(MSG_ERROR, "Invalid input for set_pure11ax.\n");
+		return -1;
+	}
+
+	hapd->conf->bss_extn.pure11ax_bss.is_overridden = true;
+	hapd->conf->bss_extn.pure11ax_bss.value = (user_input == 1);
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_pure11ax_extn(struct hostapd_data *hapd,
+						char *buf, size_t buflen)
+{
+	int ret = -1;
+
+	if (!hapd || !hapd->conf || !buf)
+		return ret;
+
+	ret = os_snprintf(buf, buflen, "pure11ax %d\n",
+			  hapd->conf->bss_extn.pure11ax_bss.is_overridden ?
+			  hapd->conf->bss_extn.pure11ax_bss.value :
+			  hapd->iconf->require_he);
 
 	return ret;
 }
@@ -599,6 +683,66 @@ static int hostapd_ctrl_iface_get_country_ie_extn(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_opclass_tbl_idx_extn(struct hostapd_data *hapd,
+							const char *cmd)
+{
+	char *end;
+	unsigned long idx;
+	u8 old_idx;
+
+	if (!hapd || !hapd->iconf || !cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+	if (*cmd == '\0') {
+		wpa_printf(MSG_ERROR, "CTRL: SET_OPCLASS_TBL_IDX: empty value");
+		return -1;
+	}
+
+	errno = 0;
+	idx = strtoul(cmd, &end, 10);
+	while (end && *end == ' ')
+		end++;
+	if (errno != 0 || end == cmd || (end && *end != '\0') ||
+	    idx > OPCLS_TAB_IDX_MAX) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_OPCLASS_TBL_IDX: invalid value '%s' (expected 0-%d)",
+			   cmd, OPCLS_TAB_IDX_MAX);
+		return -1;
+	}
+
+	old_idx = hapd->iconf->conf_extn.opclass_tbl_idx;
+	if (old_idx == (u8) idx)
+		return 0;
+
+	hapd->iconf->conf_extn.opclass_tbl_idx = (u8) idx;
+	if (ieee802_11_update_beacons(hapd->iface) < 0) {
+		hapd->iconf->conf_extn.opclass_tbl_idx = old_idx;
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG, "CTRL: SET_OPCLASS_TBL_IDX set to %lu", idx);
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_opclass_tbl_idx_extn(struct hostapd_data *hapd,
+							char *reply,
+							size_t reply_size)
+{
+	int ret;
+
+	if (!hapd || !hapd->iconf)
+		return -1;
+
+	ret = os_snprintf(reply, reply_size, "%u\n",
+			  hapd->iconf->conf_extn.opclass_tbl_idx);
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
 static int hostapd_ctrl_iface_set_ecsa_opclass_extn(struct hostapd_data *hapd,
 						    const char *cmd)
 {
@@ -647,6 +791,366 @@ static int hostapd_ctrl_iface_get_ecsa_opclass_extn(struct hostapd_data *hapd,
 		return -1;
 
 	return res;
+}
+
+/* List of 40 MHz bonded channel frequencies */
+static const struct bonded_channel_freq_extn bonded_chan_40mhz_list_freq_extn[] = {
+	{5180, 5200},
+	{5220, 5240},
+	{5260, 5280},
+	{5300, 5320},
+	{5500, 5520},
+	{5540, 5560},
+	{5580, 5600},
+	{5620, 5640},
+	{5660, 5680},
+	{5700, 5720},
+	{5745, 5765},
+	{5785, 5805},
+	{5825, 5845},
+	{5865, 5885},
+	{5955, 5975},
+	{5995, 6015},
+	{6035, 6055},
+	{6075, 6095},
+	{6115, 6135},
+	{6155, 6175},
+	{6195, 6215},
+	{6235, 6255},
+	{6275, 6295},
+	{6315, 6335},
+	{6355, 6375},
+	{6395, 6415},
+	{6435, 6455},
+	{6475, 6495},
+	{6515, 6535},
+	{6555, 6575},
+	{6595, 6615},
+	{6635, 6655},
+	{6675, 6695},
+	{6715, 6735},
+	{6755, 6775},
+	{6795, 6815},
+	{6835, 6855},
+	{6875, 6895},
+	{6915, 6935},
+	{6955, 6975},
+	{6995, 7015},
+	{7035, 7055},
+	{7075, 7095}
+};
+
+/**
+ * hostapd_ctrl_iface_get_sec_offset_from_bonded_40mhz_freq_extn - Get HT40 secondary
+ * offset from bonded pair table
+ *
+ * Looks up @freq in the bonded 40 MHz pair table
+ * (bonded_chan_40mhz_list_freq_extn).
+ *
+ * Return: 1 if @freq matches the pair start frequency (HT40+),
+ * -1 if @freq matches the pair end frequency (HT40-),
+ * 0 if @freq is not present in the bonded 40 MHz list.
+ */
+static int
+hostapd_ctrl_iface_get_sec_offset_from_bonded_40mhz_freq_extn(int freq)
+{
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(bonded_chan_40mhz_list_freq_extn); i++) {
+		if (freq == bonded_chan_40mhz_list_freq_extn[i].start_freq)
+			return 1;
+		if (freq == bonded_chan_40mhz_list_freq_extn[i].end_freq)
+			return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * Keep SET_CHANNEL center frequency calculations aligned with
+ * mac80211.sh:mac80211_get_seg0().
+ */
+static int
+hostapd_ctrl_iface_get_seg0_idx_extn(int freq, int channel,
+				     enum oper_chan_width oper_chwidth,
+				     int secondary_channel)
+{
+	bool is_6ghz = is_6ghz_freq(freq);
+	bool is_6ghz_chan2 = is_6ghz && freq == FREQ_6GHZ_CHAN2;
+
+	switch (oper_chwidth) {
+	case CONF_OPER_CHWIDTH_USE_HT:
+		/* 20 MHz does not use seg0 index; derive only for 40 MHz HT. */
+		if (!secondary_channel)
+			break;
+
+		if (is_6ghz && !is_6ghz_chan2)
+			return ((channel / 4) % 2) ? channel - 2 : channel + 2;
+		if (is_24ghz_freq(freq) && freq != FREQ_2GHZ_CHAN14)
+			return channel < 7 ? channel + 2 : channel - 2;
+		if (!is_6ghz_chan2)
+			return ((channel / 4) % 2) ? channel + 2 : channel - 2;
+		break;
+	case CONF_OPER_CHWIDTH_80MHZ:
+	case CONF_OPER_CHWIDTH_80P80MHZ:
+		if (is_6ghz && !is_6ghz_chan2) {
+			switch ((channel / 4) % 4) {
+			case 0:
+				return channel + 6;
+			case 1:
+				return channel + 2;
+			case 2:
+				return channel - 2;
+			case 3:
+				return channel - 6;
+			}
+		} else if (!is_6ghz_chan2) {
+			switch ((channel / 4) % 4) {
+			case 1:
+				return channel + 6;
+			case 2:
+				return channel + 2;
+			case 3:
+				return channel - 2;
+			case 0:
+				return channel - 6;
+			}
+		}
+		break;
+	case CONF_OPER_CHWIDTH_160MHZ:
+		if (is_6ghz && !is_6ghz_chan2) {
+			switch (channel) {
+			case 1: case 5: case 9: case 13: case 17: case 21: case 25: case 29:
+				return 15;
+			case 33: case 37: case 41: case 45: case 49: case 53: case 57: case 61:
+				return 47;
+			case 65: case 69: case 73: case 77: case 81: case 85: case 89: case 93:
+				return 79;
+			case 97: case 101: case 105: case 109: case 113: case 117: case 121: case 125:
+				return 111;
+			case 129: case 133: case 137: case 141: case 145: case 149: case 153: case 157:
+				return 143;
+			case 161: case 165: case 169: case 173: case 177: case 181: case 185: case 189:
+				return 175;
+			case 193: case 197: case 201: case 205: case 209: case 213: case 217: case 221:
+				return 207;
+			}
+		} else if (!is_6ghz_chan2) {
+			switch (channel) {
+			case 36: case 40: case 44: case 48: case 52: case 56: case 60: case 64:
+				return 50;
+			case 100: case 104: case 108: case 112: case 116: case 120: case 124: case 128:
+				return 114;
+			case 149: case 153: case 157: case 161: case 165: case 169: case 173: case 177:
+				return 163;
+			}
+		}
+		break;
+	case CONF_OPER_CHWIDTH_320MHZ:
+		if (is_6ghz && !is_6ghz_chan2) {
+			switch (channel) {
+			case 1: case 5: case 9: case 13: case 17: case 21: case 25: case 29:
+			case 33: case 37: case 41: case 45:
+				return 31;
+			case 49: case 53: case 57: case 61: case 65: case 69: case 73: case 77:
+				return 63;
+			case 81: case 85: case 89: case 93: case 97: case 101: case 105: case 109:
+				return 95;
+			case 113: case 117: case 121: case 125: case 129: case 133: case 137: case 141:
+				return 127;
+			case 145: case 149: case 153: case 157: case 161: case 165: case 169: case 173:
+				return 159;
+			case 177: case 181: case 185: case 189: case 193: case 197: case 201: case 205:
+			case 209: case 213: case 217: case 221:
+				return 191;
+			}
+		} else if (is_5ghz_freq(freq) &&
+			   freq >= FREQ_5GHZ_240MHZ_START &&
+			   freq <= FREQ_5GHZ_240MHZ_END) {
+			return 130;
+		}
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static int
+hostapd_ctrl_iface_get_sec_offset_extn(int freq, int channel)
+{
+	if (is_5ghz_freq(freq) || is_6ghz_freq(freq))
+		return hostapd_ctrl_iface_get_sec_offset_from_bonded_40mhz_freq_extn(freq);
+
+	if (is_24ghz_freq(freq)) {
+		if (channel < IEEE_2GHZ_CHAN_MIN ||
+		    channel > IEEE_2GHZ_CHAN_MAX)
+			return 0;
+
+		/* Keep deterministic HT40 split used in set-channel flow. */
+		return channel < IEEE_2GHZ_CHAN_SEC_SPLIT ? 1 : -1;
+	}
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_set_channel_extn(struct hostapd_data *hapd,
+					       const char *cmd)
+{
+#ifdef NEED_AP_MLME
+	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_hw_modes *mode;
+	struct hostapd_channel_data *chan;
+	struct hostapd_freq_params freq_params;
+	enum oper_chan_width oper_chwidth;
+	int sec_offset, old_sec_offset, bandwidth, seg0_calc;
+	u8 seg0_idx, seg1_idx;
+	u16 punct_bitmap;
+	char *end;
+	long channel;
+	int freq;
+	int ret;
+
+	channel = strtol(cmd, &end, 10);
+	if (cmd == end || channel <= 0 || channel > 255) {
+		wpa_printf(MSG_ERROR, "CTRL: SET_CHANNEL: Invalid channel number");
+		return -1;
+	}
+
+	while (*end == ' ' || *end == '\t')
+		end++;
+	if (*end != '\0') {
+		wpa_printf(MSG_ERROR, "CTRL: SET_CHANNEL: Unexpected extra arguments");
+		return -1;
+	}
+
+	if (!iface || !iface->current_mode) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_CHANNEL: Interface mode not initialized");
+		return -1;
+	}
+
+	mode = iface->current_mode;
+	chan = hw_get_channel_chan(mode, channel, &freq);
+	if (!chan || !chan_pri_allowed(chan)) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_CHANNEL: Channel %ld is not supported", channel);
+		return -1;
+	}
+
+	if (!chan_in_current_hw_info(iface->current_hw_info, chan)) {
+		if (iface->current_hw_info) {
+			wpa_printf(MSG_ERROR,
+				   "CTRL: SET_CHANNEL: Channel %ld (freq=%d) is outside current radio[%d] range [%d, %d]",
+				   channel, freq, iface->current_hw_info->hw_idx,
+				   iface->current_hw_info->start_freq,
+				   iface->current_hw_info->end_freq);
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "CTRL: SET_CHANNEL: Channel %ld (freq=%d) is not supported by current radio",
+				   channel, freq);
+		}
+		return -1;
+	}
+
+	old_sec_offset = iface->conf->secondary_channel;
+	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	bandwidth = hostapd_get_width_from_oper_chwidth_extn(oper_chwidth,
+							     old_sec_offset);
+	seg0_calc = hostapd_ctrl_iface_get_seg0_idx_extn(freq, channel,
+							 oper_chwidth,
+							 iface->conf->secondary_channel);
+	if (bandwidth > 20) {
+		sec_offset = hostapd_ctrl_iface_get_sec_offset_extn(freq, channel);
+		if (bandwidth == 40 && (!sec_offset)) {
+			wpa_printf(MSG_ERROR,
+				   "CTRL: SET_CHANNEL: Failed to derive sec_offset");
+			return -1;
+		}
+
+		if (!seg0_calc) {
+			wpa_printf(MSG_ERROR,
+				   "CTRL: SET_CHANNEL: Failed to derive seg0");
+			return -1;
+		}
+	} else {
+		sec_offset = 0;
+	}
+	seg0_idx = (u8) seg0_calc;
+	seg1_idx = oper_chwidth == CONF_OPER_CHWIDTH_80P80MHZ ?
+		   hostapd_get_oper_centr_freq_seg1_idx(iface->conf) : 0;
+	punct_bitmap = hostapd_get_punct_bitmap(hapd);
+	ret = hostapd_set_freq_params(&freq_params,
+				      iface->conf->hw_mode,
+				      freq, channel,
+				      iface->conf->enable_edmg,
+				      iface->conf->edmg_channel,
+				      iface->conf->ieee80211n,
+				      iface->conf->ieee80211ac,
+				      iface->conf->ieee80211ax,
+				      iface->conf->ieee80211be,
+				      iface->conf->ieee80211bn,
+				      sec_offset,
+				      oper_chwidth,
+				      seg0_idx,
+				      seg1_idx,
+				      iface->conf->vht_capab,
+				      mode ? &mode->he_capab[IEEE80211_MODE_AP] : NULL,
+				      mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
+				      mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
+				      punct_bitmap,
+				      hapd->iconf->he_6ghz_reg_pwr_type,
+				      iface->conf->bandwidth_device,
+				      iface->conf->center_freq_device);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_CHANNEL: Failed to build freq parameters");
+		return -1;
+	}
+
+	ret = hostapd_disable_iface(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "CTRL: SET_CHANNEL: Failed to disable interface");
+		return -1;
+	}
+
+	ret = hostapd_change_config_freq(iface->bss[0], iface->conf,
+					 &freq_params, NULL);
+	if (ret) {
+		iface->conf->secondary_channel = old_sec_offset;
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_CHANNEL: Failed to set channel %ld in config",
+			   channel);
+		return -1;
+	}
+
+	/*
+	 * Keep user-requested primary channel intact. 5 GHz coexistence scan
+	 * flow can otherwise swap primary/secondary HT40 pair and implicitly
+	 * move the operating primary channel after SET_CHANNEL succeeds.
+	 */
+	iface->conf->no_pri_sec_switch = 1;
+	ret = hostapd_enable_iface(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "CTRL: SET_CHANNEL: Failed to enable interface");
+		return -1;
+	}
+
+	if (iface->conf->channel != channel ||
+	    hostapd_get_oper_chwidth(iface->conf) != oper_chwidth) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_CHANNEL: Requested channel/width not retained after restart (requested channel=%ld width=%d, current channel=%u width=%d)",
+			   channel, bandwidth, iface->conf->channel,
+			   hostapd_get_width_from_oper_chwidth_extn(
+				   hostapd_get_oper_chwidth(iface->conf),
+				   iface->conf->secondary_channel));
+	}
+
+	return 0;
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME */
 }
 
 static int hostapd_ctrl_set_rnr_6ghz_colocated_extn(struct hostapd_data *hapd, char *cmd)
@@ -853,6 +1357,8 @@ int hostapd_iface_rep_ap_enable_extn(struct hostapd_iface *iface, char *pos)
 	}
 
 	conf->punct_bitmap = punct_bitmap;
+	conf->hw_mode = hw_mode;
+	conf->channel = channel;
 	conf->acs = 0;
 
 	/* Decide DFS/CAC skip if configured to skip */
@@ -1214,6 +1720,437 @@ static int hostapd_ctrl_iface_get_dfs_no_wradar_extn(struct hostapd_data *hapd,
 			   hapd->iface->iface_extn.dfs_no_wradar);
 }
 
+static bool
+hostapd_ctrl_iface_list_has_current_chan_extn(struct hostapd_data *hapd,
+					      const u8 *chan_list,
+					      size_t chan_count)
+{
+	u8 current_chan = 0;
+	size_t idx;
+	int mode;
+
+	if (!hapd || !hapd->iface || !chan_list || !chan_count ||
+	    hapd->iface->freq <= 0)
+		return false;
+
+	mode = ieee80211_freq_to_chan(hapd->iface->freq, &current_chan);
+	if (mode == NUM_HOSTAPD_MODES || !current_chan)
+		return false;
+
+	for (idx = 0; idx < chan_count; idx++) {
+		if (chan_list[idx] == current_chan)
+			return true;
+	}
+
+	return false;
+}
+
+static bool
+hostapd_ctrl_iface_chan_in_list_extn(const u8 *chan_list, size_t chan_count,
+				     u8 channel)
+{
+	size_t idx;
+
+	if (!chan_list || !chan_count || !channel)
+		return false;
+
+	for (idx = 0; idx < chan_count; idx++) {
+		if (chan_list[idx] == channel)
+			return true;
+	}
+
+	return false;
+}
+
+static struct hostapd_channel_data *
+hostapd_ctrl_iface_first_enabled_chan_extn(struct hostapd_iface *iface,
+					   const u8 *blocked_chan_list,
+					   size_t blocked_chan_count,
+					   u8 current_chan)
+{
+	struct hostapd_hw_modes *mode;
+	struct hostapd_channel_data *chan;
+	bool select_5ghz;
+	bool select_6ghz;
+	bool select_24ghz;
+	int i;
+
+	if (!iface || !iface->current_mode)
+		return NULL;
+
+	mode = iface->current_mode;
+	select_5ghz = is_5ghz_freq(iface->freq);
+	select_6ghz = is_6ghz_freq(iface->freq);
+	select_24ghz = is_24ghz_freq(iface->freq);
+
+	for (i = 0; i < mode->num_channels; i++) {
+		chan = &mode->channels[i];
+
+		if (select_5ghz && !is_5ghz_freq(chan->freq))
+			continue;
+
+		if (select_6ghz && !is_6ghz_freq(chan->freq))
+			continue;
+
+		if (select_24ghz && !is_24ghz_freq(chan->freq))
+			continue;
+
+		if (current_chan && chan->chan == current_chan)
+			continue;
+
+		if (hostapd_ctrl_iface_chan_in_list_extn(blocked_chan_list,
+							 blocked_chan_count,
+							 chan->chan))
+			continue;
+
+		if (chan->flag & HOSTAPD_CHAN_DISABLED)
+			continue;
+
+		if (!chan_pri_allowed(chan))
+			continue;
+
+		if (!chan_in_current_hw_info(iface->current_hw_info, chan))
+			continue;
+
+		return chan;
+	}
+
+	return NULL;
+}
+
+static int
+hostapd_ctrl_iface_build_target_freq_params_extn(struct hostapd_data *hapd,
+						 struct hostapd_channel_data *chan,
+						 struct hostapd_freq_params *freq_params)
+{
+	struct hostapd_iface *iface;
+	struct hostapd_hw_modes *mode;
+
+	if (!hapd || !hapd->iface || !chan || !freq_params)
+		return -1;
+
+	iface = hapd->iface;
+	mode = iface->current_mode;
+
+	os_memset(freq_params, 0, sizeof(*freq_params));
+	return hostapd_set_freq_params(freq_params,
+				       iface->conf->hw_mode,
+				       chan->freq, chan->chan,
+				       iface->conf->enable_edmg,
+				       iface->conf->edmg_channel,
+				       iface->conf->ieee80211n,
+				       iface->conf->ieee80211ac,
+				       iface->conf->ieee80211ax,
+				       iface->conf->ieee80211be,
+				       iface->conf->ieee80211bn,
+				       0,
+				       CONF_OPER_CHWIDTH_USE_HT,
+				       0,
+				       0,
+				       iface->conf->vht_capab,
+				       mode ? &mode->he_capab[IEEE80211_MODE_AP] : NULL,
+				       mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
+				       mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
+				       0,
+				       hapd->iconf->he_6ghz_reg_pwr_type,
+				       iface->conf->bandwidth_device,
+				       iface->conf->center_freq_device);
+}
+
+/**
+ * hostapd_ctrl_iface_move_off_disabled_channel_extn - Move AP off disabled channel
+ * @hapd: BSS context receiving DISABLE_OPCLASS_CHANS
+ * @blocked_chan_list: List of channels disabled by the control command
+ * @blocked_chan_count: Number of entries in @blocked_chan_list
+ *
+ * If the current operating channel is disabled, select the first enabled
+ * replacement channel in the same band and reconfigure the interface to that
+ * channel. The fallback frequency parameters are built with 20 MHz bandwidth.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int
+hostapd_ctrl_iface_move_off_disabled_channel_extn(struct hostapd_data *hapd,
+						  const u8 *blocked_chan_list,
+						  size_t blocked_chan_count)
+{
+#ifdef NEED_AP_MLME
+	struct hostapd_iface *iface;
+	struct hostapd_channel_data *target_chan;
+	struct hostapd_freq_params freq_params;
+	int ret;
+	int i;
+	u8 current_chan = 0;
+
+	if (!hapd || !hapd->iface)
+		return -1;
+
+	iface = hapd->iface;
+	ret = hostapd_get_hw_features(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: failed to refresh hw features (%d)",
+			   ret);
+		return -1;
+	}
+
+	ret = hostapd_select_hw_mode(iface);
+	if (ret < 0) {
+		wpa_printf(MSG_INFO,
+			   "CTRL: DISABLE_OPCLASS_CHANS: select hw mode returned %d; continuing fallback recovery",
+			   ret);
+		/*
+		 * hostapd_select_hw_mode() can fail while the current
+		 * configured channel is being disabled. If a matching
+		 * mode is present, continue with best-effort fallback.
+		 */
+		if (!iface->current_mode) {
+			for (i = 0; i < iface->num_hw_features; i++) {
+				if (iface->hw_features[i].mode ==
+				    iface->conf->hw_mode) {
+					iface->current_mode =
+						&iface->hw_features[i];
+					break;
+				}
+			}
+		}
+
+		if (!iface->current_mode) {
+			wpa_printf(MSG_ERROR,
+				   "CTRL: DISABLE_OPCLASS_CHANS: no usable hw mode available for fallback");
+			return -1;
+		}
+	}
+
+	if (iface->freq > 0 && hostapd_set_current_hw_info(iface, iface->freq))
+		wpa_printf(MSG_DEBUG,
+			   "CTRL: DISABLE_OPCLASS_CHANS: could not refresh current_hw_info for freq=%d",
+			   iface->freq);
+
+	if (ieee80211_freq_to_chan(iface->freq, &current_chan) ==
+	    NUM_HOSTAPD_MODES)
+		current_chan = 0;
+
+	target_chan = hostapd_ctrl_iface_first_enabled_chan_extn(iface, blocked_chan_list,
+								 blocked_chan_count,
+								 current_chan);
+	if (!target_chan) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: no enabled fallback channel available");
+		return -1;
+	}
+
+	if (target_chan->freq == iface->freq) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: current channel %u is disabled, but no alternate channel was selected",
+			   current_chan);
+		return -1;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "CTRL: DISABLE_OPCLASS_CHANS: moving from disabled channel %u to channel %u (%d MHz) with fallback restart%s",
+		   current_chan, target_chan->chan, target_chan->freq,
+		   iface->cac_started ? " (stopping DFS CAC)" : "");
+
+	if (hostapd_ctrl_iface_build_target_freq_params_extn(hapd, target_chan,
+							     &freq_params)) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: failed to build fallback params for channel %u",
+			   target_chan->chan);
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG,
+		   "CTRL: DISABLE_OPCLASS_CHANS: fallback params freq=%d chan=%d bw=%d sec_off=%d cf1=%d cf2=%d",
+		   freq_params.freq, freq_params.channel, freq_params.bandwidth,
+		   freq_params.sec_channel_offset, freq_params.center_freq1,
+		   freq_params.center_freq2);
+
+	ret = hostapd_disable_iface(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: Failed to disable interface");
+		return -1;
+	}
+
+	ret = hostapd_change_config_freq(iface->bss[0], iface->conf,
+					 &freq_params, NULL);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: Failed to set channel");
+		return -1;
+	}
+
+	iface->conf->no_pri_sec_switch = 1;
+	ret = hostapd_enable_iface(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: Failed to enable interface");
+		return -1;
+	}
+	return 0;
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME */
+}
+
+static int
+hostapd_ctrl_iface_disable_opclass_chans_extn(struct hostapd_data *hapd, char *cmd)
+{
+	u8 chan_list[256], is_disable, opclass, link_id;
+	char *end = cmd;
+	long val;
+	size_t chan_count = 0;
+	int ret;
+	bool current_chan_requested = false;
+
+	if (!hapd || !cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	val = strtol(cmd, &end, 10);
+	if (errno != 0 || end == cmd || (val != 0 && val != 1)) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: invalid disable flag '%s'",
+			   cmd);
+		return -1;
+	}
+
+	is_disable = (u8) val;
+	while (*end == ' ')
+		end++;
+	if (*end == '\0') {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: missing opclass");
+		return -1;
+	}
+
+	cmd = end;
+	errno = 0;
+	val = strtol(cmd, &end, 10);
+	if (errno != 0 || end == cmd || val <= 0 || val > 255) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: invalid opclass '%s'",
+			   cmd);
+		return -1;
+	}
+
+	opclass = (u8) val;
+	while (*end == ' ')
+		end++;
+	if (*end == '\0') {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: at least one channel required");
+		return -1;
+	}
+
+	while (*end != '\0') {
+		if (chan_count >= ARRAY_SIZE(chan_list)) {
+			wpa_printf(MSG_ERROR,
+			"CTRL: DISABLE_OPCLASS_CHANS: channel cnt %zu exceeds %zu",
+			chan_count, ARRAY_SIZE(chan_list));
+			return -1;
+		}
+
+		errno = 0;
+		val = strtol(end, &cmd, 10);
+		if (errno != 0 || cmd == end || val <= 0 || val > 255) {
+			wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: invalid channel near '%s'",
+			   end);
+			return -1;
+		}
+
+		chan_list[chan_count++] = (u8) val;
+		while (*cmd == ' ')
+			cmd++;
+		end = cmd;
+	}
+
+	link_id = hapd->mld_link_id;
+	ret = nl80211_disable_opclass_chans_extn(hapd->drv_priv, link_id, is_disable,
+						 opclass, chan_list, chan_count);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: driver command failed ret=%d",
+			   ret);
+		if (ret == -EINVAL)
+			wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: backend support is not available in driver/open-extns");
+		return -1;
+	}
+
+	current_chan_requested = is_disable &&
+				 hostapd_ctrl_iface_list_has_current_chan_extn(
+					hapd, chan_list, chan_count);
+	if (current_chan_requested && hapd->iface &&
+	    hostapd_ctrl_iface_move_off_disabled_channel_extn(hapd, chan_list,
+							      chan_count)) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: DISABLE_OPCLASS_CHANS: failed to move interface away from disabled channel");
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "CTRL: DISABLE_OPCLASS_CHANS: disable=%u opclass=%u channels=%zu",
+		   is_disable, opclass, chan_count);
+	return 0;
+}
+
+static int hostapd_ctrl_iface_set_allow_scan_on_dfs_chan_extn(struct hostapd_data *hapd,
+							      const char *value)
+{
+	struct hostapd_iface_extn *iface_extn;
+	char *end = NULL;
+	long val;
+
+	if (!hapd || !hapd->iface || !value) {
+		wpa_printf(MSG_ERROR, "ALLOW_SCAN_ON_DFS: Invalid parameters");
+		return -1;
+	}
+
+	iface_extn = &hapd->iface->iface_extn;
+
+	val = strtol(value, &end, 10);
+	if (end == value) {
+		wpa_printf(MSG_ERROR, "ALLOW_SCAN_ON_DFS: Invalid value format");
+		return -1;
+	}
+
+	while (end && (*end == ' ' || *end == '\n' || *end == '\r' || *end == '\t'))
+		end++;
+
+	if (end && *end != '\0') {
+		wpa_printf(MSG_ERROR, "ALLOW_SCAN_ON_DFS: Trailing characters after value");
+		return -1;
+	}
+
+	if (val != 0 && val != 1) {
+		wpa_printf(MSG_ERROR, "ALLOW_SCAN_ON_DFS: Value must be 0 or 1");
+		return -1;
+	}
+
+	iface_extn->allow_scan_on_dfs_chan = !!val;
+
+	if (nl80211_set_allow_scan_on_dfs_chan_extn(hapd->drv_priv,
+	    iface_extn->allow_scan_on_dfs_chan)) {
+		wpa_printf(MSG_ERROR, "ALLOW_SCAN_ON_DFS: Failed to set in driver");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_allow_scan_on_dfs_chan_extn(struct hostapd_data *hapd,
+							      char *reply,
+							      size_t reply_size)
+{
+	return os_snprintf(reply, reply_size, "%d\n",
+			   hapd && hapd->iface &&
+			   hapd->iface->iface_extn.allow_scan_on_dfs_chan);
+}
+
 int
 hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 					char *buf, char *reply,
@@ -1275,6 +2212,14 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strcmp(buf, "GET_DFS_NO_WRADAR") == 0) {
 		reply_len_extn = hostapd_ctrl_iface_get_dfs_no_wradar_extn(
 			hapd, reply, reply_size);
+	} else if (os_strncmp(buf, "ALLOW_SCAN_ON_DFS_CHAN ", 23) == 0) {
+		if (hostapd_ctrl_iface_set_allow_scan_on_dfs_chan_extn(hapd, buf + 23))
+			reply_len_extn = -1;
+		else
+			reply_len_extn = os_snprintf(reply, reply_size, "OK\n");
+	} else if (os_strcmp(buf, "GET_ALLOW_SCAN_ON_DFS_CHAN") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_allow_scan_on_dfs_chan_extn(
+			hapd, reply, reply_size);
 	} else if (os_strncmp(buf, "DCS ", 4) == 0) {
 		reply_len_extn = hostapd_ctrl_iface_dcs_extn(hapd, buf + 4, reply,
 							     reply_size);
@@ -1290,6 +2235,9 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn =
 			hostapd_ctrl_iface_get_non_prior_penalty_extn(hapd, reply,
 								      reply_size);
+	} else if (os_strncmp(buf, "CBS ", 4) == 0) {
+		reply_len_extn = hostapd_handle_cli_cbs_extn(hapd, buf + 4,
+							     reply, reply_size);
 	} else if (os_strncmp(buf, "SET_PRIMARY_CHANS ", 18) == 0) {
 		/*
 		 * SET_PRIMARY_CHANS <ch1> [<ch2> ...]
@@ -1307,6 +2255,9 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn = hostapd_get_primary_chanlist(hapd->iface,
 							      reply, reply_size);
 		if (reply_len_extn < 0)
+			reply_len_extn = -1;
+	} else if (os_strncmp(buf, "DISABLE_OPCLASS_CHANS ", 22) == 0) {
+		if (hostapd_ctrl_iface_disable_opclass_chans_extn(hapd, buf + 22))
 			reply_len_extn = -1;
 	} else if (os_strncmp(buf, "SET_OBSS_SNR_THRESHOLD ", 23) == 0) {
 		if (hostapd_ctrl_iface_set_obss_snr_threshold_extn(hapd,
@@ -1333,12 +2284,21 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn = hostapd_ctrl_iface_get_country_ie_extn(hapd,
 								      reply,
 								      reply_size);
+	} else if (os_strncmp(buf, "SET_OPCLASS_TBL_IDX ", 20) == 0) {
+		if (hostapd_ctrl_iface_set_opclass_tbl_idx_extn(hapd, buf + 20))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_OPCLASS_TBL_IDX") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_opclass_tbl_idx_extn(
+			hapd, reply, reply_size);
 	} else if (os_strncmp(buf, "HT40INTOL ", 10) == 0) {
 		if (hostapd_ctrl_iface_set_ht40intol_extn(hapd, buf + 10))
 			reply_len_extn = -1;
 	} else if (os_strcmp(buf, "GET_HT40INTOL") == 0) {
 		reply_len_extn = hostapd_ctrl_iface_get_ht40intol_extn(hapd, reply,
 								       reply_size);
+	} else if (os_strncmp(buf, "SET_CHANNEL ", 12) == 0) {
+		if (hostapd_ctrl_iface_set_channel_extn(hapd, buf + 12))
+			reply_len_extn = -1;
 	} else if (os_strncmp(buf, "SET_EHT_CONFIG_CCFS0 ", 21) == 0) {
 		if (hostapd_ctrl_iface_set_eht_config_ccfs0_extn(hapd, buf + 20))
 			reply_len_extn = -1;
@@ -1365,7 +2325,7 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 									       reply,
 									       reply_size);
 	} else if (os_strncmp(buf, "SET_TPE_PUNCT_CHANNEL_TX_PWR ", 29) == 0) {
-		if (hostapd_ctrl_iface_set_tpe_punct_channel_tx_pwr_extn(hapd, buf + 22))
+		if (hostapd_ctrl_iface_set_tpe_punct_channel_tx_pwr_extn(hapd, buf + 29))
 			reply_len_extn = -1;
 	} else if (os_strcmp(buf, "GET_TPE_PUNCT_CHANNEL_TX_PWR") == 0) {
 		reply_len_extn =
@@ -1391,6 +2351,18 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 		reply_len_extn = hostapd_ctrl_iface_get_disablecoexist_extn(hapd,
 									    reply,
 									    reply_size);
+	} else if (os_strncmp(buf, "SET_PURE11AC ", 13) == 0) {
+		if (hostapd_ctrl_iface_set_pure11ac_extn(hapd, buf + 13))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_PURE11AC") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_pure11ac_extn(hapd, reply,
+								      reply_size);
+	} else if (os_strncmp(buf, "SET_PURE11AX ", 13) == 0) {
+		if (hostapd_ctrl_iface_set_pure11ax_extn(hapd, buf + 13))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_PURE11AX") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_pure11ax_extn(hapd, reply,
+								      reply_size);
 	} else {
 		return -1;
 	}
@@ -1452,6 +2424,54 @@ int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_data *hapd,
 	conf->bss_extn.nontx_optional_elem_size = optional_elem_size;
 	conf->bss_extn.nontx_vendor_elem_size = vendor_elem_size;
 	conf->available_vendor_elem_size = vendor_elem_size;
+
+	return 0;
+}
+
+/**
+ * hostapd_set_cswopts_extn - Validate and apply a CSwOpts value
+ * @conf_extn: Hostapd extension config structure
+ * @value: String value to parse (decimal or hex with 0x prefix)
+ *
+ * Return: 0 on success, -1 on invalid value.
+ */
+int hostapd_set_cswopts_extn(struct hostapd_config_extn *conf_extn,
+			     const char *value)
+{
+	unsigned int *cswopts = &conf_extn->cswopts;
+	long int val = strtol(value, NULL, 0);
+
+	if (!cswopts_validate(val)) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid CSwOpts value 0x%lx: valid mask is 0x%x",
+			   val, CSH_OPT_VALID_MASK);
+		return -1;
+	}
+
+	if (val == 0)
+		*cswopts = 0;
+	else {
+		if ((IS_CSH_RCSA_TO_UPLINK_ENABLED(*value) ||
+		     IS_CSH_PROCESS_RCSA_ENABLED(*value)) &&
+		    conf_extn->uplink_csa) {
+			wpa_printf(MSG_INFO, "RCSA and Uplink CSA cann't co-exists");
+			return -1;
+		}
+		*cswopts |= (unsigned int)val;
+	}
+	wpa_printf(MSG_INFO, "CSwOpts updated to 0x%x", *cswopts);
+
+	if (IS_CSH_APRIORI_NEXT_CHANNEL_ENABLED(*cswopts))
+		wpa_printf(MSG_INFO,
+			   "CSwOpts %s: Apriori channel selection feature is not yet supported",
+			   convert_cswopts_to_str(CSH_OPT_APRIORI_NEXT_CHANNEL));
+
+	if (IS_CSH_CAC_APUP_BYSTA_ENABLED(*cswopts)) {
+		wpa_printf(MSG_INFO,
+			   "CSwOpts %s: Setting skip_cac to 0",
+			   convert_cswopts_to_str(CSH_OPT_CAC_APUP_BYSTA));
+		conf_extn->skip_cac = 0;
+	}
 
 	return 0;
 }
@@ -1579,6 +2599,38 @@ int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *valu
 	} else if (os_strcasecmp(cmd, "he_mcs_12_13_supp") == 0) {
 		val = !!atoi(value);
 		return hostapd_he_mcs_12_13_supp_extn(hapd, val);
+	} else if (os_strcasecmp(cmd, "CSwOpts") == 0) {
+		return hostapd_set_cswopts_extn(conf_extn, value);
+	} else if (os_strcasecmp(cmd, "wds_ie") == 0) {
+		val = atoi(value);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "wds_ie: Invalid value %d (expected 0 or 1)",
+				   val);
+			return -1;
+		}
+		hapd->conf->bss_extn.wds_ie = val;
+		wpa_printf(MSG_INFO, "WDS IE: %s - wds_ie set to %d",
+			   hapd->conf->iface, val);
+		ret = ieee802_11_update_beacons(hapd->iface);
+		if (ret < 0) {
+			wpa_printf(MSG_ERROR,
+				   "WDS IE: Failed to update beacons after wds_ie change");
+			return -1;
+		}
+	} else if (os_strcmp(cmd, "allow_3addr_mc") == 0) {
+		val = atoi(value);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR,
+				   "invalid allow_3addr_mc value %d "
+				   "(expected 0 or 1)",  val);
+			return -1;
+		}
+		hapd->conf->bss_extn.allow_3addr_mc = val;
+		if (nl80211_set_allow_3addr_mc_extn(hapd->drv_priv, (u8)val))
+			return -1;
+		wpa_printf(MSG_DEBUG, "allow_3addr_mc: %s allow_3addr_mc=%d",
+			   hapd->conf->iface, val);
 	}
 
 	return 0;
@@ -1601,6 +2653,24 @@ int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *cmd,
 				  conf_extn->he_mcs_12_13_enabled);
 		if (os_snprintf_error(buflen, res))
 			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "CSwOpts") == 0) {
+		res = os_snprintf(buf, buflen, "CSwOpts=0x%x\n", conf_extn->cswopts);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "wds_ie") == 0) {
+		res = os_snprintf(buf, buflen, "wds_ie=%d\n",
+				  hapd->conf->bss_extn.wds_ie);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcmp(cmd, "allow_3addr_mc") == 0) {
+		res = os_snprintf(buf, buflen, "allow_3addr_mc=%d\n",
+				  hapd->conf->bss_extn.allow_3addr_mc);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
 	}
 
 	return res;
@@ -1629,6 +2699,14 @@ int hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
 			return len;
 		len += ret;
 	}
+
+	/* WDS IE status - always reported */
+	ret = os_snprintf(buf + len, buflen - len,
+			  "wds_ie=%d\n",
+			  hapd->conf->bss_extn.wds_ie);
+	if (os_snprintf_error(buflen - len, ret))
+		return len;
+	len += ret;
 
 	return len;
 }

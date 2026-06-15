@@ -5,12 +5,12 @@
 
 #include "includes.h"
 #include "common.h"
+#include "common/defs.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
 #include "common/hw_features_common.h"
 #include "common/wpa_ctrl.h"
 #include "common/qca-vendor.h"
-#include "cmn.h"
 #include <ap/hostapd.h>
 #include <ap/beacon.h>
 #include <ap/dfs.h>
@@ -21,6 +21,11 @@
 #include "dfs_extn.h"
 #include "utils/common.h"
 #include "utils/eloop.h"
+#include "qcn_ie_extn.h"
+#include "cmn.h"
+
+#include <ap/ap_drv_ops.h>
+#include <drivers/driver.h>
 
 #define IEEE80211_DFS_MIN_CAC_TIME_MS  60000
 #define HAPD_DFS_WAIT_FOR_CSA_FROM_ROOT_DUR 500000
@@ -60,25 +65,12 @@ enum qca_wlan_vendor_attr_dfs_nol_info {
 #define DFS_NOL_IE_TIMEOUT_MS 1800000  /* 30 minutes */
 #define MIN_DFS_SUBCHAN_BW 20          /* 20 MHz minimum subchannel */
 
-/* NOL IE vendor element encoding/decoding constants */
-#define DFS_NOL_IE_FIXED_HDR_LEN 7 /* EID+Len+OUI(3)+Type+Count */
-#define DFS_NOL_IE_ENTRY_LEN 10    /* freq(4)+bw(4)+bitmap(2) */
-#define DFS_NOL_IE_MIN_LEN DFS_NOL_IE_FIXED_HDR_LEN
-
 #define DFS_NOL_IE_SINGLE_SUBCHAN_BITMAP BIT(0)
 
 #define DFS_NOL_IE_U32_LEN 4
 #define DFS_NOL_IE_U16_LEN 2
 
 #define DFS_NOL_IE_BITMAP_MASK(n_subchans) ((u16)((1U << (n_subchans)) - 1))
-
-enum dfs_nol_ie_bw_mhz {
-	DFS_NOL_IE_BW_20_MHZ = 20,
-	DFS_NOL_IE_BW_40_MHZ = 40,
-	DFS_NOL_IE_BW_80_MHZ = 80,
-	DFS_NOL_IE_BW_160_MHZ = 160,
-	DFS_NOL_IE_BW_320_MHZ = 320,
-};
 
 enum dfs_channel_type_extn {
 	DFS_ANY_CHANNEL_EXTN,
@@ -290,6 +282,111 @@ bool hostapd_ignorecac_chan_switch_complete_extn(struct hostapd_data *hapd,
 }
 #endif /* CONFIG_QCA_LAB_TEST_FEATURES */
 
+bool hostapd_is_ml_info_ie(const u8 *ie, size_t rem_len)
+{
+	if (!ie || rem_len < 2)
+		return false;
+
+	if (ie[0] != WLAN_EID_EXT_CAPAB && ie[0] != WLAN_EID_EXTENSION)
+		return false;
+	if (ie[2] == WLAN_EID_EXT_MLO_LINK_INFO)
+		return true;
+
+	return false;
+}
+
+u8 *add_ml_link_info_ie(u8 *buf, size_t buf_len,
+			     u16 link_id_bitmap)
+{
+	u8 *pos = buf;
+
+	if (!pos || buf_len < 5)
+		return NULL;
+
+	/*
+	 * ML Info IE for RCSA:
+	 *   Element ID     : Extension
+	 *   Length         : 3
+	 *   Extension ID   : Multi-Link
+	 *   Link bitmap    : 2-byte LE bitmap
+	 */
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = 3;
+	*pos++ = WLAN_EID_EXT_MLO_LINK_INFO;
+	WPA_PUT_LE16(pos, link_id_bitmap);
+	pos += 2;
+
+	return pos;
+}
+
+unsigned int dfs_get_ch_flags_extn(unsigned int cswopts)
+{
+	unsigned int ch_flags = DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH;
+
+	if (IS_CSH_NONDFS_RANDOM_ENABLED(cswopts) ||
+	    IS_CSH_IGNORE_CSA_DFS_ENABLED(cswopts)) {
+		wpa_printf(MSG_DEBUG, "DFS: Setting DFS_RANDOM_CH_FLAG_NO_DFS_CH flag");
+		ch_flags |= DFS_RANDOM_CH_FLAG_NO_DFS_CH;
+	}
+
+	return ch_flags;
+}
+
+bool dfs_chan_skip_by_flags_extn(struct hostapd_iface *iface,
+				 struct hostapd_channel_data *chan,
+				 unsigned int flags)
+{
+	/* Skip current operating channel and all its bonding sub-channels */
+	if (flags & DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH) {
+		struct hostapd_hw_modes *mode;
+		int start_chan_idx, start_chan_idx1;
+		int n_chans, n_chans1;
+		int cur_chan_width;
+		int i;
+
+		if (!iface || !iface->conf || !iface->current_mode)
+			goto skip_curr_ch_check;
+
+		mode = iface->current_mode;
+		cur_chan_width = hostapd_get_oper_chwidth(iface->conf);
+
+		start_chan_idx = dfs_get_start_chan_idx(iface, &start_chan_idx1,
+						       cur_chan_width,
+						       iface->conf->channel,
+						       false);
+		n_chans = dfs_get_used_n_chans(iface, &n_chans1, cur_chan_width);
+
+		if (start_chan_idx < 0)
+			goto skip_curr_ch_check;
+
+		for (i = 0; i < n_chans; i++) {
+			struct hostapd_channel_data *cur_chan;
+
+			if (start_chan_idx + i >= mode->num_channels)
+				break;
+			cur_chan = &mode->channels[start_chan_idx + i];
+			if (chan->chan == cur_chan->chan) {
+				wpa_printf(MSG_DEBUG,
+					   "DFS: skipping current operating channel %d (%d)",
+					   chan->freq, chan->chan);
+				return true;
+			}
+		}
+	}
+skip_curr_ch_check:
+
+	/* Skip DFS/radar channels */
+	if ((flags & DFS_RANDOM_CH_FLAG_NO_DFS_CH) &&
+	    (chan->flag & HOSTAPD_CHAN_RADAR)) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: skipping DFS channel %d (%d)",
+			   chan->freq, chan->chan);
+		return true;
+	}
+
+	return false;
+}
+
 int handle_action_extn(struct hostapd_data *hapd,
 		       const struct ieee80211_mgmt *mgmt, size_t len,
 		       unsigned int freq)
@@ -299,9 +396,7 @@ int handle_action_extn(struct hostapd_data *hapd,
 
 	switch (mgmt->u.action.category) {
 		case WLAN_ACTION_SPECTRUM_MGMT:
-			 wpa_printf(MSG_DEBUG,
-				    "uplink_csa: received the action frame at top most API");
-			if (hostapd_uplink_csa_hdl(hapd, (const u8 *) mgmt, len))
+			if (hostapd_uplink_csa_hdl_extn(hapd, (const u8 *) mgmt, len))
 				 return 1;
 			break;
 		default:
@@ -310,27 +405,71 @@ int handle_action_extn(struct hostapd_data *hapd,
 	return 0;
 }
 
-static int dfs_nol_ie_chan_width_to_bw_mhz(enum chan_width chan_width,
-					    int *bandwidth_mhz)
+int handle_action_vs_extn(struct hostapd_data *hapd,
+			  struct sta_info *sta,
+			  const struct ieee80211_mgmt *mgmt,
+			  size_t len, unsigned int freq, bool protected)
+{
+	const u8 *pos = (const u8 *)mgmt + IEEE80211_HDRLEN; 
+
+	if (mgmt->u.action.category == WLAN_ACTION_VENDOR_SPECIFIC) {
+		wpa_printf(MSG_DEBUG,"received vendor action");
+		/* category(1) + OUI(3) must be present */
+		if (len < IEEE80211_HDRLEN + 4) {
+			wpa_printf(MSG_DEBUG,
+				   "vendor action frame too short (%zu)",
+				   len);
+			return -1;
+		}
+
+		if (WPA_GET_BE24(pos + 1) != OUI_QCOM) {
+			wpa_printf(MSG_DEBUG,
+				   "vendor action OUI mismatch, ignoring");
+			return -1;
+		}
+
+
+		if (hostapd_rcsa_rx_hdl(hapd, (const u8 *) mgmt, len))
+			return 0;
+	}
+
+	return -1;
+}
+
+int dfs_nol_ie_chan_width_to_bw_mhz(enum oper_chan_width chan_width,
+				    int freq, int cf1,
+				    int *bandwidth_mhz)
 {
 	if (!bandwidth_mhz)
 		return -1;
 
 	switch (chan_width) {
-	case CHAN_WIDTH_20_NOHT:
-	case CHAN_WIDTH_20:
-		*bandwidth_mhz = DFS_NOL_IE_BW_20_MHZ;
+	case CONF_OPER_CHWIDTH_USE_HT:
+		/*
+		 * CONF_OPER_CHWIDTH_USE_HT covers both 20 MHz and 40 MHz because
+		 * convert_to_oper_chan_width() maps CHAN_WIDTH_20, CHAN_WIDTH_20_NOHT,
+		 * and CHAN_WIDTH_40 all to this value.
+		 *
+		 * Disambiguate using cf1 (NL80211_ATTR_CENTER_FREQ1):
+		 *   - 20 MHz: center_freq1 == primary freq  (cf1 == freq)
+		 *   - 40 MHz: center_freq1 == primary +/- 10  (cf1 != freq)
+		 *
+		 * cf1 is always populated by nl80211_send_chandef() for both
+		 * widths, so this check is reliable.
+		 */
+		*bandwidth_mhz = (cf1 != freq) ? DFS_NOL_IE_BW_40_MHZ
+					       : DFS_NOL_IE_BW_20_MHZ;
 		return 0;
-	case CHAN_WIDTH_40:
+	case CONF_OPER_CHWIDTH_40MHZ_6GHZ:
 		*bandwidth_mhz = DFS_NOL_IE_BW_40_MHZ;
 		return 0;
-	case CHAN_WIDTH_80:
+	case CONF_OPER_CHWIDTH_80MHZ:
 		*bandwidth_mhz = DFS_NOL_IE_BW_80_MHZ;
 		return 0;
-	case CHAN_WIDTH_160:
+	case CONF_OPER_CHWIDTH_160MHZ:
 		*bandwidth_mhz = DFS_NOL_IE_BW_160_MHZ;
 		return 0;
-	case CHAN_WIDTH_320:
+	case CONF_OPER_CHWIDTH_320MHZ:
 		*bandwidth_mhz = DFS_NOL_IE_BW_320_MHZ;
 		return 0;
 	default:
@@ -339,7 +478,7 @@ static int dfs_nol_ie_chan_width_to_bw_mhz(enum chan_width chan_width,
 }
 
 static int dfs_nol_ie_bw_mhz_to_chan_width(u32 bandwidth_mhz,
-					  int *chan_width)
+					   int *chan_width)
 {
 	if (!chan_width)
 		return -1;
@@ -369,6 +508,7 @@ int dfs_is_uplink_csa_enabled(struct hostapd_iface *iface)
 {
 	if (!iface || !iface->conf)
 		return 0;
+
 	return iface->conf->conf_extn.uplink_csa;
 }
 
@@ -376,16 +516,19 @@ bool hostapd_is_backhaul_sta_configured(struct hostapd_iface *iface)
 {
 	if (hostapd_ubus_is_bhsta_configured(iface))
 		return true;
+
 	return false;
 }
 
 void hostapd_trigger_backhaul_sta_disconnect(void *eloop_data, void *user_data)
 {
 	struct hostapd_iface *iface = eloop_data;
+
 	if (!iface)
 		return;
 
 	wpa_printf(MSG_INFO, "CSA is not received from Root AP");
+	hostapd_rcsa_handle_csa_timeout(iface);
 	hostapd_ucode_trigger_bhsta_disconnect(iface);
 }
 
@@ -403,23 +546,35 @@ void hostapd_uplink_cancel_disconnect_timeout_extn(struct hostapd_iface *iface)
 	if (!iface)
 		return;
 
-	wpa_printf(MSG_INFO, "chanswitch: cancel radar handling timer");
-	eloop_cancel_timeout(hostapd_trigger_backhaul_sta_disconnect, iface, NULL);
+	if (hostapd_uplink_csa_bh_enabled(iface) ||
+	    hostapd_rcsa_tx_bh_enabled(iface)) {
+		wpa_printf(MSG_INFO, "chanswitch: cancel radar handling timer");
+		eloop_cancel_timeout(hostapd_trigger_backhaul_sta_disconnect, iface, NULL);
+		eloop_cancel_timeout(hostapd_rcsa_trigger_channal_change, iface, NULL);
+		eloop_cancel_timeout(hostapd_trigger_rcsa_tx, iface, NULL);
+		hostapd_set_rcsa_inprogress(iface, false);
+	}
 }
 
 static void hostapd_notify_uplink_csa(struct hostapd_iface *iface, u8 channel, int freq,
 				      u8 new_ch_width, u8 ch_seg_0, u8 ch_seg_1,
-				      struct dfs_nol_ie_list *nol_list)
+				      const dfs_nol_ie_info *nol_info)
 {
 	wpa_printf(MSG_INFO, "DFS channel uplink notifcation %d", channel);
 
+	if (nol_info)
+		wpa_printf(MSG_INFO, "DFS: NOL entry present freq=%u bw=%u bitmap=0x%04x",
+			   nol_info->freq, nol_info->bandwidth, nol_info->subchan_bitmap);
+	else
+		wpa_printf(MSG_INFO, "DFS: No NOL entry");
+
 	wpa_printf(MSG_INFO, "freq=%d channel=%d cs_count=%d chan_width=%d cf1=%d cf2=%d",
-		   freq, channel,  10, new_ch_width, ch_seg_0, ch_seg_1);
+		   freq, channel, 10, new_ch_width, ch_seg_0, ch_seg_1);
 
 	/* Notify wpa_supplicant to send uplink csa action frame */
 	hostapd_ucode_notify_uplink_csa(iface, EVENT_DFS_UPLINK_CHANNEL_SELECTED, channel,
 					freq, 10, new_ch_width, ch_seg_0, ch_seg_1,
-					nol_list);
+					nol_info);
 
 	/* start timer for fallback mechanism, disconnect backhaul station when
 	 * channel switch is not received from root AP.
@@ -431,6 +586,51 @@ static void hostapd_notify_uplink_csa(struct hostapd_iface *iface, u8 channel, i
 				       iface, NULL);
 }
 
+int hostapd_prepare_nol_ie_bmap_extn(struct hostapd_iface *iface,
+				     int channel, int freq,
+				     int secondary_channel,
+				     int current_vht_oper_chwidth,
+				     int oper_centr_freq_seg0_idx,
+				     int oper_centr_freq_seg1_idx,
+				     u16 punct_bitmap,
+				     u16 radar_bitmap_oper)
+{
+
+	if (!iface)
+		return -EINVAL;
+
+	/*
+	 * Only free heap-allocated entries. When entries points to the embedded
+	 * nol_info struct it must not be passed to os_free().
+	 */
+	iface->iface_extn.nol_info_valid = false;
+	os_memset(&iface->iface_extn.nol_info, 0, sizeof(iface->iface_extn.nol_info));
+
+	if (!hostapd_uplink_csa_bh_enabled(iface) &&
+	    !IS_CSH_RCSA_TO_UPLINK_ENABLED(iface->conf->conf_extn.cswopts))
+		return -EINVAL;
+
+	wpa_printf(MSG_INFO,
+		   "DFS: Preparing NOL IE with radar_bit_pattern=0x%04x for current channel %d freq %d chwidth %d cf0 %d cf1 %d puct 0x%x ",
+		   radar_bitmap_oper, channel, freq,
+		   current_vht_oper_chwidth, oper_centr_freq_seg0_idx,
+		   oper_centr_freq_seg1_idx, punct_bitmap);
+	if (!dfs_prepare_nol_ie_bitmap(iface, freq, current_vht_oper_chwidth,
+				      oper_centr_freq_seg0_idx,
+				      oper_centr_freq_seg1_idx,
+				      radar_bitmap_oper, &iface->iface_extn.nol_info)) {
+		iface->iface_extn.nol_info_valid = true;
+		wpa_printf(MSG_INFO,
+			   "DFS: NOL IE prepared - freq=%u bw=%u bitmap=0x%04x",
+			   iface->iface_extn.nol_info.freq, iface->iface_extn.nol_info.bandwidth,
+			   iface->iface_extn.nol_info.subchan_bitmap);
+	} else {
+		wpa_printf(MSG_ERROR, "DFS: Failed to prepare NOL IE bitmap");
+	}
+
+	return 0;
+}
+
 int hostapd_send_uplink_csa_extn(struct hostapd_iface *iface,
 				 int channel, int freq,
 				 int secondary_channel,
@@ -439,38 +639,20 @@ int hostapd_send_uplink_csa_extn(struct hostapd_iface *iface,
 				 u8 oper_centr_freq_seg1_idx,
 				 u16 punct_bitmap)
 {
-	struct dfs_nol_ie_list nol_list;
-	struct dfs_nol_ie_info nol_info;
-
 	if (!iface)
 		return -EINVAL;
 
 	if (!hostapd_uplink_csa_bh_enabled(iface))
 		return -EINVAL;
 
-	os_memset(&nol_list, 0, sizeof(nol_list));
-	wpa_printf(MSG_INFO,
-		   "DFS: Preparing NOL IE with radar_bit_pattern=0x%04x for current channel %d freq %d chwidth %d cf0 %d cf1 %d puct 0x%x ",
-		   iface->radar_bit_pattern, channel, freq,
-		   current_vht_oper_chwidth, oper_centr_freq_seg0_idx,
-		   oper_centr_freq_seg1_idx, punct_bitmap);
-	if (dfs_prepare_nol_ie_bitmap(iface, freq, current_vht_oper_chwidth,
-				      oper_centr_freq_seg0_idx,
-				      oper_centr_freq_seg1_idx,
-				      iface->radar_bit_pattern_extn, &nol_info) == 0) {
-		nol_list.entries = &nol_info;
-		nol_list.count = 1;
-		wpa_printf(MSG_INFO,
-			   "DFS: NOL IE prepared - freq=%u bw=%u bitmap=0x%04x",
-			   nol_info.freq, nol_info.bandwidth,
-			   nol_info.subchan_bitmap);
-	}
+	wpa_printf(MSG_INFO, "DFS: Sending uplink CSA, NOL entry valid=%d",
+		   iface->iface_extn.nol_info_valid);
 
 	hostapd_notify_uplink_csa(iface, channel, freq,
 				  current_vht_oper_chwidth,
 				  oper_centr_freq_seg0_idx,
 				  oper_centr_freq_seg1_idx,
-				  nol_list.count > 0 ? &nol_list : NULL);
+				  iface->iface_extn.nol_info_valid ? &iface->iface_extn.nol_info : NULL);
 	return 0;
 }
 
@@ -486,11 +668,6 @@ int hostapd_send_uplink_csa_extn(struct hostapd_iface *iface,
 
 /* Minimum fixed fields after the 802.11 header for Action frames: Category+Action */
 #define IEEE80211_ACTION_FRAME_MIN_FIXED_FIELDS 2
-
-/* Channel Switch Announcement element (WLAN_EID_CHANNEL_SWITCH) fixed layout. */
-#define IEEE80211_CSA_IE_MIN_LEN 3
-#define IEEE80211_CSA_IE_NEW_CHANNEL_OFFSET 3
-#define IEEE80211_CSA_IE_TOTAL_LEN 5
 
 /* Wide Bandwidth Channel Switch element (WLAN_EID_WIDE_BW_CHSWITCH) fixed layout. */
 #define IEEE80211_WB_CSA_IE_MIN_LEN 3
@@ -609,12 +786,12 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 	int link_id = -1;
 	u8 cf0, cf1;
 	const u8 *vendor_ie = NULL;
-	struct dfs_nol_ie_list nol_list;
+	dfs_nol_ie_info nol_info;
 
 	if (!hapd || !hapd->iface || !buf)
 		return;
 	iface = hapd->iface;
-	os_memset(&nol_list, 0, sizeof(nol_list));
+	os_memset(&nol_info, 0, sizeof(nol_info));
 
 	if (len < IEEE80211_HDRLEN + IEEE80211_ACTION_FRAME_MIN_FIXED_FIELDS) {
 		wpa_printf(MSG_DEBUG, "invalid action frame received");
@@ -649,8 +826,22 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 		ch_width = wb_cs_ie[IEEE80211_WB_CSA_IE_CH_WIDTH_OFFSET];
 		cf0 = wb_cs_ie[IEEE80211_WB_CSA_IE_CF0_OFFSET];
 		cf1 = wb_cs_ie[IEEE80211_WB_CSA_IE_CF1_OFFSET];
-		wpa_printf(MSG_DEBUG, "uplink_csa: wide band ie: cf0 %u cf1 %u chwidth %d",
-			   cf0, cf1, ch_width);
+		/*
+		 * Per IEEE Std 802.11-2024, Table 9-316 (VHT Operation Information):
+		 * width=1 is used for both 80 MHz and 160 MHz. The two are
+		 * distinguished by cf1 (CCFS1): non-zero cf1 means 160 MHz, where
+		 * cf0 is the 80 MHz segment center and cf1 is the 160 MHz center.
+		 * Zero cf1 means plain 80 MHz.
+		 */
+		if (ch_width == CONF_OPER_CHWIDTH_80MHZ && cf1 != 0) {
+			ch_width = CONF_OPER_CHWIDTH_160MHZ;
+			wpa_printf(MSG_DEBUG,
+				   "uplink_csa: wide band ie: cf0=%u cf1=%u, reclassifyed as 160 MHz (new_chan=%u chwidth=%d)",
+				   cf0, cf1, new_chan, ch_width);
+		} else {
+			wpa_printf(MSG_DEBUG, "uplink_csa: wide band ie: cf0=%u cf1=%u chwidth=%d",
+				   cf0, cf1, ch_width);
+		}
 	} else {
 		wpa_printf(MSG_DEBUG, "uplink_csa: no wide band ie, assuming 20MHz");
 		ch_width = 0;
@@ -669,7 +860,17 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 		sec_chan = 0;
 	}
 
-	wpa_printf(MSG_DEBUG, "uplink_csa: chanel change prams: cf0 %u cf1 %u sec %d chwidth %u",
+	if (ch_width == CONF_OPER_CHWIDTH_160MHZ) {
+		/*
+		 * Convert the WB IE CCFS0/CCFS1 representation back to the
+		 * internal hostapd 160 MHz oper seg representation expected by
+		 * hostapd_set_freq_params().
+		 */
+		cf0 = cf1;
+		cf1 = 0;
+	}
+
+	wpa_printf(MSG_DEBUG, "uplink_csa: channel change prams: cf0 %u cf1 %u sec %d chwidth %u",
 		   cf0, cf1, sec_chan, ch_width);
 
 	if (!wb_cs_ie) {
@@ -724,12 +925,13 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 	if (vendor_ie) {
 		u8 vendor_ie_len = vendor_ie[1] + 2;
 
-		if (dfs_decode_nol_ie(vendor_ie, vendor_ie_len, &nol_list) == 0) {
+		if (dfs_decode_nol_ie(vendor_ie,
+				      vendor_ie_len, &nol_info) == 0) {
 			wpa_printf(MSG_INFO,
-				   "uplink_csa: Decoded %zu NOL entries",
-				   nol_list.count);
+				   "uplink_csa: Decoded NOL entry freq=%u bw=%u bitmap=0x%04x",
+				   nol_info.freq, nol_info.bandwidth, nol_info.subchan_bitmap);
 
-			if (dfs_process_nol_ie_bitmap(iface, &nol_list) == 0) {
+			if (dfs_process_nol_ie_bitmap(iface, &nol_info) == 0) {
 				wpa_printf(MSG_INFO,
 					   "uplink_csa: Successfully updated NOL from uplink CSA");
 			} else {
@@ -737,11 +939,21 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 					   "uplink_csa: Failed to update NOL");
 			}
 
-			dfs_free_nol_ie_list(&nol_list);
+			/*
+			 * Store the decoded NOL entry so that when this repeater
+			 * forwards the uplink CSA to the root AP via
+			 * hostapd_send_uplink_csa_extn(), the NOL IE is included.
+			 */
+			iface->iface_extn.nol_info = nol_info;
+			iface->iface_extn.nol_info_valid = true;
 		} else {
 			wpa_printf(MSG_WARNING,
 				   "uplink_csa: Failed to decode NOL IE");
+			iface->iface_extn.nol_info_valid = false;
 		}
+	} else {
+		wpa_printf(MSG_INFO,
+			   "uplink_csa: No NOL IE found in received uplink CSA");
 	}
 
 	if (iface->cac_started) {
@@ -757,6 +969,9 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 						   sec_chan, ch_width, cf0,
 						   cf1, 0);
 	}
+
+	/* Clear the forwarding entry after the uplink CSA has been sent */
+	iface->iface_extn.nol_info_valid = false;
 }
 
 bool hostapd_uplink_csa_hdl(struct hostapd_data *hapd,
@@ -774,21 +989,70 @@ bool hostapd_uplink_csa_hdl(struct hostapd_data *hapd,
 }
 
 /**
+ * hostapd_uplink_csa_hdl_extn - Handle uplink CSA action frame at intermediate repeater
+ * @hapd: hostapd BSS data structure
+ * @buf: Raw 802.11 frame buffer
+ * @len: Length of the frame buffer
+ *
+ * Called when an intermediate repeater (e.g. repeater 1 in a
+ * repeater2 -> repeater1 -> root topology) receives an uplink CSA
+ * action frame from a downstream repeater. This function:
+ *   1. Forwards the complete uplink CSA frame to the root AP.
+ *   2. Parses the NOL IE in the received frame and marks the affected
+ *      channels as DFS_UNAVAILABLE by calling set_dfs_state() via
+ *      dfs_process_nol_ie_bitmap().
+ *
+ * The NOL IE is decoded before forwarding so that the intermediate
+ * repeater's local channel list is updated even when it is not the
+ * originator of the radar detection.
+ *
+ * Return: true if the frame was handled, false otherwise.
+ */
+bool hostapd_uplink_csa_hdl_extn(struct hostapd_data *hapd,
+				  const u8 *buf, size_t len)
+{
+	if (!hapd || !hapd->iface || !buf)
+		return false;
+
+	if (!dfs_is_uplink_csa_enabled(hapd->iface))
+		return false;
+
+	wpa_printf(MSG_INFO,
+		   "uplink_csa_extn: Received uplink CSA from downstream repeater, forwarding to root AP");
+
+	/*
+	 * hostapd_handle_action_csa() will:
+	 *   1. Decode the NOL IE from the received frame.
+	 *   2. Call dfs_process_nol_ie_bitmap() to mark affected channels
+	 *      as DFS_UNAVAILABLE in the local channel list.
+	 *   3. Store the decoded NOL entry in iface->iface_extn.nol_info.
+	 *   4. Call hostapd_dfs_request_channel_switch() which invokes
+	 *      hostapd_send_uplink_csa_extn() to forward the frame with
+	 *      the NOL IE to the root AP.
+	 */
+	hostapd_handle_action_csa(hapd, buf, len);
+	return true;
+}
+
+/**
  * dfs_prepare_nol_ie_bitmap - Prepare NOL IE from radar detection
  *
  * This function creates a NOL IE entry based on the RCSA design pattern.
  * It converts radar detection information into a subchannel bitmap format.
  */
 int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
-			      int chan_width, int cf1, int cf2,
+			      enum oper_chan_width chan_width, int cf1, int cf2,
 			      u16 radar_bitmap,
-			      struct dfs_nol_ie_info *nol_info)
+			      dfs_nol_ie_info *nol_info)
 {
 	int bandwidth_mhz;
 	int n_subchans;
 	u16 bitmap_mask;
 	u16 radar_bitmap_oper;
 	int start_subchan_idx;
+	int end_subchan_idx;
+	int contiguous_count;
+	u16 contiguous_bitmap;
 
 	if (!iface || !nol_info) {
 		wpa_printf(MSG_ERROR, "DFS NOL IE: Invalid parameters");
@@ -797,7 +1061,7 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 
 	os_memset(nol_info, 0, sizeof(*nol_info));
 
-	if (dfs_nol_ie_chan_width_to_bw_mhz(chan_width, &bandwidth_mhz)) {
+	if (dfs_nol_ie_chan_width_to_bw_mhz(chan_width, freq, cf1, &bandwidth_mhz)) {
 		wpa_printf(MSG_ERROR, "DFS NOL IE: Unsupported channel width %d",
 			   chan_width);
 		return -1;
@@ -825,59 +1089,98 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 	       !(radar_bitmap_oper & (1U << start_subchan_idx)))
 		start_subchan_idx++;
 
-	if (start_subchan_idx >= n_subchans)
+	if (start_subchan_idx >= n_subchans) {
+		wpa_printf(MSG_ERROR, "DFS NOL IE: No radar-affected subchannel found");
 		return -1;
+	}
 
 	/*
-	 * RCSA design for NOL IE:
-	 * - freq: first affected 20 MHz subchannel frequency
-	 * - subchan_bitmap: contiguous bitmap starting at freq
+	 * Find contiguous radar-affected subchannels starting from
+	 * start_subchan_idx. The NOL IE bitmap should represent contiguous
+	 * affected subchannels only.
 	 */
-	nol_info->freq = (cf1 - (bandwidth_mhz / 2)) + (MIN_DFS_SUBCHAN_BW / 2) +
-			(start_subchan_idx * MIN_DFS_SUBCHAN_BW);
-	nol_info->bandwidth = bandwidth_mhz;
-	nol_info->subchan_bitmap = radar_bitmap_oper >> start_subchan_idx;
+	end_subchan_idx = start_subchan_idx;
+	while (end_subchan_idx < n_subchans &&
+	       (radar_bitmap_oper & (1U << end_subchan_idx)))
+		end_subchan_idx++;
+
+	contiguous_count = end_subchan_idx - start_subchan_idx;
+
+	/*
+	 * Create contiguous bitmap starting from bit 0.
+	 * Example: if subchannels 1 and 2 are affected (bits 1-2 set in
+	 * radar_bitmap),
+	 * the NOL IE bitmap should be 0b0011 (bits 0-1 set).
+	 */
+	contiguous_bitmap = (1U << contiguous_count) - 1;
+
+	/*
+	 * RCSA design for NOL IE
+	 * - bandwidth: Always 20 MHz (MIN_DFS_SUBCHAN_BW)
+	 * - freq: Center frequency of the first radar-affected 20 MHz
+	           subchannel
+	 * - subchan_bitmap: Contiguous bitmap starting from freq (max 3 bits)
+	 *
+	 * Example for 80 MHz at cf1=5530, radar_bitmap=0b0110 (bits 1-2):
+	 *   - Subchannels: [5500, 5520, 5540, 5560]
+	 *   - Affected: 5520 (bit1), 5540 (bit2)
+	 *   - NOL IE: freq=5520, bandwidth=20, bitmap=0b0011
+	 */
+	nol_info->freq = freq + (start_subchan_idx * MIN_DFS_SUBCHAN_BW);
+	nol_info->bandwidth = MIN_DFS_SUBCHAN_BW;
+	nol_info->subchan_bitmap = contiguous_bitmap;
 
 	wpa_printf(MSG_DEBUG,
-		   "DFS NOL IE: Input radar_bitmap=0x%04x for freq=%d bw=%d",
-		   radar_bitmap, cf1, bandwidth_mhz);
+		   "DFS NOL IE: Input - cf1=%d bw=%d radar_bitmap=0x%04x",
+		   cf1, bandwidth_mhz, radar_bitmap);
+
+	wpa_printf(MSG_DEBUG,
+		   "DFS NOL IE: Calculated - primary_freq=%d n_subchans=%d",
+		   freq, n_subchans);
+
+	wpa_printf(MSG_DEBUG,
+		   "DFS NOL IE: Affected subchannels - start_idx=%d end_idx=%d count=%d",
+		   start_subchan_idx, end_subchan_idx, contiguous_count);
 
 	wpa_printf(MSG_INFO,
 		   "DFS NOL IE: Prepared - freq=%u bw=%u bitmap=0x%04x",
-		   nol_info->freq, nol_info->bandwidth, nol_info->subchan_bitmap);
+		   nol_info->freq, nol_info->bandwidth,
+		   nol_info->subchan_bitmap);
 
 	return 0;
 }
 
 /**
- * dfs_encode_nol_ie - Encode NOL IE into vendor-specific IE format
+ * dfs_encode_nol_ie - Encode a single NOL entry into vendor-specific IE format
  *
- * Format (based on RCSA design):
- * - Element ID: WLAN_EID_VENDOR_SPECIFIC (221)
- * - Length: Variable
- * - OUI: 00:13:74 (QCA)
- * - OUI Type: QCA_VENDOR_ELEM_NOL_UPDATE (0x01)
- * - NOL Entry Count: 1 byte
- * - NOL Entries: Variable (each entry 15 bytes)
- *   - Frequency: 4 bytes (u32)
- *   - Bandwidth: 4 bytes (u32)
- *   - Subchan Bitmap: 2 bytes (u16)
+ * Wire format (17 bytes total):
+ *   Byte  0   : EID  = WLAN_EID_VENDOR_SPECIFIC (221)
+ *   Byte  1   : LEN  = 15  (OUI(3)+Type(1)+Count(1)+Entry(10))
+ *   Bytes 2-4 : OUI  = 00:13:74 (QCA)
+ *   Byte  5   : Type = QCA_VENDOR_ELEM_NOL_UPDATE (0x01)
+ *   Byte  6   : Count = 1 (always)
+ *   Bytes 7-10: freq  (u32 LE)
+ *   Bytes 11-14: bw   (u32 LE)
+ *   Bytes 15-16: subchan_bitmap (u16 LE)
+ *
+ * @nol_info: pointer to the single NOL entry to encode (must not be NULL)
+ * @buf:      output buffer (must be at least DFS_NOL_IE_FIXED_HDR_LEN +
+ *            DFS_NOL_IE_ENTRY_LEN = 17 bytes)
+ * @buf_len:  size of @buf in bytes
+ *
+ * Returns total bytes written (17) on success, -1 on error.
  */
-int dfs_encode_nol_ie(struct dfs_nol_ie_list *nol_list, u8 *buf,
+int dfs_encode_nol_ie(const dfs_nol_ie_info *nol_info, u8 *buf,
 		      size_t buf_len)
 {
 	u8 *pos = buf;
-	u8 *length_pos;
-	size_t i;
-	size_t required_len;
+	/* Fixed total: EID(1)+LEN(1)+OUI(3)+Type(1)+Count(1)+Entry(10) = 17 */
+	const size_t required_len = DFS_NOL_IE_FIXED_HDR_LEN + DFS_NOL_IE_ENTRY_LEN;
 
-	if (!nol_list || !buf || nol_list->count == 0) {
-		wpa_printf(MSG_DEBUG, "DFS NOL IE: No NOL entries to encode");
-		return 0;
+	if (!nol_info || !buf) {
+		wpa_printf(MSG_ERROR, "DFS NOL IE: NULL parameter in encode");
+		return -1;
 	}
-
-	required_len = DFS_NOL_IE_FIXED_HDR_LEN +
-			(nol_list->count * DFS_NOL_IE_ENTRY_LEN);
 
 	if (buf_len < required_len) {
 		wpa_printf(MSG_ERROR,
@@ -886,65 +1189,87 @@ int dfs_encode_nol_ie(struct dfs_nol_ie_list *nol_list, u8 *buf,
 		return -1;
 	}
 
+	/* EID */
 	*pos++ = WLAN_EID_VENDOR_SPECIFIC;
-	length_pos = pos++;
+	/* LEN field: everything after EID+LEN = OUI(3)+Type(1)+Count(1)+Entry(10) = 15 */
+	*pos++ = (u8)(DFS_NOL_IE_FIXED_HDR_LEN - 2 + DFS_NOL_IE_ENTRY_LEN);
+	/* OUI */
 	WPA_PUT_BE24(pos, OUI_QCA);
 	pos += 3;
+	/* OUI Type */
 	*pos++ = QCA_VENDOR_ELEM_NOL_UPDATE;
-	*pos++ = nol_list->count;
+	/* Count: always 1 */
+	*pos++ = 1;
+	/* Entry */
+	WPA_PUT_LE32(pos, nol_info->freq);
+	pos += DFS_NOL_IE_U32_LEN;
+	WPA_PUT_LE32(pos, nol_info->bandwidth);
+	pos += DFS_NOL_IE_U32_LEN;
+	WPA_PUT_LE16(pos, nol_info->subchan_bitmap);
+	pos += DFS_NOL_IE_U16_LEN;
 
-	for (i = 0; i < nol_list->count; i++) {
-		struct dfs_nol_ie_info *entry = &nol_list->entries[i];
+	wpa_printf(MSG_INFO,
+		   "DFS NOL IE: Encoded - freq=%u bw=%u bitmap=0x%04x total=%zu bytes",
+		   nol_info->freq, nol_info->bandwidth, nol_info->subchan_bitmap,
+		   (size_t)(pos - buf));
 
-		WPA_PUT_LE32(pos, entry->freq);
-		pos += DFS_NOL_IE_U32_LEN;
-
-		WPA_PUT_LE32(pos, entry->bandwidth);
-		pos += DFS_NOL_IE_U32_LEN;
-
-		WPA_PUT_LE16(pos, entry->subchan_bitmap);
-		pos += DFS_NOL_IE_U16_LEN;
-
-		wpa_printf(MSG_DEBUG,
-			   "DFS NOL IE: Encoded entry %zu - freq=%u bw=%u bitmap=0x%04x",
-			   i, entry->freq, entry->bandwidth,
-			   entry->subchan_bitmap);
-	}
-
-	*length_pos = pos - length_pos - 1;
-
-	wpa_printf(MSG_INFO, "DFS NOL IE: Encoded %zu entries, total %zu bytes",
-		   nol_list->count, (size_t)(pos - buf));
-
-	return pos - buf;
+	return (int)(pos - buf);
 }
 
 /**
- * dfs_decode_nol_ie - Decode NOL IE from vendor-specific IE
+ * dfs_decode_nol_ie - Decode a single NOL entry from vendor-specific IE
+ *
+ * Validates the wire format and extracts the first (and only expected) entry
+ * into @nol_info.  The count field in the IE must be exactly 1; any other
+ * value is rejected so that a malformed or multi-entry IE from an unknown
+ * sender cannot silently corrupt state.
+ *
+ * @ie:      pointer to the start of the vendor IE (EID byte)
+ * @ie_len:  total length including EID and LEN bytes
+ *           (must equal DFS_NOL_IE_FIXED_HDR_LEN + DFS_NOL_IE_ENTRY_LEN = 17)
+ * @nol_info: output; filled on success, zeroed on any error
+ *
+ * Returns 0 on success, -1 on any validation failure.
  */
 int dfs_decode_nol_ie(const u8 *ie, size_t ie_len,
-		      struct dfs_nol_ie_list *nol_list)
+		      dfs_nol_ie_info *nol_info)
 {
 	const u8 *pos;
 	u8 count;
-	size_t i;
-	size_t expected_len;
+	/* Expected total: EID(1)+LEN(1)+OUI(3)+Type(1)+Count(1)+Entry(10) = 17 */
+	const size_t expected_total = DFS_NOL_IE_FIXED_HDR_LEN + DFS_NOL_IE_ENTRY_LEN;
 
-	if (!ie || !nol_list || ie_len < DFS_NOL_IE_MIN_LEN) {
-		wpa_printf(MSG_ERROR, "DFS NOL IE: Invalid decode parameters");
+	if (!ie || !nol_info) {
+		wpa_printf(MSG_ERROR, "DFS NOL IE: NULL parameter in decode");
 		return -1;
 	}
 
-	os_memset(nol_list, 0, sizeof(*nol_list));
+	os_memset(nol_info, 0, sizeof(*nol_info));
+
+	if (ie_len < DFS_NOL_IE_MIN_LEN) {
+		wpa_printf(MSG_ERROR,
+			   "DFS NOL IE: IE too short (%zu < %u)",
+			   ie_len, DFS_NOL_IE_MIN_LEN);
+		return -1;
+	}
 
 	if (ie[0] != WLAN_EID_VENDOR_SPECIFIC) {
 		wpa_printf(MSG_ERROR, "DFS NOL IE: Invalid element ID %u", ie[0]);
 		return -1;
 	}
 
-	if (ie[1] + 2 != ie_len) {
-		wpa_printf(MSG_ERROR, "DFS NOL IE: Length mismatch %u != %zu",
+	/* LEN field covers everything after EID+LEN bytes */
+	if ((size_t)(ie[1] + 2) != ie_len) {
+		wpa_printf(MSG_ERROR,
+			   "DFS NOL IE: LEN field mismatch: ie[1]+2=%u ie_len=%zu",
 			   ie[1] + 2, ie_len);
+		return -1;
+	}
+
+	if (ie_len != expected_total) {
+		wpa_printf(MSG_ERROR,
+			   "DFS NOL IE: Unexpected IE length %zu (expected %zu)",
+			   ie_len, expected_total);
 		return -1;
 	}
 
@@ -961,240 +1286,202 @@ int dfs_decode_nol_ie(const u8 *ie, size_t ie_len,
 		return -1;
 	}
 	pos++;
+
 	count = *pos++;
-
-	if (count == 0 || count > DFS_MAX_20M_SUB_CH) {
-		wpa_printf(MSG_ERROR, "DFS NOL IE: Invalid entry count %u", count);
-		return -1;
-	}
-
-	expected_len = count * DFS_NOL_IE_ENTRY_LEN;
-	if (ie_len - (pos - ie) < expected_len) {
+	if (count != 1) {
 		wpa_printf(MSG_ERROR,
-			   "DFS NOL IE: Insufficient data for %u entries", count);
+			   "DFS NOL IE: Expected count=1, got %u", count);
 		return -1;
 	}
 
-	nol_list->entries = os_calloc(count, sizeof(struct dfs_nol_ie_info));
-	if (!nol_list->entries) {
-		wpa_printf(MSG_ERROR, "DFS NOL IE: Memory allocation failed");
+	/* Bounds already guaranteed by the ie_len == expected_total check above */
+	nol_info->freq = WPA_GET_LE32(pos);
+	pos += DFS_NOL_IE_U32_LEN;
+	nol_info->bandwidth = WPA_GET_LE32(pos);
+	pos += DFS_NOL_IE_U32_LEN;
+	nol_info->subchan_bitmap = WPA_GET_LE16(pos);
+
+	wpa_printf(MSG_INFO,
+		   "DFS NOL IE: Decoded - freq=%u bw=%u bitmap=0x%04x",
+		   nol_info->freq, nol_info->bandwidth, nol_info->subchan_bitmap);
+
+	return 0;
+}
+
+/**
+ * dfs_notify_radar_to_driver - Notify cfg80211 driver about radar detection
+ *
+ * Sends NL80211_CMD_NOTIFY_RADAR to the cfg80211 driver to mark a channel
+ * as radar-detected and unavailable. This ensures the kernel DFS state
+ * is synchronized with hostapd when processing NOL IE from uplink CSA.
+ *
+ * @hapd: hostapd BSS data
+ * @freq: Center frequency of the radar-detected channel in MHz
+ *
+ * Returns: 0 on success, -1 on failure
+ */
+#define DFS_CHAN_WIDTH_20MHz 20
+static int dfs_notify_radar_to_driver(struct hostapd_data *hapd,
+				      int freq)
+{
+	struct hostapd_freq_params freq_params;
+	u8 channel;
+	int ret;
+
+	if (!hapd || !hapd->drv_priv) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: Invalid context for radar notification");
 		return -1;
 	}
-	nol_list->count = count;
 
-	for (i = 0; i < count; i++) {
-		struct dfs_nol_ie_info *entry = &nol_list->entries[i];
-
-		entry->freq = WPA_GET_LE32(pos);
-		pos += DFS_NOL_IE_U32_LEN;
-
-		entry->bandwidth = WPA_GET_LE32(pos);
-		pos += DFS_NOL_IE_U32_LEN;
-
-		entry->subchan_bitmap = WPA_GET_LE16(pos);
-		pos += DFS_NOL_IE_U16_LEN;
-
-		wpa_printf(MSG_INFO,
-			   "DFS NOL IE: Decoded entry %zu - freq=%u bw=%u bitmap=0x%04x",
-			   i, entry->freq, entry->bandwidth,
-			   entry->subchan_bitmap);
+	os_memset(&freq_params, 0, sizeof(freq_params));
+	freq_params.freq = freq;
+	freq_params.mode = ieee80211_freq_to_chan(freq, &channel);
+	if (freq_params.mode == NUM_HOSTAPD_MODES) {
+		wpa_printf(MSG_ERROR,
+			   "DFS: Invalid frequency %d MHz, cannot determine channel",
+			   freq);
+		return -1;
+	}
+	freq_params.channel = channel;
+	/*
+	 * Notify about this 20 MHz subchannel individually.
+	 * vht_enabled=1 forces nl80211_put_freq_params() to emit
+	 * NL80211_ATTR_CHANNEL_WIDTH + NL80211_ATTR_CENTER_FREQ1, which
+	 * nl80211_notify_radar_detection() (NL80211_CMD_NOTIFY_RADAR) requires
+	 * to build a valid cfg80211_chan_def.  Using ht_enabled alone would
+	 * emit NL80211_ATTR_WIPHY_CHANNEL_TYPE instead, which is rejected.
+	 */
+	freq_params.bandwidth = DFS_CHAN_WIDTH_20MHz;
+	freq_params.vht_enabled = 1;
+	freq_params.center_freq1 = freq;
+	wpa_printf(MSG_INFO,
+		   "DFS: Notifying driver about radar on freq=%d MHz, bw=%d MHz",
+		   freq, freq_params.bandwidth);
+	ret = nl80211_notify_radar_detected_extn(hapd->drv_priv, &freq_params);
+	if (ret < 0) {
+		wpa_printf(MSG_WARNING,
+			   "DFS: Failed to notify nl80211 about radar on %d MHz",
+			   freq);
+		return -1;
 	}
 
 	return 0;
 }
 
 /**
- * dfs_process_nol_ie_bitmap - Process received NOL IE and update local NOL
+ * dfs_process_nol_ie_bitmap - Mark channels from a single NOL IE entry as unavailable
  *
- * This function processes NOL IE entries received from uplink CSA and
- * marks the corresponding channels as DFS_UNAVAILABLE in the local NOL.
+ * Iterates over each set bit in nol_info->subchan_bitmap.  Bit k represents
+ * the 20 MHz subchannel at (nol_info->freq + k * 20 MHz).  Each subchannel
+ * is individually marked DFS_UNAVAILABLE via set_dfs_state().
+ *
+ * @iface:    hostapd interface whose channel table is updated
+ * @nol_info: the single decoded NOL entry (must not be NULL)
+ *
+ * Returns 0 if all set_dfs_state() calls succeed, -1 if any fail.
  */
 int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
-			      struct dfs_nol_ie_list *nol_list)
+			      const dfs_nol_ie_info *nol_info)
 {
-	size_t i;
+	u32 base_freq;
+	u16 bm;
+	int bw_mhz;
+	int chan_width_enum;
+	int bit;
 	int ret = 0;
-
-	if (!iface || !nol_list || nol_list->count == 0) {
-		wpa_printf(MSG_DEBUG, "DFS NOL IE: No entries to process");
-		return 0;
+ 
+	if (!iface || !nol_info) {
+		wpa_printf(MSG_ERROR, "DFS NOL IE: NULL parameter in process");
+		return -1;
+	}
+ 
+	bm = nol_info->subchan_bitmap;
+	if (!bm) {
+		wpa_printf(MSG_WARNING,
+			   "DFS NOL IE: Empty bitmap for freq %u, nothing to mark",
+			   nol_info->freq);
+		return -1;
 	}
 
-	wpa_printf(MSG_INFO, "DFS NOL IE: Processing %zu NOL entries",
-		   nol_list->count);
+	bw_mhz = (int)nol_info->bandwidth;
+	if (dfs_nol_ie_bw_mhz_to_chan_width(bw_mhz, &chan_width_enum)) {
+		wpa_printf(MSG_ERROR,
+			   "DFS NOL IE: Unsupported bandwidth %d MHz", bw_mhz);
+		return -1;
+	}
 
-	for (i = 0; i < nol_list->count; i++) {
-		struct dfs_nol_ie_info *entry = &nol_list->entries[i];
-		int chan_width;
-		int n_subchans;
-		u16 bitmap;
-		u16 mask;
-		u32 startfreq;
-		u32 centerfreq;
-		u32 block_first20;
-		int shift;
-
-		if (dfs_nol_ie_bw_mhz_to_chan_width(entry->bandwidth, &chan_width)) {
-			wpa_printf(MSG_WARNING,
-				   "DFS NOL IE: Unsupported bandwidth %u MHz",
-				   entry->bandwidth);
+	base_freq = nol_info->freq;
+	wpa_printf(MSG_INFO,
+		   "DFS NOL IE: Processing entry base_freq=%u bw=%d bitmap=0x%04x",
+		   base_freq, bw_mhz, bm);
+ 
+	/*
+	 * Each bit k in bm represents a 20 MHz subchannel:
+	 *   freq_k = base_freq + k * MIN_DFS_SUBCHAN_BW
+	 * Only DFS_MAX_20M_SUB_CH (8) bits are valid.
+	 */
+	for (bit = 0; bit < DFS_MAX_20M_SUB_CH; bit++) {
+		u32 chan_freq;
+ 
+		if (!(bm & BIT(bit)))
 			continue;
-		}
+		chan_freq = base_freq + (u32)(bit * MIN_DFS_SUBCHAN_BW);
 
-		/*
-		 * NOL IE (RCSA design): entry->freq is the first affected 20 MHz
-		 * subchannel frequency (startfreq), and entry->subchan_bitmap contains
-		 * a contiguous bitmap starting at startfreq.
-		 *
-		 * set_dfs_state() expects the bitmap to be relative to the channel block
-		 * starting frequency derived from the center frequency (cf1). So convert
-		 * (startfreq, contiguous_bitmap) into an operating-block radar_bitmap.
-		 */
-		startfreq = entry->freq;
-		n_subchans = entry->bandwidth / MIN_DFS_SUBCHAN_BW;
-		if (n_subchans <= 0 || n_subchans > DFS_MAX_20M_SUB_CH) {
-			wpa_printf(MSG_WARNING,
-				   "DFS NOL IE: Invalid subchannel count %d (bw=%u)",
-				   n_subchans, entry->bandwidth);
-			continue;
-		}
+		wpa_printf(MSG_DEBUG,
+			   "DFS NOL IE: Marking %u MHz as NOL (base=%u bit=%d)",
+			   chan_freq, base_freq, bit);
 
-		mask = DFS_NOL_IE_BITMAP_MASK(n_subchans);
-		bitmap = entry->subchan_bitmap & mask;
-		if (!bitmap) {
-			wpa_printf(MSG_DEBUG,
-				   "DFS NOL IE: Empty bitmap for freq %u bw %u",
-				   entry->freq, entry->bandwidth);
-			continue;
-		}
-
-		/*
-		 * Compute center frequency (cf1) for set_dfs_state(), based on startfreq.
-		 * For an N*20 MHz block, center = startfreq + (N/2)*20 - 10.
-		 */
-		centerfreq = startfreq + (n_subchans / 2) * MIN_DFS_SUBCHAN_BW -
-			(MIN_DFS_SUBCHAN_BW / 2);
-		block_first20 = centerfreq - (entry->bandwidth / 2) +
-			(MIN_DFS_SUBCHAN_BW / 2);
-		shift = (startfreq - block_first20) / MIN_DFS_SUBCHAN_BW;
-		if (shift < 0 || shift >= n_subchans) {
-			wpa_printf(MSG_WARNING,
-				   "DFS NOL IE: Invalid startfreq %u for bw=%u",
-				   startfreq, entry->bandwidth);
-			continue;
-		}
-
-		bitmap <<= shift;
-		bitmap &= mask;
-
-		if (!set_dfs_state(iface, centerfreq, 1, 0, chan_width,
-				   centerfreq, 0,
+		if (!set_dfs_state(iface, chan_freq, 1, 0,
+				   chan_width_enum, chan_freq, 0,
 				   HOSTAPD_CHAN_DFS_UNAVAILABLE,
-				   bitmap)) {
+				   DFS_NOL_IE_SINGLE_SUBCHAN_BITMAP)) {
 			wpa_printf(MSG_WARNING,
-				   "DFS NOL IE: Failed to mark centerfreq %u as unavailable",
-				   centerfreq);
+				   "DFS NOL IE: Failed to mark %u MHz as unavailable",
+				   chan_freq);
 			ret = -1;
 		} else {
 			wpa_printf(MSG_INFO,
-				   "DFS NOL IE: Marked startfreq %u (bw=%u, bitmap=0x%04x) as NOL",
-				   startfreq, entry->bandwidth, bitmap);
+				   "DFS NOL IE: Marked %u MHz as NOL", chan_freq);
+
+			/*
+			 * Notify cfg80211 driver about radar detection.
+			 * Loop through all BSSes to find a valid one for notification.
+			 */
+			if (iface->bss && iface->num_bss > 0) {
+				size_t i;
+				bool notified = false;
+
+				for (i = 0; i < iface->num_bss; i++) {
+					if (!iface->bss[i])
+						continue;
+
+					if (dfs_notify_radar_to_driver(iface->bss[i],
+								       chan_freq) == 0) {
+						notified = true;
+						break;
+					}
+				}
+
+				if (!notified) {
+					wpa_printf(MSG_WARNING,
+						   "DFS NOL IE: Failed to notify driver about radar on %u MHz (no valid BSS found)",
+						   chan_freq);
+					/*
+					 * Continue processing other channels even if
+					 * notification fails.
+					 * The hostapd state has been updated
+					 * successfully via set_dfs_state().
+					 * Kernel notification failure is logged but not
+					 * fatal.
+					 */
+				}
+			}
 		}
 	}
 
 	return ret;
 }
-
-/**
- * dfs_free_nol_ie_list - Free NOL IE list
- */
-void dfs_free_nol_ie_list(struct dfs_nol_ie_list *nol_list)
-{
-	if (!nol_list)
-		return;
-
-	if (nol_list->entries) {
-		os_free(nol_list->entries);
-		nol_list->entries = NULL;
-	}
-	nol_list->count = 0;
-}
-
-/**
- * dfs_get_nol_ie_from_iface - Get current NOL as IE list
- *
- * This function extracts the current NOL from the interface and
- * converts it to NOL IE format for transmission.
- */
-int dfs_get_nol_ie_from_iface(struct hostapd_iface *iface,
-			      struct dfs_nol_ie_list *nol_list)
-{
-	struct hostapd_hw_modes *mode;
-	struct hostapd_channel_data *chan;
-	size_t nol_count = 0;
-	size_t i, j;
-
-	if (!iface || !nol_list) {
-		wpa_printf(MSG_ERROR, "DFS NOL IE: Invalid parameters");
-		return -1;
-	}
-
-	os_memset(nol_list, 0, sizeof(*nol_list));
-
-	mode = iface->current_mode;
-	if (!mode) {
-		wpa_printf(MSG_DEBUG, "DFS NOL IE: No current mode");
-		return 0;
-	}
-
-	for (i = 0; i < mode->num_channels; i++) {
-		chan = &mode->channels[i];
-		if ((chan->flag & HOSTAPD_CHAN_RADAR) &&
-		    (chan->flag & HOSTAPD_CHAN_DFS_MASK) ==
-		     HOSTAPD_CHAN_DFS_UNAVAILABLE) {
-			nol_count++;
-		}
-	}
-
-	if (nol_count == 0) {
-		wpa_printf(MSG_DEBUG, "DFS NOL IE: No NOL channels");
-		return 0;
-	}
-
-	nol_list->entries = os_calloc(nol_count,
-				      sizeof(struct dfs_nol_ie_info));
-	if (!nol_list->entries) {
-		wpa_printf(MSG_ERROR, "DFS NOL IE: Memory allocation failed");
-		return -1;
-	}
-
-	j = 0;
-	for (i = 0; i < mode->num_channels && j < nol_count; i++) {
-		chan = &mode->channels[i];
-		if ((chan->flag & HOSTAPD_CHAN_RADAR) &&
-		    (chan->flag & HOSTAPD_CHAN_DFS_MASK) ==
-		     HOSTAPD_CHAN_DFS_UNAVAILABLE) {
-			struct dfs_nol_ie_info *entry = &nol_list->entries[j];
-
-			entry->freq = chan->freq;
-			entry->bandwidth = DFS_NOL_IE_BW_20_MHZ;
-			entry->subchan_bitmap = DFS_NOL_IE_SINGLE_SUBCHAN_BITMAP;
-
-			wpa_printf(MSG_DEBUG,
-				   "DFS NOL IE: Added NOL channel freq=%u",
-				   entry->freq);
-			j++;
-		}
-	}
-
-	nol_list->count = j;
-
-	wpa_printf(MSG_INFO, "DFS NOL IE: Extracted %zu NOL channels",
-		   nol_list->count);
-
-	return 0;
-}
-
 
 int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 {
@@ -1207,7 +1494,6 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 	u8 oper_centr_freq_seg0_idx;
 	u8 oper_centr_freq_seg1_idx;
 	u8 current_vht_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
-	u8 new_vht_oper_chwidth;
 	int channel_type = DFS_AVAILABLE_EXTN;
 
 	wpa_printf(MSG_DEBUG,
@@ -1231,6 +1517,7 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 		channel = dfs_downgrade_bandwidth_helper(iface, &secondary_channel,
 							 &oper_centr_freq_seg0_idx,
 							 &oper_centr_freq_seg1_idx,
+							 &current_vht_oper_chwidth,
 							 &channel_type);
 		if (!channel) {
 			hostapd_disable_iface(iface);
@@ -1242,8 +1529,6 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 	wpa_printf(MSG_DEBUG,
 		   "DFS restarting on a fresh channel %d without CSA",
 		   channel->chan);
-	new_vht_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
-	hostapd_set_oper_chwidth(iface->conf, current_vht_oper_chwidth);
 
 	os_memset(&freq_params, 0, sizeof(freq_params));
 	err = hostapd_set_freq_params(&freq_params,
@@ -1257,7 +1542,7 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 				      iface->conf->ieee80211be,
 				      iface->conf->ieee80211bn,
 				      secondary_channel,
-				      new_vht_oper_chwidth,
+				      current_vht_oper_chwidth,
 				      oper_centr_freq_seg0_idx,
 				      oper_centr_freq_seg1_idx,
 				      cmode->vht_capab,
@@ -1278,4 +1563,73 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 	hostapd_switch_channel_fallback(iface, &freq_params);
 
 	return 0;
+}
+
+/**
+ * hostapd_bootup_cac_complete_extn - Finalize boot-up CAC on an interface.
+ *
+ * Clears the CAC-in-progress flags, transitions the interface to ENABLED
+ * state, and triggers ieee802_11_set_beacons() to bring-up the interfaces
+ * after CAC is completed.
+ */
+void hostapd_bootup_cac_complete_extn(struct hostapd_iface *iface)
+{
+	iface->bootup_cac_in_progress = 0;
+	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+	wpa_printf(MSG_DEBUG,
+		   "Boot-up CAC complete for %s: state->ENABLED, calling set_beacons for %zu BSS",
+		   iface->bss[0]->conf->iface, iface->num_bss);
+	ieee802_11_set_beacons(iface);
+}
+
+/**
+ * hostapd_bss_rnr_eligible_extn - Extension check for RNR eligibility.
+ *
+ * Called from hostapd_bss_rnr_eligible() after the BSS started/beacon_set_done
+ * checks have already passed.  Returns true when the BSS is in the boot-up
+ * CAC window. The beacon template has been sent to the driver
+ * (NL80211_CMD_START_AP) but beacon_set_done may not yet be set on partner
+ * ifaces that are building their RNR before the 5 GHz cross-update fires.
+ * Allowing inclusion here ensures the 5 GHz link appears in partner beacons
+ * from the very first beacon transmission.
+ */
+bool hostapd_bss_rnr_eligible_extn(struct hostapd_data *bss)
+{
+	if (bss->iface && bss->iface->bootup_cac_in_progress)
+		return true;
+	return false;
+}
+
+/**
+ * hostapd_bootup_cac_start_extn - Start boot-up CAC if the driver and config allow it.
+ *
+ * When the driver advertises WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC and
+ * disable_iface_during_cac is not set, bypass hostapd_handle_dfs so that all
+ * 5 GHz BSSes are created immediately while the mac80211 CAC timer runs.
+ *
+ * Returns true if the boot-up CAC path was taken (caller skips hostapd_handle_dfs),
+ * false if the normal DFS path should proceed.
+ */
+bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
+{
+	if (!iface || !iface->conf)
+		return false;
+
+	if (!((iface->drv_flags2 & WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC) &&
+	      !iface->conf->conf_extn.disable_iface_during_cac &&
+	      hostapd_is_cac_required(iface)))
+		return false;
+
+	if (hostapd_set_dfs_cac_time(iface))
+		return false;
+
+	wpa_printf(MSG_DEBUG,
+		   "Boot-up CAC: bypassing hostapd_handle_dfs for 5 GHz DFS channel %d MHz, creating all BSS immediately",
+		   iface->freq);
+
+	hostapd_set_state(iface, HAPD_IFACE_DFS);
+	iface->bootup_cac_in_progress = 1;
+	os_get_reltime(&iface->dfs_cac_start);
+
+	return true;
 }

@@ -20,10 +20,11 @@
 #include "ap/dfs.h"
 #include "utils/eloop.h"
 #include "cmn.h"
+#include "block_channel.h"
 
-static int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
-					struct hostapd_channel_data *chan,
-					enum oper_chan_width oper_bw)
+int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
+				 struct hostapd_channel_data *chan,
+				 enum oper_chan_width oper_bw)
 {
 	int center = 0;
 	int bw;
@@ -149,6 +150,14 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n"
 		"  acs invoke <0|1>         : invoke ACS (0=dynamicACS+CSA)|(1=DynamicACS)\n"
 		"  acs show_report          : print last ACS report\n"
+		"  acs set_block_chan_list  : set the channels to blocked state\n"
+		"  acs get_block_chan_list  : get the blocked channels\n"
+		"  acs clear_block_chan_list: clear the blocked channels \n"
+		"  acs show_neighbor_report : print ACS neighbor report\n"
+		"  acs periodic_interval <sec> : set periodic ACS interval (0 disables, max 86400)\n"
+		"  acs get_periodic_interval : get periodic ACS interval\n"
+		"  acs 2g_scan_all <1|0>    : 2.4 GHz ACS: 1=all channels, 0=only 1/6/11\n"
+		"  acs get_2g_scan_all      : get 2.4 GHz ACS channel set selection\n"
 		);
 
 	if (os_snprintf_error(reply_size, ret))
@@ -335,10 +344,110 @@ static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
 	free(acs_report);
 	return len;
 }
+
+static int print_buf_neighbor_report(const struct qacs_neighbor_report *report,
+				     u8 nentries,
+				     char *reply, size_t reply_size)
+{
+	char *pos = reply;
+	char *end = reply + reply_size;
+	int ret;
+	u8 i;
+
+	ret = os_snprintf(pos, end - pos,
+			  "Index | Band | Channel | NBSS | SSID             | BSSID             | SNR | PHYTYPE | CHANWIDTH | Power info\n"
+			  "----------------------------------------------------------------------------------------------------------------\n");
+	if (os_snprintf_error(end - pos, ret))
+		return -1;
+	pos += ret;
+
+	for (i = 0; i < nentries; i++) {
+		const struct qacs_neighbor_report *nr = &report[i];
+		char ssid_buf[MAX_SSID_LEN + 1];
+		char bssid_buf[18];
+		const char *ssid;
+		const char *band;
+		const char *phytype = nr->phytype_disp ? nr->phytype_disp : "UNSPEC";
+		const char *chanwidth = nr->chan_width_disp[0] ? nr->chan_width_disp : "UNSPEC";
+
+		switch (nr->band) {
+		case ICM_BAND_2_4G:
+			band = "2.4G";
+			break;
+		case ICM_BAND_5G:
+			band = "5G";
+			break;
+		case ICM_BAND_6G:
+			band = "6G";
+			break;
+		default:
+			band = "UNK";
+			break;
+		}
+
+		os_memcpy(ssid_buf, nr->ssid, MAX_SSID_LEN);
+		ssid_buf[MAX_SSID_LEN] = '\0';
+		ssid = ssid_buf[0] ? ssid_buf : "<hidden>";
+
+		os_snprintf(bssid_buf, sizeof(bssid_buf), "%02x:%02x:%02x:%02x:%02x:%02x",
+			    nr->bssid[0], nr->bssid[1], nr->bssid[2],
+			    nr->bssid[3], nr->bssid[4], nr->bssid[5]);
+
+		ret = os_snprintf(pos, end - pos,
+				  "%5u | %-4.4s | %7u | %4u | %-16.16s | %-17.17s | %3d | %-7.7s | %-9.9s | %10d\n",
+				  (unsigned int) (i + 1), band,
+				  (unsigned int) nr->chan, (unsigned int) nr->nbss,
+				  ssid, bssid_buf, nr->snr, phytype, chanwidth,
+				  (int) nr->power_info);
+		if (os_snprintf_error(end - pos, ret))
+			return -1;
+		pos += ret;
+	}
+
+	if (nentries == 0)
+		return os_snprintf(reply, reply_size, "No matching scan entries found\n");
+
+	return (int) (pos - reply);
+}
+
+static int hostapd_acs_show_neighbor_report_extn(struct hostapd_data *hapd,
+						 const char *pos,
+						 char *reply, size_t reply_size)
+{
+	struct hostapd_hw_modes *mode;
+	struct qacs_data_extn *data_extn;
+
+	(void) pos;
+
+	if (!hapd || !hapd->iface || !reply || !reply_size)
+		return -1;
+
+	mode = hapd->iface->current_mode;
+	if (!mode)
+		return os_snprintf(reply, reply_size,
+				   "No current mode selected\n");
+
+	data_extn = ICM_GET_EXTN_DATA_PTR(mode);
+	if (!data_extn || !data_extn->neighbor_report ||
+	    !data_extn->num_neighbor_entries)
+		return os_snprintf(reply, reply_size,
+				   "No neighbor report available\n");
+
+	return print_buf_neighbor_report(data_extn->neighbor_report,
+					 data_extn->num_neighbor_entries, reply, reply_size);
+}
+
 #else
 static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
 		const char *pos,
 		char *reply, size_t reply_size)
+{
+	return -1;
+}
+
+static int hostapd_acs_show_neighbor_report_extn(struct hostapd_data *hapd,
+						 const char *pos,
+						 char *reply, size_t reply_size)
 {
 	return -1;
 }
@@ -349,6 +458,9 @@ int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd, enum dynamic_acs_acti
         struct hostapd_iface *iface = hapd->iface;
         int status;
 
+        if (!hapd->iface->current_mode)
+            return -1;
+
 
         if (iface->iface_extn.dynamic_acs_action) {
                 wpa_printf(MSG_ERROR, "Dynamic ACS is already in progress");
@@ -356,15 +468,92 @@ int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd, enum dynamic_acs_acti
         }
 
         iface->iface_extn.dynamic_acs_action = acs_action;
+        qacs_reset_scan_stats(iface, hapd->iface->current_mode);
+	/* Notify wpa_supplicant to abort scans before starting ACS */
+	if (!hostapd_is_bh_sta_connecting_or_connected_extn(iface))
+		hostapd_ucode_notify_acs_start(iface);
 
         status = acs_init(iface);
         if (status != HOSTAPD_CHAN_ACS) {
                 wpa_printf(MSG_ERROR, "Could not start ACS, error: %d", status);
                 iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+		/* Notify wpa_supplicant to resume scans on failure */
+		hostapd_ml_acs_check_and_notify(iface, 0);
                 return -1;
         }
 
         return 0;
+}
+
+static void hostapd_periodic_acs_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_iface *iface = eloop_ctx;
+
+	iface->iface_extn.periodic_acs_timer_set = false;
+
+	if (!iface->conf->conf_extn.acs_periodic_interval)
+		return;
+
+	if (iface->state != HAPD_IFACE_ENABLED) {
+		eloop_register_timeout(iface->conf->conf_extn.acs_periodic_interval, 0,
+				       hostapd_periodic_acs_timeout, iface, NULL);
+		iface->iface_extn.periodic_acs_timer_set = true;
+		return;
+	}
+
+	wpa_printf(MSG_INFO, "Periodic ACS: triggering ACS (interval=%u sec)",
+		   iface->conf->conf_extn.acs_periodic_interval);
+
+	if (hostapd_trigger_dynamic_acs(iface->bss[0], CHANNEL_CHANGE_CSA) < 0) {
+		wpa_printf(MSG_ERROR, "Periodic ACS: trigger failed");
+		hostapd_periodic_acs_schedule(iface);
+	}
+}
+
+void hostapd_periodic_acs_schedule(struct hostapd_iface *iface)
+{
+	if (!iface || !iface->conf)
+		return;
+
+	if (!iface->conf->conf_extn.acs_periodic_interval)
+		return;
+
+	eloop_cancel_timeout(hostapd_periodic_acs_timeout, iface, NULL);
+	iface->iface_extn.periodic_acs_timer_set = false;
+
+	eloop_register_timeout(iface->conf->conf_extn.acs_periodic_interval, 0,
+			       hostapd_periodic_acs_timeout, iface, NULL);
+	iface->iface_extn.periodic_acs_timer_set = true;
+}
+
+void hostapd_periodic_acs_start(struct hostapd_iface *iface)
+{
+	if (!iface || !iface->conf)
+		return;
+
+	eloop_cancel_timeout(hostapd_periodic_acs_timeout, iface, NULL);
+	iface->iface_extn.periodic_acs_timer_set = false;
+
+	if (!iface->conf->conf_extn.acs_periodic_interval)
+		return;
+
+	hostapd_periodic_acs_schedule(iface);
+}
+
+void hostapd_periodic_acs_stop(struct hostapd_iface *iface)
+{
+	if (!iface)
+		return;
+
+	eloop_cancel_timeout(hostapd_periodic_acs_timeout, iface, NULL);
+	iface->iface_extn.periodic_acs_timer_set = false;
+}
+
+bool acs_scan_event_expected_extn(struct hostapd_iface *iface)
+{
+	return ((iface->state == HAPD_IFACE_ACS) ||
+		(iface->iface_extn.dynamic_acs_action &&
+		 iface->state == HAPD_IFACE_ENABLED));
 }
 
 static int hostapd_acs_run_extn(struct hostapd_data *hapd, const char *pos,
@@ -509,6 +698,60 @@ static int hostapd_acs_get_dfs_exclude_extn(struct hostapd_config *conf,
 		return -1;
 
 	return ret;
+}
+
+static int hostapd_acs_set_periodic_interval_extn(struct hostapd_iface *iface,
+						  const char *pos,
+						  char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val < 60 || val > 86400) {
+		wpa_printf(MSG_ERROR,
+			   "%s: Invalid acs_periodic_interval %d (expected 60..86400)",
+			   __func__, val);
+		return -1;
+	}
+
+	iface->conf->conf_extn.acs_periodic_interval = val;
+	hostapd_periodic_acs_start(iface);
+
+	return 0;
+}
+
+static int hostapd_acs_get_periodic_interval_extn(struct hostapd_config_extn *conf_extn,
+						  const char *pos,
+						  char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS periodic_interval: %u\n",
+			      conf_extn->acs_periodic_interval);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_acs_set_2g_scan_all_extn(struct hostapd_config_extn *conf_extn,
+                                            const char *pos,
+                                            char *reply, size_t reply_size)
+{
+    int val = atoi(pos);
+    conf_extn->qacs_conf.acs_2g_scan_all = (val != 0);
+    return 0;
+}
+
+static int hostapd_acs_get_2g_scan_all_extn(struct hostapd_config_extn *conf_extn,
+                                            const char *pos,
+                                            char *reply, size_t reply_size)
+{
+    int ret = os_snprintf(reply, reply_size,
+                          "ACS 2g_scan_all: %d\n",
+                          conf_extn->qacs_conf.acs_2g_scan_all ? 1 : 0);
+    if (os_snprintf_error(reply_size, ret))
+        return -1;
+    return ret;
 }
 
 static int hostapd_acs_set_dwelltime_extn(struct hostapd_config_extn *conf_extn,
@@ -681,6 +924,25 @@ static int hostapd_acs_get_6g_only_psc_extn(struct hostapd_config *conf,
 	return ret;
 }
 
+
+static int hostapd_acs_set_block_chanlist(struct hostapd_data *hapd,
+		const char *cmd)
+{
+	return hostapd_set_block_chanlist(hapd->iface, cmd);
+}
+
+static int hostapd_acs_clear_block_chanlist(struct hostapd_data *hapd,
+		const char *cmd)
+{
+	return hostapd_clear_block_chanlist(hapd->iface, cmd);
+}
+
+static int hostapd_acs_get_block_chanlist(struct hostapd_data *hapd,
+		char *reply, size_t reply_size)
+{
+	return hostapd_get_block_chanlist(hapd->iface, reply, reply_size);
+}
+
 int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 				char *pos, char *buf,
 				size_t buflen)
@@ -728,6 +990,14 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 		return hostapd_acs_get_dfs_exclude_extn(conf, pos,
 							buf, buflen);
 
+	} else if (os_strncmp(pos, "periodic_interval ", 18) == 0) {
+		return hostapd_acs_set_periodic_interval_extn(hapd->iface,
+							     pos + 18, buf, buflen);
+
+	} else if (os_strncmp(pos, "get_periodic_interval", 21) == 0) {
+		return hostapd_acs_get_periodic_interval_extn(conf_extn, pos,
+							     buf, buflen);
+
 	} else if (os_strncmp(pos, "dwelltime ", 10) == 0) {
 		return hostapd_acs_set_dwelltime_extn(conf_extn, pos + 9,
 						      buf, buflen);
@@ -766,11 +1036,31 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 		return hostapd_acs_get_6g_only_psc_extn(conf, pos,
 							buf, buflen);
 
+	} else if (os_strncmp(pos, "2g_scan_all ", 12) == 0) {
+		return hostapd_acs_set_2g_scan_all_extn(conf_extn, pos + 12,
+							buf, buflen);
+
+	} else if (os_strncmp(pos, "get_2g_scan_all", 15) == 0) {
+		return hostapd_acs_get_2g_scan_all_extn(conf_extn, pos,
+							buf, buflen);
+
 	} else if (os_strncmp(pos, "invoke ", 7) == 0) {
 		return hostapd_acs_run_extn(hapd, pos + 7, buf, buflen);
 
 	} else if (os_strncmp(pos, "show_report", 11) == 0) {
 		return hostapd_acs_show_report_extn(hapd, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "set_block_chan_list", 19) == 0) {
+		return hostapd_acs_set_block_chanlist(hapd, pos + 19);
+
+	} else if (os_strncmp(pos, "clear_block_chan_list", 21) == 0) {
+		return hostapd_acs_clear_block_chanlist(hapd, pos + 21);
+
+	} else if (os_strcmp(pos, "get_block_chan_list") == 0) {
+		return hostapd_acs_get_block_chanlist(hapd, buf, buflen);
+
+	} else if (os_strncmp(pos, "show_neighbor_report", 20) == 0) {
+		return hostapd_acs_show_neighbor_report_extn(hapd, pos, buf, buflen);
 
 	} else {
 		return acs_print_usage_extn(buf, buflen);
@@ -799,9 +1089,9 @@ void acs_modify_scan_params_extn(struct hostapd_iface *iface,
 	}
 }
 
-static int
-hostapd_trigger_channel_switch_for_acs(struct hostapd_iface *iface,
-                                       struct hostapd_channel_data *chan)
+int
+hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
+				    struct hostapd_channel_data *chan)
 {
 	struct csa_settings settings;
 	int i;
@@ -973,6 +1263,8 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 
 	if (iface->iface_extn.dynamic_acs_action == NO_CHANNEL_CHANGE) {
 		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+		/* Notify wpa_supplicant to resume scans on success but no channel change requested */
+		hostapd_ml_acs_check_and_notify(iface, 1);
 		return 0;
 	}
 
@@ -984,10 +1276,28 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			   err);
 		hostapd_dcs_restore_extn(iface, "ACS failed");
 		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+		/* Notify wpa_supplicant to resume scans on failure */
+		hostapd_ml_acs_check_and_notify(iface, 0);
 		return 0;
 	}
 
-	cs_err = hostapd_trigger_channel_switch_for_acs(iface, chan);
+	/* Notify wpa_supplicant to resume scans on success and channel change requested */
+	hostapd_ml_acs_check_and_notify(iface, 1);
+
+	if (hostapd_is_bh_sta_connecting_or_connected_extn(iface)) {
+		if (iface->conf->conf_extn.rptr_allow_chan_sw) {
+			wpa_printf(MSG_DEBUG, "Rptr BH STA is connected, "
+				   "disconnect BH STA and allow ACS channel switch");
+			hostapd_ucode_trigger_bhsta_disconnect(iface);
+		} else {
+			wpa_printf(MSG_ERROR, "Rptr BH STA is connected, "
+				   "discard ACS channel switch");
+			iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+			return 0;
+		}
+	}
+
+	cs_err = hostapd_trigger_channel_switch_extn(iface, chan);
 	if (cs_err) {
 		wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
 			   cs_err);
@@ -1006,8 +1316,138 @@ acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
 
 	wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
 		   err);
+	/* Notify wpa_supplicant to resume scans on failure */
+	hostapd_ml_acs_check_and_notify(iface, 0);
 	hostapd_dcs_restore_extn(iface, "ACS failed");
 	iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
 
 	return 0;
+}
+
+bool
+hostapd_hwbl_validate_6ghz(struct hostapd_iface *iface,
+			   struct hostapd_channel_data *chan,
+			   u16 bw, u16 center_freq, u16 punct_bitmap,
+			   u8 nl80211_pwr_mode)
+{
+	u8 target_pwr_mode = nl80211_pwr_mode;
+
+	if (!is_6ghz_freq(chan->freq))
+		return true;
+
+	if (iface->conf->enable_best_power_mode) {
+		u8 best_pwr_mode;
+
+		best_pwr_mode = hostapd_get_best_ap_6ghz_power_mode(
+			iface, chan->freq, center_freq, bw, punct_bitmap);
+		if (best_pwr_mode < NL80211_REG_NUM_POWER_MODES)
+			target_pwr_mode = best_pwr_mode;
+	}
+
+	if (target_pwr_mode >= NL80211_REG_NUM_POWER_MODES)
+		return false;
+
+	return hostapd_validate_chan_bw_in_pwr_mode(iface, chan->freq,
+						    center_freq, bw,
+						    punct_bitmap,
+						    target_pwr_mode);
+}
+
+static u16
+acs_get_chan_center_freq_extn(u16 freq, u32 bw, int bw320_offset)
+{
+	enum bw_type bw_type;
+	int center_chan;
+
+	if (bw == 20)
+		return freq;
+
+	switch (bw) {
+	case 40:
+		bw_type = ACS_BW40;
+		break;
+	case 80:
+		bw_type = ACS_BW80;
+		break;
+	case 160:
+		bw_type = ACS_BW160;
+		break;
+	case 320:
+		bw_type = bw320_offset == ACS_BW320_2 ? ACS_BW320_2 : ACS_BW320_1;
+		break;
+	default:
+		return 0;
+	}
+
+	center_chan = acs_get_bw_center_chan(freq, bw_type);
+	if (!center_chan)
+		return 0;
+
+	return (center_chan == 2) ? 5935 : 5950 + center_chan * 5;
+}
+
+bool
+acs_hwbl_candidate_ok(struct hostapd_iface *iface,
+		      struct hostapd_channel_data *chan,
+		      u32 bw, int bw320_offset, u16 punct_bitmap,
+		      u8 nl80211_pwr_mode)
+{
+	u16 center_freq;
+
+	if (!is_6ghz_freq(chan->freq))
+		return true;
+
+	center_freq = acs_get_chan_center_freq_extn(chan->freq, bw, bw320_offset);
+	if (!center_freq)
+		return false;
+
+	return hostapd_hwbl_validate_6ghz(iface, chan, bw, center_freq,
+					  punct_bitmap, nl80211_pwr_mode);
+}
+
+#ifdef CONFIG_IEEE80211BE
+static int acs_get_primary_index_extn(u16 freq, u32 bw, int bw320_offset)
+{
+	u16 cen_freq, start_freq;
+
+	if (bw == 20)
+		return 0;
+
+	cen_freq = acs_get_chan_center_freq_extn(freq, bw, bw320_offset);
+	if (!cen_freq)
+		return 0;
+
+	start_freq = cen_freq - (u16)(bw / 2) + 10;
+	return (freq - start_freq) / 20;
+}
+#endif /* CONFIG_IEEE80211BE */
+
+bool
+acs_hwbl_chan_ok_extn(struct hostapd_iface *iface,
+		      struct hostapd_hw_modes *mode, u32 bw, int bw320_offset,
+		      int n_chans, struct hostapd_channel_data *chan,
+		      long double factor)
+{
+	u16 punct_bitmap = iface->conf->punct_bitmap;
+	u16 saved_punct_bitmap = chan->punct_bitmap;
+
+	if (!is_6ghz_freq(chan->freq))
+		return true;
+
+	chan->punct_bitmap = punct_bitmap;
+#ifdef CONFIG_IEEE80211BE
+	if (iface->conf->ieee80211be) {
+		int index_primary = acs_get_primary_index_extn(chan->freq, bw,
+							       bw320_offset);
+
+		acs_update_puncturing_bitmap(iface, mode, bw, n_chans, chan,
+					     factor, index_primary);
+	}
+#endif /* CONFIG_IEEE80211BE */
+	punct_bitmap = chan->punct_bitmap;
+	chan->punct_bitmap = saved_punct_bitmap;
+
+	return acs_hwbl_candidate_ok(iface, chan, bw, bw320_offset,
+				     punct_bitmap,
+				     iface->conf->he_6ghz_reg_pwr_type);
 }

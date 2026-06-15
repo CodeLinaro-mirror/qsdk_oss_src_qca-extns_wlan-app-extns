@@ -102,7 +102,8 @@ void hostapd_ml_acs_check_and_notify(struct hostapd_iface *iface, bool status)
 	if (num_ap_with_acs_done == hapd->iface->interfaces->count) {
 		wpa_printf(MSG_DEBUG, "ACS: All ML partner links have completed ACS, sending notification");
 #ifdef CONFIG_HOSTAPD_SRC_DIR
-		hostapd_ucode_notify_acs_completed(iface, 1);
+		if (!hostapd_is_bh_sta_connecting_or_connected_extn(iface))
+			hostapd_ucode_notify_acs_completed(iface, 1);
 #endif
 	}
 }
@@ -195,7 +196,7 @@ hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
 	return CHAN_WIDTH_20;
 }
 
-static u8 uc_hostapd_bandwidth_to_oper_chwidth_extn(int bandwidth)
+u8 uc_hostapd_bandwidth_to_oper_chwidth_extn(int bandwidth)
 {
 	if (bandwidth == 320)
 		return CONF_OPER_CHWIDTH_320MHZ;
@@ -363,8 +364,34 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 		   is_dfs, pre_connect, csa->freq_params.skip_cac,
 		   csa->mcst, iface->cs_time);
 
+	if (is_dfs && IS_CSH_IGNORE_CSA_DFS_ENABLED(conf->conf_extn.cswopts) &&
+	    !pre_connect) {
+		wpa_printf(MSG_INFO,
+			   "CSwOpts %s: uplink CSA target freq=%d is DFS;"
+			   " selecting local non-DFS channel for repeater AP vap",
+			   convert_cswopts_to_str(CSH_OPT_IGNORE_CSA_DFS),
+			   csa->freq_params.freq);
+#ifdef CONFIG_HOSTAPD_SRC_DIR
+		for (i = 0; i < iface->num_bss; i++) {
+			ret = hostapd_dfs_start_channel_switch(iface);
+			if (ret) {
+				wpa_printf(MSG_ERROR, "Repeater AP Channel switch"
+					   " to Non-DFS channel failed ret = %d", ret);
+				hostapd_ucode_chsw_result_ev_notify(
+							iface->bss[i],
+							csa->freq_params.freq,
+							ret);
+				return ret;
+			}
+			iface->iface_extn.csa_bitmap |= BIT(i);
+		}
+#endif
+		return ret;
+	}
+
 	/* If channel params differ, perform CSA and track per-BSS completion */
-	if (!uc_hostapd_compare_channel_params_extn(conf, csa->freq_params, iface->freq)) {
+	if (!uc_hostapd_compare_channel_params_extn(conf, csa->freq_params, iface->freq) ||
+	     iface->conf->conf_extn.rpt_max_phy) {
 		if (iface->cac_started) {
 			ret = uc_hostapd_handle_csa_during_cac_extn(iface, csa,
 								    pre_connect);
@@ -375,6 +402,27 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 		for (i = 0; i < iface->num_bss; i++) {
 			ret = hostapd_switch_channel(iface->bss[i], csa);
 			if (ret) {
+				/*
+				 * hostapd_switch_channel() returns -1 when
+				 * csa_in_progress is already set.  This can
+				 * happen on an MLD STA where both
+				 * EVENT_LINK_CH_SWITCH_STARTED and
+				 * EVENT_CH_SWITCH_STARTED fire for the same
+				 * physical channel switch, causing this
+				 * function to be called twice.  If the BSS
+				 * already has a CSA in progress toward the
+				 * same target frequency, treat it as a no-op
+				 * rather than a fatal error so the ongoing
+				 * channel switch can complete normally.
+				 */
+				if (iface->bss[i] && iface->bss[i]->csa_in_progress &&
+				    iface->bss[i]->cs_freq_params.freq ==
+				    csa->freq_params.freq) {
+					wpa_printf(MSG_DEBUG,
+						   "CSA already in progress to freq=%d on bss[%d], skipping duplicate",
+						   csa->freq_params.freq, i);
+					continue;
+				}
 				wpa_printf(MSG_ERROR, "Channel switch failed"
 					   " ret = %d", ret);
 #ifdef CONFIG_HOSTAPD_SRC_DIR
@@ -658,4 +706,76 @@ bool hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface)
 		return true;
 
 	return false;
+}
+
+/**
+ * create_hop_count_vendor_ie - Create a vendor IE with hop count
+ * @hop_count: The hop count value to include (0-255)
+ * Returns: wpabuf containing the vendor IE, or NULL on failure
+ */
+struct wpabuf * hostapd_create_hop_count_vendor_ie_extn(u8 hop_count)
+{
+	struct wpabuf *buf;
+	u8 *len_pos;
+
+	/* Allocate buffer: EID(1) + Length(1) + OUI(3) + Type(1) + HopCount(1) = 7 bytes */
+	buf = wpabuf_alloc(7);
+	if (!buf) {
+		wpa_printf(MSG_ERROR, "Failed to allocate buffer for hop count vendor IE");
+		return NULL;
+	}
+
+	/* Element ID: Vendor Specific */
+	wpabuf_put_u8(buf, WLAN_EID_VENDOR_SPECIFIC);
+
+	/* Length field - will be filled at the end */
+	len_pos = wpabuf_put(buf, 1);
+
+	/* OUI: 3 bytes */
+	wpabuf_put_be24(buf, OUI_QCA);
+
+	/* OUI Type: 1 byte */
+	wpabuf_put_u8(buf, MULTI_AP_OUI_TYPE);
+
+	/* Hop Count: 1 byte */
+	wpabuf_put_u8(buf, hop_count);
+
+	/* Set the length field (OUI + Type + HopCount = 5 bytes) */
+	*len_pos = 5;
+
+	wpa_hexdump_buf(MSG_DEBUG, "same_ssid: Created hop count vendor IE", buf);
+
+	return buf;
+}
+
+/**
+ * update_assoc_resp_with_hop_count -  Update association response elements with hop count
+ * @hapd: hostapd_data
+ * @hop_count: The hop count value to include (0-255)
+ */
+int hostapd_update_assoc_resp_with_hop_count_extn(struct hostapd_data *hapd)
+{
+	struct wpabuf *hop_ie;
+
+	if (!hapd->iface->conf->conf_extn.same_ssid)
+		return -1;
+
+	if (!os_strncmp(hapd->iface->iface_extn.sta_wpa_state, "COMPLETED", 9))
+		hop_ie = hostapd_create_hop_count_vendor_ie_extn(QCN_HOP_COUNT_CONNECTED);
+	else
+		hop_ie = hostapd_create_hop_count_vendor_ie_extn(QCN_HOP_COUNT_UNKNOWN);
+
+	if (!hop_ie)
+		return -1;
+
+	/* Free old assocresp_elements before replacing to avoid memory leak */
+	wpabuf_free(hapd->conf->assocresp_elements);
+
+	/* Update the association response elements (hop_ie ownership transferred) */
+	hapd->conf->assocresp_elements = hop_ie;
+
+	wpa_hexdump_buf(MSG_DEBUG, "same_ssid: assoc_resp_elem",
+	hapd->conf->assocresp_elements);
+
+	return 0;
 }

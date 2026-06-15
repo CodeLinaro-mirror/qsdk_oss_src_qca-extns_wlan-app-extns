@@ -15,7 +15,8 @@
  * in wpa_supplicant/config.c.
  */
 #define WPA_GLOBAL_FIELDS_EXTN \
-	{ BOOL_KEY("he_mcs_12_13_enabled", conf_extn.he_mcs_12_13_enabled), 0 },
+	{ BOOL_KEY("he_mcs_12_13_enabled", conf_extn.he_mcs_12_13_enabled), 0 }, \
+	{ BOOL_KEY("strict_passive_scan", conf_extn.strict_passive_scan), 0 },
 #else
 #define WPA_GLOBAL_FIELDS_EXTN
 #endif /* CONFIG_QCN_EXTN */
