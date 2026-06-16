@@ -5,6 +5,9 @@ CFLAGS += -DCONFIG_QCA_LAB_TEST_FEATURES
 endif
 
 OBJS += \
+	qcn_extns/ap_drv_ops_extn.o \
+	qcn_extns/wps_rdk_extn.o \
+	qcn_extns/wpa_auth_rdk_extn.o \
 	qcn_extns/240mhz.o \
 	qcn_extns/cmn_extn.o \
 	qcn_extns/driver_nl80211_extn.o \

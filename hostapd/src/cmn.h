@@ -23,6 +23,12 @@
 #include "wpa_config_extn.h"
 #include "reg_extn.h"
 #include "ucode_extn.h"
+#ifdef RDK_ONEWIFI
+#include "ap_drv_ops_extn.h"
+#include "eloop_rdk_extn.h"
+#include "wpa_auth_rdk_extn.h"
+#include "wps_rdk_extn.h"
+#endif /* RDK_ONEWIFI */
 
 struct hostapd_config;
 struct sta_info;
