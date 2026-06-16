@@ -774,7 +774,9 @@ static void hostapd_rcsa_notify_radar(struct hostapd_data *hapd)
 		return;
 	}
 
-	if (nol_info->bandwidth < DFS_NOL_IE_BW_80_MHZ) {
+
+	if (hapd->iface->conf->use_ru_puncture_dfs &&
+	    nol_info->bandwidth < DFS_NOL_IE_BW_80_MHZ) {
 		wpa_printf(MSG_DEBUG,
 			   "RCSA: Puncturing is not applicable for bandwidth less than 80 MHz");
 		return;
@@ -963,6 +965,8 @@ static int hostapd_parse_rcsa_frame(struct hostapd_data *hapd,
 				    bool *mlinfo_present,
 				    s8 *mlinfo_linkid)
 {
+	struct hostapd_data *target_hapd;
+	struct hostapd_iface *iface;
 	const u8 *pos;
 	const u8 *end;
 	const u8 *cs_ie;
@@ -992,7 +996,6 @@ static int hostapd_parse_rcsa_frame(struct hostapd_data *hapd,
 	pos = cs_ie + IEEE80211_CSA_IE_TOTAL_LEN;
 	rem_len = end - pos;
 
-	hostapd_parse_rcsa_nol_ie(hapd->iface, pos, rem_len);
 	if (rem_len >= 2 && opt_ie) {
 		copy_len = rem_len < RCSA_MAX_OPTIONAL_IE_LEN ? rem_len : RCSA_MAX_OPTIONAL_IE_LEN;
 
@@ -1010,6 +1013,20 @@ static int hostapd_parse_rcsa_frame(struct hostapd_data *hapd,
 	*mlinfo_present = optional_ml_info_ie_access((u8 *)opt_ie, *opt_ie_len,
 						     mlinfo_linkid, 0);
 
+	iface = hapd->iface;
+	target_hapd = hapd;
+	if (iface->bss[0]->conf->mld_ap &&
+	    (*mlinfo_linkid != -1)) {
+		target_hapd = switch_link_hapd(hapd, *mlinfo_linkid);
+		if (!target_hapd)
+			return 0;
+	}
+
+	iface = target_hapd->iface;
+	if (!iface)
+		return 0;
+
+	hostapd_parse_rcsa_nol_ie(iface, pos, rem_len);
 	wpa_printf(MSG_DEBUG,
 		   "rcsa: chan %u, csa_cnt %u, switch_mode %u, chan %u, mlinfo_present %u, linkid %u",
 		   *new_chan, *csa_count, *switch_mode, *new_chan,
