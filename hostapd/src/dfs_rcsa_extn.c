@@ -729,6 +729,7 @@ static int hostapd_rcsa_get_radar_freq_params(struct hostapd_data *hapd,
 				      &mode->uhr_capab[IEEE80211_MODE_AP],
 				      0,
 				      hapd->iconf->he_6ghz_reg_pwr_type,
+				      0, 0,
 				      iface->conf->bandwidth_device,
 				      iface->conf->center_freq_device);
 	if (ret) {
