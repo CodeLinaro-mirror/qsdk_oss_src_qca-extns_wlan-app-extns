@@ -188,15 +188,19 @@ static int wpa_drv_notify_rcsa(struct wpa_supplicant *wpa_s, int freq,
 			}
 		}
 	}
-	/*
-	 * link bitmap in ml info ie is populated by repeater hostapd.
-	 * This can't be mapped to root hostapd, so replace bitmap with
-	 * wpa_supplicant link bitmap(linkids of repeater wpa and root
-	 * hostapd are same).
-	 */
-	if (optional_ml_info_ie_access(opt_ie, opt_ie_len, &link_id, 1))
-		link_id = -1;
 
+	if (!wpa_s->sta_dfs_en) {
+		/*
+		 * link bitmap in ml info ie is populated by repeater hostapd.
+		 * This can't be mapped to root hostapd, so replace bitmap with
+		 * wpa_supplicant link bitmap(linkids of repeater wpa and root
+		 * hostapd are same).
+		 */
+		if (optional_ml_info_ie_access(opt_ie, opt_ie_len, &link_id, 1))
+			link_id = -1;
+	} else {
+		tx_freq = freq;
+	}
 	wpa_printf(MSG_DEBUG, "rcsa: sending on %d link freq %u",
 		   link_id, tx_freq);
 	wpa_hexdump_buf(MSG_INFO, "rcsa: Action frame payload", buf);
@@ -1170,12 +1174,13 @@ void hostapd_rcsa_handle_csa_timeout(struct hostapd_iface *iface)
  * @wpa_s: wpa_supplicant context for the associated interface
  * @include_ml_ie: output flag, set to true if ML IE should be included
  * @link_id_bitmap: output bitmap of link IDs selected for ML IE
+ * @link_id: output link id of the MLD
  */
 static void wpa_rcsa_get_local_ml_info(struct wpa_supplicant *wpa_s,
 					  bool *include_ml_ie,
-					  u16 *link_id_bitmap)
+					  u16 *link_id_bitmap, u16 *link_id)
 {
-	u8 i;
+	u16 i;
 	*include_ml_ie = false;
 	*link_id_bitmap = 0;
 
@@ -1192,7 +1197,11 @@ static void wpa_rcsa_get_local_ml_info(struct wpa_supplicant *wpa_s,
 		if (!freq)
 			continue;
 
-		if (is_5ghz_freq(freq) && wpa_s->wpa_state == WPA_STACACING) {
+		if (freq == wpa_s->assoc_freq)
+			*link_id = i;
+
+		if (is_5ghz_freq(freq) && (wpa_s->wpa_state == WPA_STACACING ||
+		    wpa_s->links[i].pending_ch_switch_freq)) {
 			*include_ml_ie = true;
 			*link_id_bitmap = BIT(i);
 			wpa_printf(MSG_DEBUG,
@@ -1304,17 +1313,20 @@ static int wpa_rcsa_prepare_nol_ie(const struct dfs_event *radar,
  * @nol_ie_len: length of the NOL IE buffer
  * @opt_ie: output buffer for the constructed optional IEs
  * @opt_ie_buf_len: length of the output buffer
+ * @link_id: link id of the MLD
  *
  * Returns: length of the optional IEs written to @opt_ie.
  */
 static size_t wpa_rcsa_build_opt_ies(struct wpa_supplicant *wpa_s,
 				     const u8 *nol_ie, size_t nol_ie_len,
-				     u8 *opt_ie, size_t opt_ie_buf_len)
+				     u8 *opt_ie, size_t opt_ie_buf_len,
+				     u16 *link_id)
 {
 	bool include_ml_ie;
 	u16 link_id_bitmap;
 
-	wpa_rcsa_get_local_ml_info(wpa_s, &include_ml_ie, &link_id_bitmap);
+	wpa_rcsa_get_local_ml_info(wpa_s, &include_ml_ie,
+				   &link_id_bitmap, link_id);
 
 	return hostapd_build_rcsa_optional_ies(
 		nol_ie_len > 0 ? nol_ie : NULL,
@@ -1331,7 +1343,8 @@ void wpa_rcsa_handle_radar(struct wpa_supplicant *wpa_s,
 	int nol_ie_len;
 	size_t opt_ie_len;
 	u8 chan;
-
+	u16 link_id = -1;
+	unsigned int tx_freq;
 
 	nol_ie_len = wpa_rcsa_prepare_nol_ie(radar,
 					     nol_ie_buf,
@@ -1343,18 +1356,26 @@ void wpa_rcsa_handle_radar(struct wpa_supplicant *wpa_s,
 					    nol_ie_buf,
 					    (size_t) nol_ie_len,
 					    opt_ie,
-					    sizeof(opt_ie));
-	ieee80211_freq_to_chan(wpa_s->assoc_freq, &chan);
+					    sizeof(opt_ie), &link_id);
+
+	if (link_id < 0)
+		return;
+
+	if (wpa_s->links[link_id].pending_ch_switch_freq)
+		tx_freq = wpa_s->links[link_id].pending_ch_switch_freq;
+	else
+		tx_freq = wpa_s->assoc_freq;
+	ieee80211_freq_to_chan(tx_freq, &chan);
 	wpa_printf(MSG_INFO,
-		   "rcsa: radar detected, sending RCSA freq=%d  bw=%u"
+		   "rcsa: radar detected freq %d [%d], sending RCSA Txfreq=%d  bw=%u"
 		   "bitmap=0x%04x opt_len=%zu wpa_s->assoc_freq %d chan %d",
-		   radar->freq, radar->chan_width,
+		   radar->freq, link_id, tx_freq, radar->chan_width,
 		   radar->radar_bitmap, opt_ie_len,wpa_s->assoc_freq, chan);
 
 	/* Currently only one RCSA sent. TODO sending RCSA for 5 TBTT */
 #ifdef UCODE_SUPPORT
 	wpa_drv_notify_rcsa(wpa_s,
-			    wpa_s->assoc_freq,
+			    tx_freq,
 			    chan,
 			    HOSTAPD_RCSA_TX_COUNT,
 			    HOSTAPD_RCSA_SWITCH_MODE,
