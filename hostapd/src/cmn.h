@@ -67,6 +67,7 @@ struct hostapd_hw_modes;
 struct wpa_driver_nl80211_data;
 struct nl80211_vendor_cmd_info;
 struct wpa_scan_res;
+struct wpabuf;
 struct wpa_config;
 struct freq_survey;
 struct wpa_ssid;
@@ -1875,6 +1876,27 @@ wds_ie_process_assoc_resp_extn(struct wpa_supplicant *wpa_s,
 	return;
 }
 
+static inline void
+wpa_bss_update_mld_link_mcst_extn(struct wpa_bss *bss, u8 link_id,
+				  const u8 *ies, size_t ies_len)
+{
+	return;
+}
+
+static inline u32 wpa_bss_get_mld_link_mcst_extn(struct wpa_bss *bss,
+						 u8 link_id)
+{
+	return 0;
+}
+
+static inline void
+wpa_bss_parse_basic_mle_per_sta_mcst_extn(struct wpa_bss *bss,
+					  struct wpabuf *mlbuf,
+					  size_t common_info_len)
+{
+	return;
+}
+
 #else
 
 int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
@@ -2212,6 +2234,12 @@ void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 					  const u8 *bssid_ptr,
 					  const struct ieee80211_neighbor_ap_info *ap_info,
 					  const u8 *mld_params, u8 link_id);
+void wpa_bss_update_mld_link_mcst_extn(struct wpa_bss *bss, u8 link_id,
+				       const u8 *ies, size_t ies_len);
+u32 wpa_bss_get_mld_link_mcst_extn(struct wpa_bss *bss, u8 link_id);
+void wpa_bss_parse_basic_mle_per_sta_mcst_extn(struct wpa_bss *bss,
+					       struct wpabuf *mlbuf,
+					       size_t common_info_len);
 void hostapd_csa_bitmap_update_extn(struct hostapd_iface *iface, int freq);
 int hostapd_send_uplink_csa_extn(struct hostapd_iface *iface,
 				 int channel, int freq,
@@ -2266,6 +2294,7 @@ int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
 struct uc_value *uc_wpas_notify_uplink_csa_extn(struct uc_vm *vm, size_t nargs);
 struct uc_value *uc_wpas_iface_reconnect_extn(struct uc_vm *vm, size_t nargs);
 struct uc_value *uc_wpas_notify_rcsa_extn(struct uc_vm *vm, size_t nargs);
+u32 wpas_ucode_get_link_mcst_extn(struct wpa_supplicant *wpa_s, int link_id);
 bool hostapd_uplink_csa_hdl(struct hostapd_data *hapd,
 			    const u8 *buf, size_t len);
 int handle_action_extn(struct hostapd_data *hapd,

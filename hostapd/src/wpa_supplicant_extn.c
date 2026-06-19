@@ -18,6 +18,7 @@
 #include "../wpa_supplicant/wps_supplicant.h"
 #include "../wpa_supplicant/ap.h"
 #include "../wpa_supplicant/scan.h"
+#include "../wpa_supplicant/bss.h"
 #include "wpa_supplicant_extn.h"
 #include "common/defs.h"
 #include "cmn.h"
@@ -634,4 +635,141 @@ wpa_scan_ssid_hide_beacon_extn(struct wpa_supplicant *wpa_s,
 	}
 
 	return scan_res_item;
+}
+
+static u32 wpa_bss_get_mcst_ie_extn(const u8 *ies, size_t ies_len)
+{
+	const struct element *elem;
+
+	for_each_element_extid(elem, WLAN_EID_EXT_MAX_CHANNEL_SWITCH_TIME,
+			       ies, ies_len) {
+		wpa_printf(MSG_DEBUG, "MLD: MCST IE candidate datalen=%u",
+			   elem->datalen);
+		if (elem->datalen >= 4)
+			return WPA_GET_LE24(&elem->data[1]);
+	}
+
+	return 0;
+}
+
+
+void wpa_bss_update_mld_link_mcst_extn(struct wpa_bss *bss, u8 link_id,
+				       const u8 *ies, size_t ies_len)
+{
+	u32 mcst;
+
+	if (!bss || link_id >= MAX_NUM_MLD_LINKS) {
+		wpa_printf(MSG_DEBUG, "MLD: skip MCST cache bss=%p link_id=%u",
+			   bss, link_id);
+		return;
+	}
+
+	mcst = wpa_bss_get_mcst_ie_extn(ies, ies_len);
+	if (!mcst)
+		return;
+
+	bss->mld_links[link_id].mcst = mcst;
+	os_get_reltime(&bss->mld_links[link_id].mcst_update_time);
+	wpa_printf(MSG_INFO, "MLD: link_id=%u MCST=%u TU cached",
+		   link_id, mcst);
+}
+
+
+u32 wpa_bss_get_mld_link_mcst_extn(struct wpa_bss *bss, u8 link_id)
+{
+	struct os_reltime now, age;
+	u64 elapsed_tu;
+	u32 mcst;
+
+	if (!bss || link_id >= MAX_NUM_MLD_LINKS)
+		return 0;
+
+	mcst = bss->mld_links[link_id].mcst;
+	if (!mcst)
+		return 0;
+
+	if (os_get_reltime(&now) < 0)
+		return mcst;
+
+	os_reltime_sub(&now, &bss->mld_links[link_id].mcst_update_time, &age);
+	elapsed_tu = (u64) age.sec * 1000000 + age.usec;
+	elapsed_tu /= 1024;
+
+	if (elapsed_tu >= mcst) {
+		wpa_printf(MSG_INFO, "MLD: MCST expired link_id=%u original=%u "
+			   "elapsed=%llu TU",
+			   link_id, mcst, (unsigned long long) elapsed_tu);
+		return 0;
+	}
+
+	wpa_printf(MSG_DEBUG, "MLD: MCST residual link_id=%u original=%u "
+		   "elapsed=%llu residual=%llu TU",
+		   link_id, mcst, (unsigned long long) elapsed_tu,
+		   (unsigned long long) (mcst - elapsed_tu));
+	return mcst - elapsed_tu;
+}
+
+
+void wpa_bss_parse_basic_mle_per_sta_mcst_extn(struct wpa_bss *bss,
+					       struct wpabuf *mlbuf,
+					       size_t common_info_len)
+{
+	const u8 *pos, *end;
+	size_t rem_len;
+
+	pos = wpabuf_head_u8(mlbuf) + sizeof(struct ieee80211_eht_ml) +
+		common_info_len;
+	end = wpabuf_head_u8(mlbuf) + wpabuf_len(mlbuf);
+	rem_len = end - pos;
+
+	while (rem_len > 2) {
+		size_t sub_elem_len;
+		int num_frag_subelems;
+
+		num_frag_subelems =
+			ieee802_11_defrag_mle_subelem(mlbuf, pos,
+						      &sub_elem_len);
+		if (num_frag_subelems < 0) {
+			wpa_printf(MSG_DEBUG, "MLD: ML probe response MCST "
+				   "Per-STA defrag failed");
+			break;
+		}
+
+		rem_len -= num_frag_subelems * 2;
+		if (2 + sub_elem_len > rem_len) {
+			wpa_printf(MSG_DEBUG,
+				   "MLD: ML probe response MCST Per-STA "
+				   "invalid subelem_len=%zu rem_len=%zu",
+				   sub_elem_len, rem_len);
+			break;
+		}
+
+		if (*pos == MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE &&
+		    sub_elem_len >= BASIC_MLE_STA_CTRL_LEN + 1) {
+			const u8 *body = pos + 2;
+			const u8 *sub_end = pos + 2 + sub_elem_len;
+			u16 ctrl = WPA_GET_LE16(body);
+			u8 link_id = ctrl & BASIC_MLE_STA_CTRL_LINK_ID_MASK;
+			size_t sta_info_len;
+
+			body += BASIC_MLE_STA_CTRL_LEN;
+			if (link_id < MAX_NUM_MLD_LINKS &&
+			    ctrl & BASIC_MLE_STA_CTRL_COMPLETE_PROFILE &&
+			    body < sub_end) {
+				sta_info_len = *body;
+				wpa_printf(MSG_INFO,
+					   "MLD: ML probe response MCST Per-STA link_id=%u "
+					   "ctrl=0x%x sta_info_len=%zu profile_len=%zu",
+					   link_id, ctrl, sta_info_len,
+					   (size_t) (sub_end - body));
+				if (sta_info_len <= (size_t) (sub_end - body))
+					wpa_bss_update_mld_link_mcst_extn(
+						bss, link_id, body + sta_info_len,
+						sub_end - (body + sta_info_len));
+			}
+		}
+
+		pos += 2 + sub_elem_len;
+		rem_len -= 2 + sub_elem_len;
+	}
 }
