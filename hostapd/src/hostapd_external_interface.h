@@ -696,7 +696,7 @@ struct hostapd_external_app_object {
 	 */
 	void (*eapol_tx)(char *ifname, uint8_t *sta_mac, int link_id,
                               uint8_t type, uint8_t *data,
-                              uint16_t data_len);
+                              uint16_t data_len, bool with_header);
 
 	/*
 	 * ASYNC: EAPOL-Key Tx
