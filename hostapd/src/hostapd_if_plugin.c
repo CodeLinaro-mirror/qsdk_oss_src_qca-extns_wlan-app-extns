@@ -118,6 +118,7 @@ struct deque {
 
 static struct deque *datablock_deque;
 static pthread_mutex_t datablock_deque_mutex;
+static pthread_mutex_t plugin_iface_mutex;
 
 static volatile bool test_harness_thread_running = false;
 static volatile bool test_harness_thread_done = false;
@@ -710,11 +711,14 @@ static int pull_pmk_r1(char *ifname, uint8_t *sta_mac,
 	if (!ifname || !sta_mac || !pmk_r1_name)
 		return -1;
 
+	pthread_mutex_lock(&plugin_iface_mutex);
+
 	iface = plugin_hapd_iface_get(ifname);
 	if (!iface) {
 		wpa_printf(MSG_DEBUG,
 			   "plugin: pull_pmk_r1: no iface found for %s\n",
 			   ifname);
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return -1;
 	}
 
@@ -775,12 +779,14 @@ static int pull_pmk_r1(char *ifname, uint8_t *sta_mac,
 		wpa_printf(MSG_DEBUG,
 			   "plugin: pull_pmk_r1: found entry for " MACSTR
 			   " on iface %s\n", MAC2STR(sta_mac), ifname);
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return 0;
 	}
 
 	wpa_printf(MSG_DEBUG,
 		   "plugin: pull_pmk_r1: no entry found for " MACSTR
 		   " on iface %s\n", MAC2STR(sta_mac), ifname);
+	pthread_mutex_unlock(&plugin_iface_mutex);
 	return -1;
 }
 
@@ -803,6 +809,8 @@ static void interface_create(char *ifname, void *ctx)
 	if (!test_plugin.register_frame)
 		return;
 
+	pthread_mutex_lock(&plugin_iface_mutex);
+
 	iface = plugin_hapd_iface_get(ifname);
 	if (!iface) {
 		iface = os_zalloc(sizeof(*iface));
@@ -810,6 +818,7 @@ static void interface_create(char *ifname, void *ctx)
 			wpa_printf(MSG_ERROR,
 				   "plugin: failed to alloc iface for %s\n",
 				   ifname);
+			pthread_mutex_unlock(&plugin_iface_mutex);
 			return;
 		}
 		os_strlcpy(iface->ifname, ifname, sizeof(iface->ifname));
@@ -929,6 +938,7 @@ static void interface_create(char *ifname, void *ctx)
 	test_plugin.register_event(ctx, HOSTAPD_IF_EVENT_ACTION_COMPLETION,
 				     true);
 
+	pthread_mutex_unlock(&plugin_iface_mutex);
 }
 
 
@@ -1029,9 +1039,13 @@ process_ft_pmk_r1(const char *ifname, const u8 *sta_mac,
 	wpa_printf(MSG_DEBUG, "FT: RSN IE contains PMKID (PMK-R0-Name) for STA "
 		   MACSTR, MAC2STR(sta_mac));
 
+	pthread_mutex_lock(&plugin_iface_mutex);
+
 	iface = plugin_hapd_iface_get(ifname);
-	if (!iface || !iface->hapd || !iface->hapd->wpa_auth)
+	if (!iface || !iface->hapd || !iface->hapd->wpa_auth) {
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return NULL;
+	}
 
 	r1kh_id = iface->hapd->wpa_auth->conf.r1_key_holder;
 
@@ -1061,15 +1075,19 @@ process_ft_pmk_r1(const char *ifname, const u8 *sta_mac,
 			break;
 	}
 
-	if (!r1)
+	if (!r1) {
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return NULL;
+	}
 
 	wpa_printf(MSG_DEBUG, "FT: found PMK-R1 in plugin cache for STA " MACSTR,
 		   MAC2STR(sta_mac));
 
 	pmk_r1_info = os_zalloc(sizeof(*pmk_r1_info));
-	if (!pmk_r1_info)
+	if (!pmk_r1_info) {
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return NULL;
+	}
 
 	os_memcpy(pmk_r1_info->pmk_r1, r1->pmk_r1, r1->pmk_r1_len);
 	pmk_r1_info->pmk_r1_len = r1->pmk_r1_len;
@@ -1090,6 +1108,7 @@ process_ft_pmk_r1(const char *ifname, const u8 *sta_mac,
 		pmk_r1_info->radius_cui_len = len;
 	}
 
+	pthread_mutex_unlock(&plugin_iface_mutex);
 	return pmk_r1_info;
 }
 
@@ -1366,6 +1385,7 @@ void hostapd_if_plugin_deinit()
 
 	/* Destroy the mutex for datablock_deque */
 	pthread_mutex_destroy(&datablock_deque_mutex);
+	pthread_mutex_destroy(&plugin_iface_mutex);
 }
 
 static pthread_t invoke_thread;
@@ -1379,6 +1399,7 @@ enum hostapd_if_eloop_type hostapd_if_plugin_init(void *arg)
 
 	/* Initialize the mutex for datablock_deque */
 	pthread_mutex_init(&datablock_deque_mutex, NULL);
+	pthread_mutex_init(&plugin_iface_mutex, NULL);
 
 	datablock_deque = os_zalloc(sizeof(*datablock_deque));
 	test_harness_thread_running = true;
@@ -2361,11 +2382,14 @@ void hostapd_if_plugin_store_pmk_r1(const char *ifname, const u8 *spa,
 		return;
 	}
 
+	pthread_mutex_lock(&plugin_iface_mutex);
+
 	iface = plugin_hapd_iface_get(ifname);
 	if (!iface) {
 		wpa_printf(MSG_ERROR,
 			   "plugin: store_pmk_r1: no iface found for %s\n",
 			   ifname);
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return;
 	}
 
@@ -2376,6 +2400,7 @@ void hostapd_if_plugin_store_pmk_r1(const char *ifname, const u8 *spa,
 		wpa_printf(MSG_ERROR,
 			   "plugin: failed to alloc PMK-R1 entry for %s\n",
 			   ifname);
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return;
 	}
 
@@ -2410,6 +2435,8 @@ void hostapd_if_plugin_store_pmk_r1(const char *ifname, const u8 *spa,
 	wpa_printf(MSG_DEBUG,
 		   "plugin: stored PMK-R1 in cache for iface %s (pairwise=%d expires_in=%d)\n",
 		   ifname, pairwise, expires_in);
+
+	pthread_mutex_unlock(&plugin_iface_mutex);
 }
 
 int hostapd_config_fill_plugin(struct hostapd_bss_config *bss, const char *buf,
