@@ -14,6 +14,10 @@ struct i802_bss;
 struct hostapd_data;
 
 
+#define CBS_EVENT_STARTED "CBS-STARTED "
+#define CBS_EVENT_COMPLETED "CBS-COMPLETED "
+#define CBS_EVENT_ABORTED "CBS-ABORTED "
+
 struct cbs_params_extn {
 	u8 cbs_enable; /* enable/disable cbs scan (0:disable | 1:enable CBS scan once | 2:enable cbs scan to run continuously)*/
 	int dwellsplit; /* dwell split time on a foreign channel for one scan (msec) */
