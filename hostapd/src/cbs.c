@@ -84,6 +84,7 @@ static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
 	struct cbs_params_extn *cbs_params = &conf_extn->cbs_params;
 	struct os_reltime now, age;
 	bool skip_cbs_scan = false;
+	u64 age_ms;
 
 	if (!(val == 0 || val == 1 || val == 2)) {
 		wpa_printf(MSG_ERROR, "CBS: Invalid input: %d", val);
@@ -128,7 +129,8 @@ static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
 	if (val == 1 && cbs_params->best_chan) {
 		os_get_reltime(&now);
 		os_reltime_sub(&now, &cbs_params->cbs_scan_complete_ts, &age);
-		if (age.sec < HOSTAPD_CBS_RETRIGGER_MIN_AGE_SEC)
+		age_ms = (u64) age.sec * 1000 + (u64) age.usec / 1000;
+		if (age_ms < cbs_params->retrigger_time)
 			skip_cbs_scan = true;
 	}
 
