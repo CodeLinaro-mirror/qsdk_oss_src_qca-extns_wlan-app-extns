@@ -118,6 +118,7 @@ struct deque {
 
 static struct deque *datablock_deque;
 static pthread_mutex_t datablock_deque_mutex;
+static pthread_mutex_t plugin_iface_mutex;
 
 static volatile bool test_harness_thread_running = false;
 static volatile bool test_harness_thread_done = false;
@@ -185,28 +186,15 @@ bool is_empty(struct deque* q)
  * Function to add an element to the deque
  * at rear (enqueue_rear operation)
  */
-void enqueue_rear(struct deque* q, struct invoke_plugin_datablock *datablock)
+int enqueue_rear(struct deque* q, struct invoke_plugin_datablock *datablock)
 {
 	if (is_full(q)) {
 		printf("Deque is full\n");
-		return;
+		return -1;
 	}
 	q->datablocks[q->rear] = datablock;
 	q->rear = (q->rear + 1) % QUEUE_MAX_SIZE;
-}
-
-/* Function to add an element to the deque at front (enqueue_front operation) */
-void enqueue_front(struct deque* q, struct invoke_plugin_datablock *datablock)
-{
-	if (is_full(q)) {
-		printf("Deque is full\n");
-		return;
-	}
-	q->datablocks[q->front] = datablock;
-	if (q->front == 0)
-		q->front = QUEUE_MAX_SIZE - 1;
-	else
-		q->front = q->front - 1;
+	return 0;
 }
 
 /*
@@ -318,7 +306,6 @@ static void notify_event(struct hostapd_if_event *event)
 {
 	struct invoke_plugin_datablock *datablock;
 
-	datablock = calloc(sizeof(*datablock), 1);
 	wpa_printf(MSG_DEBUG,
 		   "notifying event of type %s\n ifname = %s\n STA MAC = " MACSTR "\n",
 		   hostapd_if_event_string(event->type),
@@ -326,6 +313,9 @@ static void notify_event(struct hostapd_if_event *event)
 	switch (event->type) {
 
 		case HOSTAPD_IF_EVENT_EAPOL_M2_RECEIVED:
+			datablock = os_zalloc(sizeof(*datablock));
+			if (!datablock)
+				break;
 		    	os_strlcpy(datablock->ifname, event->ifname,
 				   sizeof(datablock->ifname));
 			os_memcpy(datablock->sta_mac, event->sta_mac,
@@ -333,7 +323,11 @@ static void notify_event(struct hostapd_if_event *event)
 			datablock->data.request.req_type =
 				HOSTAPD_IF_EVENT_M2_NOTIFY;
 			pthread_mutex_lock(&datablock_deque_mutex);
-			enqueue_rear(datablock_deque, datablock);
+			if (enqueue_rear(datablock_deque, datablock) < 0) {
+				pthread_mutex_unlock(&datablock_deque_mutex);
+				os_free(datablock);
+				break;
+			}
 			pthread_mutex_unlock(&datablock_deque_mutex);
 			wpa_printf(MSG_DEBUG,
 				   "queued m3 trigger for STA " MACSTR "\n",
@@ -381,10 +375,10 @@ static void invoke_assoc(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 			 uint16_t frame_len, struct hostapd_if_frame_ctx *ctx)
 {
 	/* prepare datablock to push to deque for secondary thread */
-	struct invoke_plugin_datablock *datablock = calloc(sizeof(*datablock), 1);
+	struct invoke_plugin_datablock *datablock = os_zalloc(sizeof(*datablock));
 	struct hostapd_if_frame_ctx *ctx_copy;
 
-	ctx_copy = calloc(sizeof(*ctx_copy), 1);
+	ctx_copy = os_zalloc(sizeof(*ctx_copy));
 	*ctx_copy = *ctx;
 	os_strlcpy(datablock->ifname, ifname, sizeof(datablock->ifname));
 	os_memcpy(datablock->sta_mac, sta_mac, sizeof(datablock->sta_mac));
@@ -395,7 +389,15 @@ static void invoke_assoc(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 
 	/* push datablock to deque */
 	pthread_mutex_lock(&datablock_deque_mutex);
-	enqueue_rear(datablock_deque, datablock);
+	if (enqueue_rear(datablock_deque, datablock) < 0) {
+		pthread_mutex_unlock(&datablock_deque_mutex);
+		wpa_printf(MSG_ERROR,
+			   "datablock queue full, dropping assoc for STA " MACSTR,
+			   MAC2STR(datablock->sta_mac));
+		os_free(ctx_copy);
+		os_free(datablock);
+		return;
+	}
 	wpa_printf(MSG_DEBUG,
 		   "queued assoc request for STA " MACSTR "\n",
 		   MAC2STR(datablock->sta_mac));
@@ -417,8 +419,8 @@ static void invoke_auth(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 	struct invoke_plugin_datablock *datablock;
 	struct hostapd_if_frame_ctx *ctx_copy;
 
-	datablock = calloc(sizeof(*datablock),1);
-	ctx_copy = calloc(sizeof(*ctx_copy), 1);
+	datablock = os_zalloc(sizeof(*datablock));
+	ctx_copy = os_zalloc(sizeof(*ctx_copy));
 	*ctx_copy = *ctx;
 
 	os_strlcpy(datablock->ifname, ifname, sizeof(datablock->ifname));
@@ -430,7 +432,15 @@ static void invoke_auth(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 
 	/* push datablock to deque */
 	pthread_mutex_lock(&datablock_deque_mutex);
-	enqueue_rear(datablock_deque, datablock);
+	if (enqueue_rear(datablock_deque, datablock) < 0) {
+		pthread_mutex_unlock(&datablock_deque_mutex);
+		wpa_printf(MSG_ERROR,
+			   "datablock queue full, dropping auth for STA " MACSTR,
+			   MAC2STR(datablock->sta_mac));
+		os_free(ctx_copy);
+		os_free(datablock);
+		return;
+	}
 	wpa_printf(MSG_DEBUG, "queued auth request for STA " MACSTR "\n",
 		   MAC2STR(datablock->sta_mac));
 	if (global_conf.auth.out_of_order && (deque_size(datablock_deque) <= 1))
@@ -451,8 +461,8 @@ static void invoke_remote_auth(char *ifname, uint8_t *sta_mac,
 	struct invoke_plugin_datablock *datablock;
 	struct hostapd_if_frame_ctx *ctx_copy;
 
-	datablock = calloc(sizeof(*datablock), 1);
-	ctx_copy = calloc(sizeof(*ctx_copy), 1);
+	datablock = os_zalloc(sizeof(*datablock));
+	ctx_copy = os_zalloc(sizeof(*ctx_copy));
 	*ctx_copy = *ctx;
 
 	os_strlcpy(datablock->ifname, ifname, sizeof(datablock->ifname));
@@ -463,7 +473,17 @@ static void invoke_remote_auth(char *ifname, uint8_t *sta_mac,
 	datablock->data.request.req_type = HOSTAPD_IF_EVENT_REMOTE_AUTH_REQ;
 
 	/* push datablock to deque */
-	enqueue_rear(datablock_deque, datablock);
+	pthread_mutex_lock(&datablock_deque_mutex);
+	if (enqueue_rear(datablock_deque, datablock) < 0) {
+		pthread_mutex_unlock(&datablock_deque_mutex);
+		wpa_printf(MSG_ERROR,
+			   "datablock queue full, dropping remote auth for STA " MACSTR,
+			   MAC2STR(datablock->sta_mac));
+		os_free(ctx_copy);
+		os_free(datablock);
+		return;
+	}
+	pthread_mutex_unlock(&datablock_deque_mutex);
 	wpa_printf(MSG_DEBUG, "queued remote auth request for STA " MACSTR "\n",
 		   MAC2STR(datablock->sta_mac));
 	return;
@@ -691,11 +711,14 @@ static int pull_pmk_r1(char *ifname, uint8_t *sta_mac,
 	if (!ifname || !sta_mac || !pmk_r1_name)
 		return -1;
 
+	pthread_mutex_lock(&plugin_iface_mutex);
+
 	iface = plugin_hapd_iface_get(ifname);
 	if (!iface) {
 		wpa_printf(MSG_DEBUG,
 			   "plugin: pull_pmk_r1: no iface found for %s\n",
 			   ifname);
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return -1;
 	}
 
@@ -756,12 +779,14 @@ static int pull_pmk_r1(char *ifname, uint8_t *sta_mac,
 		wpa_printf(MSG_DEBUG,
 			   "plugin: pull_pmk_r1: found entry for " MACSTR
 			   " on iface %s\n", MAC2STR(sta_mac), ifname);
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return 0;
 	}
 
 	wpa_printf(MSG_DEBUG,
 		   "plugin: pull_pmk_r1: no entry found for " MACSTR
 		   " on iface %s\n", MAC2STR(sta_mac), ifname);
+	pthread_mutex_unlock(&plugin_iface_mutex);
 	return -1;
 }
 
@@ -784,6 +809,8 @@ static void interface_create(char *ifname, void *ctx)
 	if (!test_plugin.register_frame)
 		return;
 
+	pthread_mutex_lock(&plugin_iface_mutex);
+
 	iface = plugin_hapd_iface_get(ifname);
 	if (!iface) {
 		iface = os_zalloc(sizeof(*iface));
@@ -791,6 +818,7 @@ static void interface_create(char *ifname, void *ctx)
 			wpa_printf(MSG_ERROR,
 				   "plugin: failed to alloc iface for %s\n",
 				   ifname);
+			pthread_mutex_unlock(&plugin_iface_mutex);
 			return;
 		}
 		os_strlcpy(iface->ifname, ifname, sizeof(iface->ifname));
@@ -910,6 +938,7 @@ static void interface_create(char *ifname, void *ctx)
 	test_plugin.register_event(ctx, HOSTAPD_IF_EVENT_ACTION_COMPLETION,
 				     true);
 
+	pthread_mutex_unlock(&plugin_iface_mutex);
 }
 
 
@@ -1010,9 +1039,13 @@ process_ft_pmk_r1(const char *ifname, const u8 *sta_mac,
 	wpa_printf(MSG_DEBUG, "FT: RSN IE contains PMKID (PMK-R0-Name) for STA "
 		   MACSTR, MAC2STR(sta_mac));
 
+	pthread_mutex_lock(&plugin_iface_mutex);
+
 	iface = plugin_hapd_iface_get(ifname);
-	if (!iface || !iface->hapd || !iface->hapd->wpa_auth)
+	if (!iface || !iface->hapd || !iface->hapd->wpa_auth) {
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return NULL;
+	}
 
 	r1kh_id = iface->hapd->wpa_auth->conf.r1_key_holder;
 
@@ -1042,15 +1075,19 @@ process_ft_pmk_r1(const char *ifname, const u8 *sta_mac,
 			break;
 	}
 
-	if (!r1)
+	if (!r1) {
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return NULL;
+	}
 
 	wpa_printf(MSG_DEBUG, "FT: found PMK-R1 in plugin cache for STA " MACSTR,
 		   MAC2STR(sta_mac));
 
 	pmk_r1_info = os_zalloc(sizeof(*pmk_r1_info));
-	if (!pmk_r1_info)
+	if (!pmk_r1_info) {
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return NULL;
+	}
 
 	os_memcpy(pmk_r1_info->pmk_r1, r1->pmk_r1, r1->pmk_r1_len);
 	pmk_r1_info->pmk_r1_len = r1->pmk_r1_len;
@@ -1071,6 +1108,7 @@ process_ft_pmk_r1(const char *ifname, const u8 *sta_mac,
 		pmk_r1_info->radius_cui_len = len;
 	}
 
+	pthread_mutex_unlock(&plugin_iface_mutex);
 	return pmk_r1_info;
 }
 
@@ -1221,7 +1259,6 @@ void *invoke_loop()
 
 	wpa_printf(MSG_DEBUG, "Started pthread loop for Hostapd Plugin");
 
-	datablock = calloc(sizeof(*datablock), 1);
 	while(test_harness_thread_running) {
 
 		usleep(4000);
@@ -1319,11 +1356,22 @@ void *invoke_loop()
 		}
 		pthread_mutex_unlock(&datablock_deque_mutex);
 
-		resp_ctx = calloc(sizeof(*resp_ctx), 1);
-		ctx = datablock->data.request.ctx;
-
-		process_request(datablock, ctx, resp_ctx);
-		free(ctx);
+		switch (datablock->data.request.req_type) {
+		case HOSTAPD_IF_EVENT_ASSOC_REQ:
+		case HOSTAPD_IF_EVENT_AUTH_REQ:
+		case HOSTAPD_IF_EVENT_REMOTE_AUTH_REQ:
+			resp_ctx = os_zalloc(sizeof(*resp_ctx));
+			ctx = datablock->data.request.ctx;
+			process_request(datablock, ctx, resp_ctx);
+			os_free(ctx);
+			break;
+		case HOSTAPD_IF_EVENT_M2_NOTIFY:
+			process_request(datablock, NULL, NULL);
+			break;
+		default:
+			break;
+		}
+		os_free(datablock);
 	}
 	test_harness_thread_done = true;
 	return NULL;
@@ -1337,12 +1385,13 @@ void hostapd_if_plugin_deinit()
 
 	/* Destroy the mutex for datablock_deque */
 	pthread_mutex_destroy(&datablock_deque_mutex);
+	pthread_mutex_destroy(&plugin_iface_mutex);
 }
 
+static pthread_t invoke_thread;
 /* Constructor: called when the shared library is loaded */
 enum hostapd_if_eloop_type hostapd_if_plugin_init(void *arg)
 {
-	pthread_t *restrict invoke_thread = calloc(sizeof(*invoke_thread), 1);
 	global_conf.assoc.status_code = -1;
 	global_conf.auth.status_code = -1;
 	global_conf.auth.send_response = 1;
@@ -1350,12 +1399,13 @@ enum hostapd_if_eloop_type hostapd_if_plugin_init(void *arg)
 
 	/* Initialize the mutex for datablock_deque */
 	pthread_mutex_init(&datablock_deque_mutex, NULL);
+	pthread_mutex_init(&plugin_iface_mutex, NULL);
 
-	datablock_deque = calloc(sizeof(*datablock_deque), 1);
+	datablock_deque = os_zalloc(sizeof(*datablock_deque));
 	test_harness_thread_running = true;
 	test_harness_thread_done = false;
 	initialize_deque(datablock_deque);
-	pthread_create(invoke_thread, NULL, invoke_loop, NULL);
+	pthread_create(&invoke_thread, NULL, invoke_loop, NULL);
 
 	/*
 	 * Global plugin instance.
@@ -1483,15 +1533,20 @@ static int hostapd_ctrl_iface_set_additional_ies(struct hostapd_data *hapd,
 	link_id = atoi(pos);
 	buf = os_malloc(bcn_buf_len);
 	hex_copy = os_malloc(bcn_buf_len*2+1);
+	if (!buf || !hex_copy) {
+		os_free(buf);
+		os_free(hex_copy);
+		return -1;
+	}
 	os_memcpy(hex_copy, hex, bcn_buf_len*2);
 	hex_copy[bcn_buf_len*2] = 0;
-	if (!buf)
-		return -1;
 
 	if (hexstr2bin(hex_copy, buf, bcn_buf_len) < 0) {
+		os_free(hex_copy);
 		os_free(buf);
 		return -1;
 	}
+	os_free(hex_copy);
 
 	test_plugin.set_beacon_probe_vendor_ies((char *)hapd->conf->iface, buf,
 						bcn_buf_len, link_id);
@@ -2327,11 +2382,14 @@ void hostapd_if_plugin_store_pmk_r1(const char *ifname, const u8 *spa,
 		return;
 	}
 
+	pthread_mutex_lock(&plugin_iface_mutex);
+
 	iface = plugin_hapd_iface_get(ifname);
 	if (!iface) {
 		wpa_printf(MSG_ERROR,
 			   "plugin: store_pmk_r1: no iface found for %s\n",
 			   ifname);
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return;
 	}
 
@@ -2342,6 +2400,7 @@ void hostapd_if_plugin_store_pmk_r1(const char *ifname, const u8 *spa,
 		wpa_printf(MSG_ERROR,
 			   "plugin: failed to alloc PMK-R1 entry for %s\n",
 			   ifname);
+		pthread_mutex_unlock(&plugin_iface_mutex);
 		return;
 	}
 
@@ -2376,6 +2435,8 @@ void hostapd_if_plugin_store_pmk_r1(const char *ifname, const u8 *spa,
 	wpa_printf(MSG_DEBUG,
 		   "plugin: stored PMK-R1 in cache for iface %s (pairwise=%d expires_in=%d)\n",
 		   ifname, pairwise, expires_in);
+
+	pthread_mutex_unlock(&plugin_iface_mutex);
 }
 
 int hostapd_config_fill_plugin(struct hostapd_bss_config *bss, const char *buf,

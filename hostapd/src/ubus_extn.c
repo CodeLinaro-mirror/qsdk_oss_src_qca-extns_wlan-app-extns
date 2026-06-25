@@ -73,6 +73,9 @@ bool hostapd_ubus_is_bhsta_configured(struct hostapd_iface *iface)
 	struct hostapd_data *hapd = iface->bss[0];
 	const char *phy = hostapd_drv_get_radio_name(hapd);
 
+	if (!phy)
+		return false;
+
 	ctx = ubus_ap_fetch_context_extn();
 	if (!ctx)
 		return false;
