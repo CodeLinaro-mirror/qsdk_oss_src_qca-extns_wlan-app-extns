@@ -2117,6 +2117,8 @@ bool hostapd_ignorecac_should_skip_cac_extn(struct hostapd_iface *iface);
 void
 hostapd_ignorecac_update_freq_params_extn(struct hostapd_iface *iface,
 					  struct hostapd_freq_params *freq_params);
+void hostapd_beacon_set_skip_cac_extn(struct hostapd_iface *iface,
+				      struct hostapd_freq_params *freq_params);
 bool hostapd_ignorecac_handle_dfs_extn(struct hostapd_iface *iface,
 				       int start_idx, int n_chans);
 void hostapd_ignorecac_switch_channel_extn(struct hostapd_data *hapd,
