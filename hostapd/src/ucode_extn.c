@@ -14,8 +14,41 @@
 #include "ap/beacon.h"
 #include "ap/ap_drv_ops.h"
 #include "../wpa_supplicant/wpa_supplicant_i.h"
+#include "../wpa_supplicant/bss.h"
 #include "wpa_supplicant_extn.h"
 #include "cmn.h"
+
+static u32 get_mcst_from_bss_extn(struct wpa_bss *bss, int link_id)
+{
+	u32 mcst;
+
+	if (!bss)
+		return 0;
+
+	mcst = wpa_bss_get_mld_link_mcst_extn(bss, link_id);
+	if (!mcst)
+		return 0;
+
+	wpa_printf(MSG_INFO, "%s: link_id=%d bssid=" MACSTR " mcst=%u",
+		   __func__, link_id, MAC2STR(bss->bssid), mcst);
+
+	return mcst;
+}
+
+u32 wpas_ucode_get_link_mcst_extn(struct wpa_supplicant *wpa_s, int link_id)
+{
+	u32 mcst;
+
+	if (!wpa_s || link_id < 0 || link_id >= MAX_NUM_MLD_LINKS)
+		return 0;
+
+	mcst = get_mcst_from_bss_extn(wpa_s->links[link_id].bss, link_id);
+	if (mcst)
+		return mcst;
+
+	return get_mcst_from_bss_extn(wpa_s->current_bss, link_id);
+}
+
 
 #ifdef UCODE_SUPPORT
 void hostapd_ucode_notify_uplink_csa(struct hostapd_iface *hapd, int event, u8 channel,

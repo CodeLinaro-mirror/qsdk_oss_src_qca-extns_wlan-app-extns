@@ -851,7 +851,8 @@ int hostapd_validate_current_6ghz_hw_blocklist_extn(
 				    mode ? &mode->uhr_capab[IEEE80211_MODE_AP] :
 				    NULL,
 				    hostapd_get_punct_bitmap(hapd),
-				    pwr_mode_id, iface->conf->bandwidth_device,
+				    pwr_mode_id, 0, 0,
+				    iface->conf->bandwidth_device,
 				    iface->conf->center_freq_device)) {
 		wpa_printf(MSG_ERROR,
 			   "Reject %s: failed to build current 6 GHz frequency params",

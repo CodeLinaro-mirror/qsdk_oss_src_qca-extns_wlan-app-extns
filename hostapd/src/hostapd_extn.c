@@ -188,10 +188,20 @@ u16 hostapd_get_width_from_oper_chwidth_extn(enum oper_chan_width oper_chwidth,
 	return width;
 }
 
-int hostapd_validate_mbssid_group_size_extn(struct hostapd_data *hapd)
+int hostapd_validate_mbssid_configuration_extn(struct hostapd_data *hapd)
 {
-	if (hapd->conf->mld_ap &&
-	    (hapd->iface->conf->group_size == MULTI_MBSSID_GROUP_SIZE_MAX) &&
+	if (!hapd->conf->mld_ap)
+		return 0;
+
+	if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
+	    hapd->iface->num_bss > EMA_MLO_BSS_MAX_LIMIT) {
+		wpa_printf(MSG_ERROR,
+			   "Number of BSS (%zu) exceeds the EMA MLO BSS limit (%d)",
+			   hapd->iface->num_bss, EMA_MLO_BSS_MAX_LIMIT);
+		return -1;
+	}
+
+	if ((hapd->iface->conf->group_size == MULTI_MBSSID_GROUP_SIZE_MAX) &&
 	    (hapd->iface->max_mgmt_frm_sz < MGMT_MIN_FRAME_SIZE_REQUIRED_MLO_MBSSID)) {
 		wpa_printf(MSG_ERROR,
 			   "Invalid MBSSID group size (%u) for MLD AP with mgmt frame size (%d)",

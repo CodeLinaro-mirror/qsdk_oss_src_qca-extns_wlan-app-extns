@@ -143,7 +143,7 @@ static int wpa_drv_notify_rcsa(struct wpa_supplicant *wpa_s, int freq,
 	u32 tx_freq = wpa_s->assoc_freq;
 	size_t total_len = RCSA_MIN_FRAME_LEN;
 
-	if (wpa_s->wpa_state != WPA_COMPLETED)
+	if (wpa_s->wpa_state != WPA_COMPLETED && !wpa_s->sta_dfs_en)
 		return -1;
 
 	wpa_printf(MSG_DEBUG, "rcsa: freq %u chan %u cs_count %u",
@@ -188,18 +188,22 @@ static int wpa_drv_notify_rcsa(struct wpa_supplicant *wpa_s, int freq,
 			}
 		}
 	}
-	/*
-	 * link bitmap in ml info ie is populated by repeater hostapd.
-	 * This can't be mapped to root hostapd, so replace bitmap with
-	 * wpa_supplicant link bitmap(linkids of repeater wpa and root
-	 * hostapd are same).
-	 */
-	if (optional_ml_info_ie_access(opt_ie, opt_ie_len, &link_id, 1))
-		link_id = -1;
 
+	if (!wpa_s->sta_dfs_en) {
+		/*
+		 * link bitmap in ml info ie is populated by repeater hostapd.
+		 * This can't be mapped to root hostapd, so replace bitmap with
+		 * wpa_supplicant link bitmap(linkids of repeater wpa and root
+		 * hostapd are same).
+		 */
+		if (optional_ml_info_ie_access(opt_ie, opt_ie_len, &link_id, 1))
+			link_id = -1;
+	} else {
+		tx_freq = freq;
+	}
 	wpa_printf(MSG_DEBUG, "rcsa: sending on %d link freq %u",
 		   link_id, tx_freq);
-
+	wpa_hexdump_buf(MSG_INFO, "rcsa: Action frame payload", buf);
 	res = wpa_drv_send_action_extn(wpa_s, tx_freq, 0,
 				       wpa_s->bssid,
 				       wpa_s->own_addr, wpa_s->bssid,
@@ -357,6 +361,7 @@ static int hostapd_ucode_notify_rcsa_tx(struct hostapd_iface *iface, u8 channel,
 {
 	return -1;
 }
+
 #endif
 
 static void hostapd_get_local_rcsa_ml_info(struct hostapd_iface *iface,
@@ -376,11 +381,11 @@ static void hostapd_get_local_rcsa_ml_info(struct hostapd_iface *iface,
 	}
 }
 
-static size_t hostapd_build_rcsa_optional_ies(const u8 *nol_ie,
-					      size_t nol_ie_len,
-					      bool include_ml_ie,
-					      u16 link_id_bitmap,
-					      u8 *buf, size_t buf_len)
+size_t hostapd_build_rcsa_optional_ies(const u8 *nol_ie,
+				       size_t nol_ie_len,
+				       bool include_ml_ie,
+				       u16 link_id_bitmap,
+				       u8 *buf, size_t buf_len)
 {
 	u8 *pos = buf;
 	u8 *ml_pos;
@@ -724,6 +729,7 @@ static int hostapd_rcsa_get_radar_freq_params(struct hostapd_data *hapd,
 				      &mode->uhr_capab[IEEE80211_MODE_AP],
 				      0,
 				      hapd->iconf->he_6ghz_reg_pwr_type,
+				      0, 0,
 				      iface->conf->bandwidth_device,
 				      iface->conf->center_freq_device);
 	if (ret) {
@@ -773,7 +779,9 @@ static void hostapd_rcsa_notify_radar(struct hostapd_data *hapd)
 		return;
 	}
 
-	if (nol_info->bandwidth < DFS_NOL_IE_BW_80_MHZ) {
+
+	if (hapd->iface->conf->use_ru_puncture_dfs &&
+	    nol_info->bandwidth < DFS_NOL_IE_BW_80_MHZ) {
 		wpa_printf(MSG_DEBUG,
 			   "RCSA: Puncturing is not applicable for bandwidth less than 80 MHz");
 		return;
@@ -962,6 +970,8 @@ static int hostapd_parse_rcsa_frame(struct hostapd_data *hapd,
 				    bool *mlinfo_present,
 				    s8 *mlinfo_linkid)
 {
+	struct hostapd_data *target_hapd;
+	struct hostapd_iface *iface;
 	const u8 *pos;
 	const u8 *end;
 	const u8 *cs_ie;
@@ -991,7 +1001,6 @@ static int hostapd_parse_rcsa_frame(struct hostapd_data *hapd,
 	pos = cs_ie + IEEE80211_CSA_IE_TOTAL_LEN;
 	rem_len = end - pos;
 
-	hostapd_parse_rcsa_nol_ie(hapd->iface, pos, rem_len);
 	if (rem_len >= 2 && opt_ie) {
 		copy_len = rem_len < RCSA_MAX_OPTIONAL_IE_LEN ? rem_len : RCSA_MAX_OPTIONAL_IE_LEN;
 
@@ -1009,6 +1018,20 @@ static int hostapd_parse_rcsa_frame(struct hostapd_data *hapd,
 	*mlinfo_present = optional_ml_info_ie_access((u8 *)opt_ie, *opt_ie_len,
 						     mlinfo_linkid, 0);
 
+	iface = hapd->iface;
+	target_hapd = hapd;
+	if (iface->bss[0]->conf->mld_ap &&
+	    (*mlinfo_linkid != -1)) {
+		target_hapd = switch_link_hapd(hapd, *mlinfo_linkid);
+		if (!target_hapd)
+			return 0;
+	}
+
+	iface = target_hapd->iface;
+	if (!iface)
+		return 0;
+
+	hostapd_parse_rcsa_nol_ie(iface, pos, rem_len);
 	wpa_printf(MSG_DEBUG,
 		   "rcsa: chan %u, csa_cnt %u, switch_mode %u, chan %u, mlinfo_present %u, linkid %u",
 		   *new_chan, *csa_count, *switch_mode, *new_chan,
@@ -1162,4 +1185,219 @@ void hostapd_rcsa_handle_csa_timeout(struct hostapd_iface *iface)
 				       hostapd_rcsa_trigger_channal_change,
 				       iface, NULL);
 	}
+}
+
+/**
+ * wpa_rcsa_get_local_ml_info - Get local ML information for RCSA
+ * @wpa_s: wpa_supplicant context for the associated interface
+ * @include_ml_ie: output flag, set to true if ML IE should be included
+ * @link_id_bitmap: output bitmap of link IDs selected for ML IE
+ * @link_id: output link id of the MLD
+ */
+static void wpa_rcsa_get_local_ml_info(struct wpa_supplicant *wpa_s,
+					  bool *include_ml_ie,
+					  u16 *link_id_bitmap, u16 *link_id)
+{
+	u16 i;
+	*include_ml_ie = false;
+	*link_id_bitmap = 0;
+
+	if (!wpa_s)
+		return;
+
+#ifdef CONFIG_IEEE80211BE
+	if (!wpa_s->valid_links)
+		return;
+
+	for_each_link(wpa_s->valid_links, i) {
+		int freq = wpa_s->links[i].freq;
+
+		if (!freq)
+			continue;
+
+		if (freq == wpa_s->assoc_freq)
+			*link_id = i;
+
+		if (is_5ghz_freq(freq) && (wpa_s->wpa_state == WPA_STACACING ||
+		    wpa_s->links[i].pending_ch_switch_freq)) {
+			*include_ml_ie = true;
+			*link_id_bitmap = BIT(i);
+			wpa_printf(MSG_DEBUG,
+				   "rcsa: selecting 5G link %u (freq=%d) for ML info IE",
+				   i, freq);
+			break;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+}
+
+/**
+ * wpa_rcsa_prepare_nol_ie - Build NOL IE from DFS radar event
+ * @radar: DFS radar event describing the detected radar
+ * @nol_ie_buf: output buffer for the constructed NOL IE
+ * @nol_ie_buf_len: length of the output buffer
+ *
+ * Returns: length of the NOL IE written to @nol_ie_buf on success,
+ * or -1 on error.
+ */
+static int wpa_rcsa_prepare_nol_ie(const struct dfs_event *radar,
+				   u8 *nol_ie_buf,
+				   size_t nol_ie_buf_len)
+{
+	enum dfs_nol_ie_bw_mhz bw_mhz;
+	int bandwidth_mhz;
+	int n_subchans;
+	u16 bitmap_mask;
+	u16 radar_bitmap_oper;
+	int start_idx;
+	int end_idx;
+	int contiguous_count;
+	u16 contiguous_bitmap;
+	u8 *pos, *len_pos;
+	size_t needed_len;
+
+	bw_mhz = channel_width_to_int(radar->chan_width);
+	bandwidth_mhz = (int) bw_mhz;
+	n_subchans = bandwidth_mhz / MIN_DFS_SUBCHAN_BW;
+	if (n_subchans <= 0 || n_subchans > DFS_MAX_20M_SUB_CH) {
+		wpa_printf(MSG_DEBUG,
+			   "rcsa: invalid subchannel count %d for bw=%d",
+			   n_subchans, bandwidth_mhz);
+		return -1;
+	}
+
+	bitmap_mask = DFS_NOL_IE_BITMAP_MASK(n_subchans);
+	radar_bitmap_oper = radar->radar_bitmap & bitmap_mask;
+
+	if (!radar_bitmap_oper) {
+		wpa_printf(MSG_DEBUG,
+			   "rcsa: radar_bitmap is 0 after masking (0x%04x)",
+			   radar->radar_bitmap);
+		return -1;
+	}
+
+	start_idx = 0;
+	while (start_idx < n_subchans &&
+			!(radar_bitmap_oper & (1U << start_idx)))
+		start_idx++;
+
+	if (start_idx >= n_subchans) {
+		wpa_printf(MSG_DEBUG,
+				"rcsa: no radar-affected subchannel found");
+		return -1;
+	}
+
+	end_idx = start_idx;
+	while (end_idx < n_subchans &&
+			(radar_bitmap_oper & (1U << end_idx)))
+		end_idx++;
+
+	contiguous_count = end_idx - start_idx;
+	contiguous_bitmap = (1U << contiguous_count) - 1;
+
+	wpa_printf(MSG_DEBUG,
+		   "rcsa: STA NOL IE base_freq=%d bw=%u bitmap=0x%02x"
+		   " (start_idx=%d count=%d)",
+		   radar->freq, (unsigned int) DFS_NOL_IE_BW_20_MHZ,
+		   (u8) (contiguous_bitmap & 0xFF),
+		   start_idx, contiguous_count);
+
+	/* Build NOL IE — same wire format as hostapd_build_nol_ie():
+	 *   EID_VENDOR_SPECIFIC | len | bw(1) | freq_le16(2) | bitmap(1)
+	 * bw is MIN_DFS_SUBCHAN_BW (20 MHz), freq is the primary radar subchan,
+	 * bitmap is the contiguous radar subchannel mask from the event.
+	 */
+	needed_len = 2 + 1 + 2 + 1;
+	if (nol_ie_buf_len < needed_len)
+		return -1;
+
+	pos = nol_ie_buf;
+	*pos++ = WLAN_EID_VENDOR_SPECIFIC;
+	len_pos = pos++;
+	*pos++ = (u8) RCSA_MIN_DFS_SUBCHAN_BW;
+	WPA_PUT_LE16(pos, (u16)radar->freq +
+		    start_idx * MIN_DFS_SUBCHAN_BW);
+	pos += 2;
+	*pos++ = (u8)(contiguous_bitmap & 0xFF);
+	*len_pos = pos - len_pos - 1;
+
+	return pos - nol_ie_buf;
+}
+
+/**
+ * wpa_rcsa_build_opt_ies - Build optional IEs for RCSA from local ML info
+ * @wpa_s: wpa_supplicant context for the associated interface
+ * @nol_ie: pointer to NOL IE buffer, or NULL if not present
+ * @nol_ie_len: length of the NOL IE buffer
+ * @opt_ie: output buffer for the constructed optional IEs
+ * @opt_ie_buf_len: length of the output buffer
+ * @link_id: link id of the MLD
+ *
+ * Returns: length of the optional IEs written to @opt_ie.
+ */
+static size_t wpa_rcsa_build_opt_ies(struct wpa_supplicant *wpa_s,
+				     const u8 *nol_ie, size_t nol_ie_len,
+				     u8 *opt_ie, size_t opt_ie_buf_len,
+				     u16 *link_id)
+{
+	bool include_ml_ie;
+	u16 link_id_bitmap;
+
+	wpa_rcsa_get_local_ml_info(wpa_s, &include_ml_ie,
+				   &link_id_bitmap, link_id);
+
+	return hostapd_build_rcsa_optional_ies(
+		nol_ie_len > 0 ? nol_ie : NULL,
+		nol_ie_len > 0 ? nol_ie_len : 0,
+		include_ml_ie, link_id_bitmap,
+		opt_ie, opt_ie_buf_len);
+}
+
+void wpa_rcsa_handle_radar(struct wpa_supplicant *wpa_s,
+			   const struct dfs_event *radar)
+{
+	u8 nol_ie_buf[RCSA_MAX_OPTIONAL_IE_LEN];
+	u8 opt_ie[RCSA_MAX_OPTIONAL_IE_LEN];
+	int nol_ie_len;
+	size_t opt_ie_len;
+	u8 chan;
+	u16 link_id = -1;
+	unsigned int tx_freq;
+
+	nol_ie_len = wpa_rcsa_prepare_nol_ie(radar,
+					     nol_ie_buf,
+					     sizeof(nol_ie_buf));
+	if (nol_ie_len < 0)
+		return;
+
+	opt_ie_len = wpa_rcsa_build_opt_ies(wpa_s,
+					    nol_ie_buf,
+					    (size_t) nol_ie_len,
+					    opt_ie,
+					    sizeof(opt_ie), &link_id);
+
+	if (link_id < 0)
+		return;
+
+	if (wpa_s->links[link_id].pending_ch_switch_freq)
+		tx_freq = wpa_s->links[link_id].pending_ch_switch_freq;
+	else
+		tx_freq = wpa_s->assoc_freq;
+	ieee80211_freq_to_chan(tx_freq, &chan);
+	wpa_printf(MSG_INFO,
+		   "rcsa: radar detected freq %d [%d], sending RCSA Txfreq=%d  bw=%u"
+		   "bitmap=0x%04x opt_len=%zu wpa_s->assoc_freq %d chan %d",
+		   radar->freq, link_id, tx_freq, radar->chan_width,
+		   radar->radar_bitmap, opt_ie_len,wpa_s->assoc_freq, chan);
+
+	/* Currently only one RCSA sent. TODO sending RCSA for 5 TBTT */
+#ifdef UCODE_SUPPORT
+	wpa_drv_notify_rcsa(wpa_s,
+			    tx_freq,
+			    chan,
+			    HOSTAPD_RCSA_TX_COUNT,
+			    HOSTAPD_RCSA_SWITCH_MODE,
+			    opt_ie_len ? opt_ie : NULL,
+			    opt_ie_len);
+#endif
 }

@@ -23,6 +23,12 @@
 #include "wpa_config_extn.h"
 #include "reg_extn.h"
 #include "ucode_extn.h"
+#ifdef RDK_ONEWIFI
+#include "ap_drv_ops_extn.h"
+#include "eloop_rdk_extn.h"
+#include "wpa_auth_rdk_extn.h"
+#include "wps_rdk_extn.h"
+#endif /* RDK_ONEWIFI */
 
 struct hostapd_config;
 struct sta_info;
@@ -61,6 +67,7 @@ struct hostapd_hw_modes;
 struct wpa_driver_nl80211_data;
 struct nl80211_vendor_cmd_info;
 struct wpa_scan_res;
+struct wpabuf;
 struct wpa_config;
 struct freq_survey;
 struct wpa_ssid;
@@ -1869,6 +1876,27 @@ wds_ie_process_assoc_resp_extn(struct wpa_supplicant *wpa_s,
 	return;
 }
 
+static inline void
+wpa_bss_update_mld_link_mcst_extn(struct wpa_bss *bss, u8 link_id,
+				  const u8 *ies, size_t ies_len)
+{
+	return;
+}
+
+static inline u32 wpa_bss_get_mld_link_mcst_extn(struct wpa_bss *bss,
+						 u8 link_id)
+{
+	return 0;
+}
+
+static inline void
+wpa_bss_parse_basic_mle_per_sta_mcst_extn(struct wpa_bss *bss,
+					  struct wpabuf *mlbuf,
+					  size_t common_info_len)
+{
+	return;
+}
+
 #else
 
 int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
@@ -2206,6 +2234,12 @@ void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 					  const u8 *bssid_ptr,
 					  const struct ieee80211_neighbor_ap_info *ap_info,
 					  const u8 *mld_params, u8 link_id);
+void wpa_bss_update_mld_link_mcst_extn(struct wpa_bss *bss, u8 link_id,
+				       const u8 *ies, size_t ies_len);
+u32 wpa_bss_get_mld_link_mcst_extn(struct wpa_bss *bss, u8 link_id);
+void wpa_bss_parse_basic_mle_per_sta_mcst_extn(struct wpa_bss *bss,
+					       struct wpabuf *mlbuf,
+					       size_t common_info_len);
 void hostapd_csa_bitmap_update_extn(struct hostapd_iface *iface, int freq);
 int hostapd_send_uplink_csa_extn(struct hostapd_iface *iface,
 				 int channel, int freq,
@@ -2260,6 +2294,7 @@ int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
 struct uc_value *uc_wpas_notify_uplink_csa_extn(struct uc_vm *vm, size_t nargs);
 struct uc_value *uc_wpas_iface_reconnect_extn(struct uc_vm *vm, size_t nargs);
 struct uc_value *uc_wpas_notify_rcsa_extn(struct uc_vm *vm, size_t nargs);
+u32 wpas_ucode_get_link_mcst_extn(struct wpa_supplicant *wpa_s, int link_id);
 bool hostapd_uplink_csa_hdl(struct hostapd_data *hapd,
 			    const u8 *buf, size_t len);
 int handle_action_extn(struct hostapd_data *hapd,
@@ -2531,7 +2566,7 @@ int hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 			   struct driver_dcs_config *params);
 void dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap);
 
-int hostapd_validate_mbssid_group_size_extn(struct hostapd_data *hapd);
+int hostapd_validate_mbssid_configuration_extn(struct hostapd_data *hapd);
 
 int hostapd_get_channel_idx(struct hostapd_hw_modes *mode, int channel_num);
 
@@ -2671,6 +2706,8 @@ wpa_scan_ssid_hide_beacon_extn(struct wpa_supplicant *wpa_s,
 void wpa_config_alloc_empty_extn(struct wpa_config *config);
 
 #define MGMT_MIN_FRAME_SIZE_REQUIRED_MLO_MBSSID 2000
+#define EMA_MLO_BSS_MAX_LIMIT 8
+
 #define DEFAULT_HE_MCS_12_13_SUPPORT true
 #define DEFAULT_STRICT_PASSIVE_SCAN false
 
@@ -2721,6 +2758,34 @@ u8 *wds_ie_populate_assoc_req_extn(struct wpa_supplicant *wpa_s,
 void wds_ie_process_assoc_resp_extn(struct wpa_supplicant *wpa_s,
 				    const u8 *ies, size_t ies_len);
 
+/**
+ * wpa_rcsa_handle_radar - Handle DFS radar event and send RCSA
+ * @wpa_s: wpa_supplicant context for the associated interface
+ * @radar: DFS radar event describing the detected radar
+ */
+void wpa_rcsa_handle_radar(struct wpa_supplicant *wpa_s,
+			   const struct dfs_event *radar);
+
+/**
+ * hostapd_build_rcsa_optional_ies - Build optional IEs for RCSA notification
+ * @nol_ie: pointer to NOL IE buffer, or NULL if not present
+ * @nol_ie_len: length of the NOL IE buffer
+ * @include_ml_ie: whether to include Multi-Link IE information
+ * @link_id_bitmap: bitmap of link IDs to include in ML IE
+ * @buf: output buffer for the constructed optional IEs
+ * @buf_len: length of the output buffer
+ *
+ * Returns: length of the optional IEs written to @buf.
+ */
+size_t hostapd_build_rcsa_optional_ies(const u8 *nol_ie,
+				       size_t nol_ie_len,
+				       bool include_ml_ie,
+				       u16 link_id_bitmap,
+				       u8 *buf, size_t buf_len);
+
+int wpas_set_dfs_state(struct wpa_supplicant *wpa_s, int freq,
+		       int ht_enabled, int chan_offset, int chan_width,
+		       int cf1, int cf2, u32 state, u16 radar_bitmap);
 
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

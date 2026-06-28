@@ -325,7 +325,7 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 #ifdef CONFIG_HOSTAPD_SRC_DIR
 	/* Apply skip_cac only in PRE_CONNECT when conf->skip_cac is enabled */
 	if (conf->conf_extn.skip_cac && pre_connect)
-		csa->freq_params.skip_cac = is_dfs;
+		csa->freq_params.skip_cac = is_dfs && !csa->mcst;
 #endif
 
 	/*
@@ -339,30 +339,37 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 	 * CAC, use the driver-provided channel switch time.
 	 */
 	iface->mcst = csa->mcst;
-	if (csa->freq_params.skip_cac)
-		iface->cs_time =
-			MAX(HOSTAPD_NON_CAC_SWITCH_TIME_MSEC_EXTN(conf->beacon_int),
-			    IEEE80211_TU_TO_MS(csa->mcst));
-	else if (!csa->freq_params.skip_cac && is_dfs) {
+
+	if (is_dfs && csa->mcst)
 		csa->freq_params.skip_cac =
 			hostapd_mcst_allows_skip_cac_extn(csa->mcst,
 							  conf->beacon_int,
 							  is_dfs);
-		if (csa->freq_params.skip_cac)
-			iface->cs_time =
-				MAX(HOSTAPD_NON_CAC_SWITCH_TIME_MSEC_EXTN(conf->beacon_int),
-				    IEEE80211_TU_TO_MS(csa->mcst));
-		else
-			hostapd_get_channel_switch_time_extn(iface, &csa->freq_params);
-	}
-	else
+
+	if (csa->freq_params.skip_cac) {
+		iface->cs_time =
+			MAX(HOSTAPD_NON_CAC_SWITCH_TIME_MSEC_EXTN(conf->beacon_int),
+			    IEEE80211_TU_TO_MS(csa->mcst));
+	} else if (is_dfs && csa->mcst) {
+		iface->cs_time = IEEE80211_TU_TO_MS(csa->mcst);
+		if (pre_connect) {
+			iface->cs_time += 2 * conf->beacon_int;
+			wpa_printf(MSG_INFO,
+				   "CSA: residual CAC using phy=%s mcst=%u TU cs_time=%u ms num_bss=%zu",
+				   iface->phy, csa->mcst, iface->cs_time, iface->num_bss);
+		}
+	} else
 		hostapd_get_channel_switch_time_extn(iface, &csa->freq_params);
 
-	csa->freq_params.mcst = csa->mcst;
+	csa->freq_params.mcst = iface->cs_time ?
+		IEEE80211_MS_TO_TU(iface->cs_time) : 0;
 	wpa_printf(MSG_INFO,
-		   "CSA: is_dfs=%d pre_connect=%d skip_cac=%d mcst=%u cs_time=%u",
-		   is_dfs, pre_connect, csa->freq_params.skip_cac,
-		   csa->mcst, iface->cs_time);
+		   "CSA: phy=%s is_dfs=%d pre_connect=%d skip_cac=%d mcst=%u TU "
+		   "cs_time=%u ms freq=%d channel=%d cf1=%d cf2=%d link_id=%d",
+		   iface->phy, is_dfs, pre_connect, csa->freq_params.skip_cac,
+		   csa->freq_params.mcst, iface->cs_time, csa->freq_params.freq,
+		   csa->freq_params.channel, csa->freq_params.center_freq1,
+		   csa->freq_params.center_freq2, csa->link_id);
 
 	if (is_dfs && IS_CSH_IGNORE_CSA_DFS_ENABLED(conf->conf_extn.cswopts) &&
 	    !pre_connect) {

@@ -60,18 +60,6 @@ enum qca_wlan_vendor_attr_dfs_nol_info {
 /* QCA Vendor Element type for NOL IE in action frames */
 #define QCA_VENDOR_ELEM_NOL_UPDATE 0x01
 
-/* NOL IE constants - aligned with RCSA design */
-#define DFS_MAX_20M_SUB_CH 8
-#define DFS_NOL_IE_TIMEOUT_MS 1800000  /* 30 minutes */
-#define MIN_DFS_SUBCHAN_BW 20          /* 20 MHz minimum subchannel */
-
-#define DFS_NOL_IE_SINGLE_SUBCHAN_BITMAP BIT(0)
-
-#define DFS_NOL_IE_U32_LEN 4
-#define DFS_NOL_IE_U16_LEN 2
-
-#define DFS_NOL_IE_BITMAP_MASK(n_subchans) ((u16)((1U << (n_subchans)) - 1))
-
 enum dfs_channel_type_extn {
 	DFS_ANY_CHANNEL_EXTN,
 	DFS_AVAILABLE_EXTN,	/* non-radar or radar-available */
@@ -723,6 +711,7 @@ int hostapd_dfs_prepare_channel_switch_settings(struct hostapd_iface *iface,
 				      &cmode->uhr_capab[ieee80211_mode],
 				      punct_bitmap | iface->radar_bit_pattern,
 				      iface->conf->he_6ghz_reg_pwr_type,
+				      0, 0,
 				      iface->conf->bandwidth_device,
 				      iface->conf->center_freq_device);
 	if (err) {
@@ -1551,6 +1540,7 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 				      &cmode->uhr_capab[ieee80211_mode],
 				      iface->radar_bit_pattern,
 				      iface->conf->he_6ghz_reg_pwr_type,
+				      0, 0,
 				      iface->conf->bandwidth_device,
 				      iface->conf->center_freq_device);
 	if (err) {
@@ -1576,6 +1566,12 @@ void hostapd_bootup_cac_complete_extn(struct hostapd_iface *iface)
 {
 	iface->bootup_cac_in_progress = 0;
 	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+
+#ifdef CONFIG_MESH
+	if (iface->mconf)
+		return;
+#endif /* CONFIG_MESH */
+
 	wpa_printf(MSG_DEBUG,
 		   "Boot-up CAC complete for %s: state->ENABLED, calling set_beacons for %zu BSS",
 		   iface->bss[0]->conf->iface, iface->num_bss);
