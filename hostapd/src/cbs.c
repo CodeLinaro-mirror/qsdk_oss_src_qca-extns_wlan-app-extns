@@ -85,9 +85,12 @@ static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
 
 	if (!val) {
 		cbs_params->cbs_enable = 0;
-		return hapd->driver->set_cbs(hapd->drv_priv,
-					     cbs_params, NULL,
-					     hapd->mld_link_id);
+		ret = hapd->driver->set_cbs(hapd->drv_priv,
+					    cbs_params, NULL,
+					    hapd->mld_link_id);
+		if (!ret)
+			wpa_msg(hapd->msg_ctx, MSG_INFO, CBS_EVENT_ABORTED);
+		return ret;
 	}
 
 	if (!hapd->iface->current_mode)
@@ -116,12 +119,15 @@ static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
 	cbs_params->best_chan = NULL;
 	acs_cleanup(hapd->iface);
 	qacs_reset_scan_stats(hapd->iface, mode);
+	wpa_msg(hapd->msg_ctx, MSG_INFO, CBS_EVENT_STARTED);
 
 	ret = hapd->driver->set_cbs(hapd->drv_priv,
 				    cbs_params, freq_list,
 				    hapd->mld_link_id);
-	if (ret)
+	if (ret) {
 		cbs_params->cbs_enable = 0;
+		wpa_msg(hapd->msg_ctx, MSG_INFO, CBS_EVENT_ABORTED);
+	}
 
 	os_free(freq_list);
 	return ret;
@@ -333,6 +339,8 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 
 		if (conf_extn->cbs_params.cbs_enable == 1)
 			conf_extn->cbs_params.cbs_enable = 0;
+
+		wpa_msg(link_hapd->msg_ctx, MSG_INFO, CBS_EVENT_COMPLETED);
 	}
 
 	return 0;
