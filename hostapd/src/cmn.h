@@ -796,6 +796,15 @@ struct hostapd_hw_modes_extn {
 #endif
 };
 
+#ifdef CONFIG_QCN_APP_EXTN 
+#define NORMAL_SCAN_TRIGGER normal_scan /* normal_scan and cbs_vendor_scan are defined in qacs.h file */
+#define CBS_SCAN_TRIGGER cbs_vendor_scan
+#else
+#define NORMAL_SCAN_TRIGGER 0
+#define CBS_SCAN_TRIGGER 1
+#endif
+
+
 enum hostapd_dcs_intf_type {
 	DCS_CW_INTF     = 0x0001,
 	DCS_WLAN_INTF   = 0x0002,
@@ -1470,6 +1479,12 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			       int err)
 {
 	return -EOPNOTSUPP;
+}
+
+static inline void
+acs_init_extn(struct hostapd_iface *iface, uint8_t trigger)
+{
+	return;
 }
 
 static inline int
@@ -2471,6 +2486,7 @@ int
 acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			       struct hostapd_channel_data *chan,
 			       int err);
+void acs_init_extn(struct hostapd_iface *iface, uint8_t trigger);
 int
 acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err);
 bool acs_hwbl_candidate_ok(struct hostapd_iface *iface,
