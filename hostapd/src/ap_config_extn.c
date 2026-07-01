@@ -86,6 +86,8 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->cbs_params.waittime = 1000;
 	conf_extn->cbs_params.dwellsplit = 50;
 	conf_extn->cbs_params.totaldwell = 200;
+	conf_extn->cbs_params.retrigger_time =
+		HOSTAPD_CBS_RETRIGGER_TIME;
 
 	conf_extn->eht_config_ccfs0 = false;
 
@@ -474,6 +476,8 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		conf_extn->cbs_params.dwellsplit = atoi(pos);
 	} else if (os_strcmp(buf, "cbs_totaldwell") == 0) {
 		conf_extn->cbs_params.totaldwell = atoi(pos);
+	} else if (os_strcmp(buf, "cbs_retrigger_time") == 0) {
+		conf_extn->cbs_params.retrigger_time = atoi(pos);
 
 	} else if (os_strcmp(buf, "vap_submode") == 0) {
 		u8 val = atoi(pos);

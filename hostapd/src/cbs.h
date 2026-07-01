@@ -18,6 +18,8 @@ struct hostapd_data;
 #define CBS_EVENT_COMPLETED "CBS-COMPLETED "
 #define CBS_EVENT_ABORTED "CBS-ABORTED "
 
+#define HOSTAPD_CBS_RETRIGGER_TIME 300000 /* CBS scan trigger is skipped if it is triggered again under 5 mins */
+
 struct cbs_params_extn {
 	u8 cbs_enable; /* enable/disable cbs scan (0:disable | 1:enable CBS scan once | 2:enable cbs scan to run continuously)*/
 	int dwellsplit; /* dwell split time on a foreign channel for one scan (msec) */
@@ -28,6 +30,10 @@ struct cbs_params_extn {
 	struct hostapd_channel_data *best_chan; /* Best channel chosen based on CBS scan results */
 	struct os_reltime best_chan_fill_ts; /* Timestamp when best_chan was updated */
 	struct os_reltime cbs_scan_complete_ts; /* Timestamp when CBS scan completed with new results */
+	u32 retrigger_time; /* Minimum age (ms) before CBS scan can be retriggered. ACS is directly
+			     * triggered by skipping the CBS scan if cbs enable is invoked before this time
+			     * (msec)
+			     */
 };
 
 int hostapd_handle_cli_cbs_extn(struct hostapd_data *hapd,
