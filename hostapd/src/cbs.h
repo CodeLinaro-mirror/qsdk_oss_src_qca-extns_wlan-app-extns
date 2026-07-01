@@ -27,6 +27,7 @@ struct cbs_params_extn {
 	int waittime; /* time to wait after scanning all channels and before starting the next scan (msec) */
 	struct hostapd_channel_data *best_chan; /* Best channel chosen based on CBS scan results */
 	struct os_reltime best_chan_fill_ts; /* Timestamp when best_chan was updated */
+	struct os_reltime cbs_scan_complete_ts; /* Timestamp when CBS scan completed with new results */
 };
 
 int hostapd_handle_cli_cbs_extn(struct hostapd_data *hapd,
