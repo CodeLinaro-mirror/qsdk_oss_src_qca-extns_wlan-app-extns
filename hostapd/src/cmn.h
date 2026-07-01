@@ -1599,6 +1599,12 @@ hostapd_iface_deinit_extn(struct hostapd_iface *iface)
 }
 
 static inline void
+hostapd_free_hw_features_extn(struct hostapd_hw_modes *hw_features,
+			      size_t num_hw_features)
+{
+}
+
+static inline void
 wpas_iface_init_extn(struct wpa_supplicant *wpa_s)
 {
 }
@@ -2508,6 +2514,8 @@ int hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
 				  char *buf, size_t buflen);
 void hostapd_iface_init_extn(struct hostapd_iface *iface);
 void hostapd_iface_deinit_extn(struct hostapd_iface *iface);
+void hostapd_free_hw_features_extn(struct hostapd_hw_modes *hw_features,
+				   size_t num_hw_features);
 void wpas_iface_init_extn(struct wpa_supplicant *wpa_s);
 void wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s);
 /**
