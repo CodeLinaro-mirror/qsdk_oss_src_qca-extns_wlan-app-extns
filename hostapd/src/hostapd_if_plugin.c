@@ -941,7 +941,31 @@ static void interface_create(char *ifname, void *ctx)
 	pthread_mutex_unlock(&plugin_iface_mutex);
 }
 
+static void interface_remove(char *ifname)
+{
+	struct plugin_hapd_iface *iface;
 
+	if (!ifname)
+		return;
+
+	pthread_mutex_lock(&plugin_iface_mutex);
+
+	iface = plugin_hapd_iface_get(ifname);
+	if (!iface) {
+		wpa_printf(MSG_DEBUG,
+			   "plugin: interface_remove: no iface found for %s\n",
+			   ifname);
+		pthread_mutex_unlock(&plugin_iface_mutex);
+		return;
+	}
+
+	dl_list_del(&iface->list);
+	os_free(iface);
+	wpa_printf(MSG_DEBUG,
+		   "plugin: removed plugin_hapd_iface for %s\n", ifname);
+
+	pthread_mutex_unlock(&plugin_iface_mutex);
+}
 
 static
 void process_assoc_request(struct invoke_plugin_datablock *datablock,
@@ -1425,6 +1449,7 @@ enum hostapd_if_eloop_type hostapd_if_plugin_init(void *arg)
 	test_plugin.offload_action       = offload_action,
 	test_plugin.notify_event         = notify_event,
 	test_plugin.interface_create     = interface_create,
+	test_plugin.interface_remove     = interface_remove,
 	test_plugin.pull_pmk_r1          = pull_pmk_r1;
 
 	hostapd_plugin_register(&test_plugin);
