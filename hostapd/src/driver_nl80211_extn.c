@@ -1288,9 +1288,17 @@ int wpa_driver_nl80211_dcs_config_extn(void *priv, u8 link_id,
 {
 	struct nl_msg *msg;
 	struct i802_bss *bss = priv;
-	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct wpa_driver_nl80211_data *drv = NULL;
 	struct nlattr *attr;
 	int ret = 0;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: DCS config request with no driver handle");
+		return -1;
+	}
+
+	drv = bss->drv;
 
 	wpa_printf(MSG_DEBUG, "nl80211: Configure DCS (cmd_type=%u valid_mask=0x%x)",
 		   params->cmd_type, params->valid_mask);
@@ -1609,9 +1617,17 @@ int wpa_driver_nl80211_dcs_sim_extn(void *priv, u8 link_id,
 {
 	struct nl_msg *msg;
 	struct i802_bss *bss = priv;
-	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct wpa_driver_nl80211_data *drv = NULL;
 	struct nlattr *attr;
 	int ret = 0;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: DCS SIM request with no driver handle");
+		return -1;
+	}
+
+	drv = bss->drv;
 
 	wpa_printf(MSG_DEBUG, "nl80211: Configure DCS SIM");
 	if (drv->nlmode != NL80211_IFTYPE_AP)
