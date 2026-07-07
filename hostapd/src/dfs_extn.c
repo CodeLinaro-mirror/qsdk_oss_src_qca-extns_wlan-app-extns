@@ -1627,5 +1627,17 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 	iface->bootup_cac_in_progress = 1;
 	os_get_reltime(&iface->dfs_cac_start);
 
+	wpa_printf(MSG_DEBUG, "DFS start CAC on %d MHz%s", iface->freq,
+		   dfs_use_radar_background(iface) ? " (background)" : "");
+	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_START
+		"freq=%d chan=%d sec_chan=%d, width=%d, seg0=%d, seg1=%d, cac_time=%ds bitmap:0x%04x",
+		iface->freq,
+		iface->conf->channel, iface->conf->secondary_channel,
+		hostapd_get_oper_chwidth(iface->conf),
+		hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
+		hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
+		iface->dfs_cac_ms / 1000,
+		iface->conf->punct_bitmap);
+
 	return true;
 }
