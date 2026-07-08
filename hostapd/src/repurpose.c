@@ -529,6 +529,17 @@ void hostapd_get_csa_info_of_repurposed_bss_extn(struct hostapd_data *hapd,
 						 u8 *seg0,
 						 u8 *seg1)
 {
+	/* Repurposed CSA to be derived only if user explicitly configured
+	 * a repurpose bandwidth in interface.
+	 */
+	if (hostapd_is_repurpose_disabled_11ax_extn(hapd->conf) &&
+	    !hapd->iconf->conf_extn.user_repurpose_vht_width)
+		return;
+
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf) &&
+	    !hapd->iconf->conf_extn.user_repurpose_he_width)
+		return;
+
 	hostapd_oper_info_of_repurposed_bss_helper_extn(hapd,
 							primary_channel,
 							secondary_channel,
