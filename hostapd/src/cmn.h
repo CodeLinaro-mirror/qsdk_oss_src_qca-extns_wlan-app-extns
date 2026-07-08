@@ -2286,8 +2286,6 @@ struct ubus_context *ubus_ap_fetch_context_extn(void);
 struct blob_buf *ubus_ap_fetch_bbuf_extn(void);
 struct uc_value *ucode_ap_fetch_iface_reg_extn(void);
 struct uc_vm *ucode_ap_fetch_vm_extn(void);
-bool hostapd_uplink_csa_hdl_extn(struct hostapd_data *hapd,
-				 const u8 *buf, size_t len);
 int hostapd_prepare_nol_ie_bmap_extn(struct hostapd_iface *iface,
 				     int channel, int freq,
 				     int secondary_channel,
@@ -2318,8 +2316,6 @@ struct uc_value *uc_wpas_notify_uplink_csa_extn(struct uc_vm *vm, size_t nargs);
 struct uc_value *uc_wpas_iface_reconnect_extn(struct uc_vm *vm, size_t nargs);
 struct uc_value *uc_wpas_notify_rcsa_extn(struct uc_vm *vm, size_t nargs);
 u32 wpas_ucode_get_link_mcst_extn(struct wpa_supplicant *wpa_s, int link_id);
-bool hostapd_uplink_csa_hdl(struct hostapd_data *hapd,
-			    const u8 *buf, size_t len);
 int handle_action_extn(struct hostapd_data *hapd,
 		       const struct ieee80211_mgmt *mgmt, size_t len,
 		       unsigned int freq);
