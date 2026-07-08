@@ -18,6 +18,7 @@
 #include "cmn.h"
 #include "ap/ieee802_11.h"
 #include "dcs.h"
+#include "block_channel.h"
 
 void
 hostapd_config_defaults_extn(struct hostapd_config *conf)
@@ -498,6 +499,8 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 	} else if (os_strcasecmp(buf, "CSwOpts") == 0) {
 		if (hostapd_set_cswopts_extn(conf_extn, pos) < 0)
 			return 1;
+	} else if (os_strcmp(buf, "acs_block_chan_list") == 0) {
+		return hostapd_config_parse_block_chanlist(conf_extn, pos);
 	} else if (os_strcmp(buf, "acs_periodic_interval") == 0) {
 		val = atoi(pos);
 		if (val < 60 || val > 86400) {
