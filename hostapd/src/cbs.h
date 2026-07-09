@@ -36,6 +36,7 @@ struct cbs_params_extn {
 			     */
 };
 
+#ifdef CONFIG_ACS
 int hostapd_handle_cli_cbs_extn(struct hostapd_data *hapd,
 				char *pos, char *buf,
 				size_t buflen);
@@ -43,4 +44,27 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 				     union wpa_event_data *data);
 
 int hostapd_cbs_trigger_csa(struct hostapd_data *hapd);
+
+#else
+static inline int
+hostapd_cbs_trigger_csa(struct hostapd_data *hapd)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline
+int hostapd_handle_cli_cbs_extn(struct hostapd_data *hapd,
+				char *pos, char *buf,
+				size_t buflen)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline
+int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
+				     union wpa_event_data *data)
+{
+	return -EOPNOTSUPP;
+}
+#endif /* CONFIG_ACS */
 #endif
