@@ -23,6 +23,11 @@
 #include "common/defs.h"
 #include "cmn.h"
 #include "../wpa_supplicant/config.h"
+#include "ap/hostapd.h"
+#include "reg_extn.h"
+#include "dfs_extn.h"
+#include "ucode_extn.h"
+#include "qcn_ie_extn.h"
 
 /*
  * IEEE 802.11 action frame/IE constants used by wpa_drv_send_uplink_csa().
@@ -772,4 +777,704 @@ void wpa_bss_parse_basic_mle_per_sta_mcst_extn(struct wpa_bss *bss,
 		pos += 2 + sub_elem_len;
 		rem_len -= 2 + sub_elem_len;
 	}
+}
+
+int wpa_supplicant_event_extn(struct wpa_supplicant *wpa_s,
+			      enum wpa_event_type event,
+			      union wpa_event_data *data)
+{
+	if (!wpa_s || !data)
+		return -EINVAL;
+
+	switch (event) {
+	case EVENT_HW_BLOCKED_CHANS_NOTIFY:
+		wpas_event_hw_blocklist_notify_extn(
+			wpa_s, &data->event_data_extn.hw_blocklist_info);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+void wpas_iface_init_extn(struct wpa_supplicant *wpa_s)
+{
+	if (!wpa_s)
+		return;
+
+	wpa_s->wpas_extn.check_hw_blocklist = true;
+}
+
+void wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s)
+{
+	if (!wpa_s)
+		return;
+
+	hostapd_free_hw_blocklist_info_extn(wpa_s->wpas_extn.hw_blocklist_info,
+					    wpa_s->wpas_extn.num_hw_blocklist);
+	wpa_s->wpas_extn.hw_blocklist_info = NULL;
+	wpa_s->wpas_extn.num_hw_blocklist = 0;
+	wpa_s->wpas_extn.check_hw_blocklist = false;
+}
+
+static struct hostapd_multi_hw_info *
+wpas_get_current_hw_info_extn(struct wpa_supplicant *wpa_s, int freq)
+{
+	u8 i;
+
+	if (!wpa_s || !freq || !wpa_s->multi_hw_info || !wpa_s->num_multi_hws)
+		return NULL;
+
+	for (i = 0; i < wpa_s->num_multi_hws; i++) {
+		struct hostapd_multi_hw_info *hw_info = &wpa_s->multi_hw_info[i];
+
+		if (hw_info->start_freq <= freq && hw_info->end_freq >= freq)
+			return hw_info;
+	}
+
+	return NULL;
+}
+
+void wpas_query_hw_blocklist_extn(struct wpa_supplicant *wpa_s)
+{
+	struct hostapd_multi_hw_info *hw_info;
+	int radio_idx = -1;
+	int query_freq = 0;
+	int ret;
+
+	if (!wpa_s || !wpa_s->support_6ghz)
+		return;
+
+	if (!wpa_s->driver || !wpa_s->drv_priv ||
+	    !wpa_s->driver->is_6ghz_hw_blocked_chans_supported ||
+	    !wpa_s->driver->fetch_hw_blocked_chans)
+		return;
+
+	if (!wpa_s->driver->is_6ghz_hw_blocked_chans_supported(wpa_s->drv_priv))
+		return;
+
+	/* For MLO connections, query HWBL for each unique radio across all
+	 * active links. For SLO, fall back to assoc_freq/current_bss. */
+	if (wpa_s->valid_links) {
+		u32 queried_mask = 0;
+		int i;
+
+		for_each_link(wpa_s->valid_links, i) {
+			unsigned int freq = wpa_s->links[i].freq;
+
+			if (!freq)
+				continue;
+			/* HWBL is 6 GHz only — skip 2.4/5 GHz links */
+			if (!is_6ghz_freq(freq))
+				continue;
+			hw_info = wpas_get_current_hw_info_extn(wpa_s, freq);
+			if (!hw_info)
+				continue;
+			if (queried_mask & BIT(hw_info->hw_idx))
+				continue;
+			queried_mask |= BIT(hw_info->hw_idx);
+
+			wpa_printf(MSG_DEBUG,
+				   "Query HW blocklist for ML link=%d freq=%d hw_idx=%u",
+				   i, freq, hw_info->hw_idx);
+			ret = wpa_s->driver->fetch_hw_blocked_chans(
+				wpa_s->drv_priv, hw_info->hw_idx);
+			if (ret)
+				wpa_printf(MSG_DEBUG,
+					   "wpas: Failed to fetch HW blocklist (ifname=%s link=%d radio_idx=%u ret=%d)",
+					   wpa_s->ifname, i, hw_info->hw_idx,
+					   ret);
+		}
+		return;
+	}
+
+	if (wpa_s->assoc_freq) {
+		query_freq = wpa_s->assoc_freq;
+		wpa_printf(MSG_DEBUG,
+			   "Query HW blocklist for assoc_freq=%d",
+			   wpa_s->assoc_freq);
+	} else if (wpa_s->current_bss) {
+		query_freq = wpa_s->current_bss->freq;
+		wpa_printf(MSG_DEBUG,
+			   "Query HW blocklist for current_bss freq=%d",
+			   wpa_s->current_bss->freq);
+	} else {
+		wpa_printf(MSG_DEBUG,
+			   "No assoc_freq or current_bss, query HW blocklist for all radios");
+	}
+
+	hw_info = wpas_get_current_hw_info_extn(wpa_s, query_freq);
+	if (query_freq && hw_info)
+		radio_idx = hw_info->hw_idx;
+
+	ret = wpa_s->driver->fetch_hw_blocked_chans(wpa_s->drv_priv,
+						    radio_idx);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "wpas: Failed to fetch HW blocklist channels (ifname=%s radio_idx=%d ret=%d)",
+			   wpa_s->ifname, radio_idx, ret);
+	}
+}
+
+void wpas_event_hw_blocklist_notify_extn(
+	struct wpa_supplicant *wpa_s,
+	const struct hostapd_hw_blocklist_info *hw_blocklist_info)
+{
+	struct wpa_supplicant *w;
+
+	if (!wpa_s || !hw_blocklist_info)
+		return;
+
+	wpa_printf(MSG_DEBUG, "Received HW blocklist update event for hw_idx=%u modes=%u ifaces %p",
+		   hw_blocklist_info->hw_idx, hw_blocklist_info->num_pwr_modes, wpa_s->global->ifaces);
+
+	if (!wpa_s->global->ifaces) {
+		wpa_printf(MSG_ERROR,
+			   "wpas: No ifaces available to store HW BL for hw_idx=%u, store in wpa_s context",
+			   hw_blocklist_info->hw_idx);
+		if (hw_blocklist_update_list_extn(&wpa_s->wpas_extn.hw_blocklist_info,
+						  &wpa_s->wpas_extn.num_hw_blocklist,
+						  hw_blocklist_info)) {
+			wpa_printf(MSG_ERROR,
+				   "wpas: Failed to store HW blocklist info for hw_idx=%u",
+				   hw_blocklist_info->hw_idx);
+			return;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "wpas: Stored HW blocklist info for ifname=%s hw_idx=%u modes=%u total_hw=%u",
+			   wpa_s->ifname, hw_blocklist_info->hw_idx, hw_blocklist_info->num_pwr_modes,
+			   wpa_s->wpas_extn.num_hw_blocklist);
+		return;
+	}
+
+	/* multi_hw_info is wiphy-wide: all wpa_s instances share the same
+	 * physical radios. Store the blocklist in every interface so that
+	 * whichever wpa_s later performs 6 GHz BSS filtering finds the data. */
+	for (w = wpa_s->global->ifaces; w; w = w->next) {
+		int ret;
+
+		ret = hw_blocklist_update_list_extn(&w->wpas_extn.hw_blocklist_info,
+						    &w->wpas_extn.num_hw_blocklist,
+						    hw_blocklist_info);
+		if (ret) {
+			wpa_printf(MSG_ERROR,
+				   "wpas: Failed to store HW blocklist info for ifname=%s hw_idx=%u ret=%d",
+				   w->ifname, hw_blocklist_info->hw_idx, ret);
+			continue;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "wpas: Stored HW blocklist info for ifname=%s hw_idx=%u modes=%u total_hw=%u",
+			   w->ifname, hw_blocklist_info->hw_idx,
+			   hw_blocklist_info->num_pwr_modes,
+			   w->wpas_extn.num_hw_blocklist);
+	}
+}
+
+static u8 wpas_get_6ghz_bss_pwr_mode_extn(const struct wpa_bss *bss)
+{
+	const u8 *ie;
+	struct ieee80211_he_operation *heop;
+	struct ieee80211_he_6ghz_oper_info *he_oper_6g;
+	u8 pos = 9;
+	u8 he_reg_info;
+
+	ie = get_ie_ext(bss->ies, bss->ie_len, WLAN_EID_EXT_HE_OPERATION);
+	if (!ie || ie[1] < 6)
+		return NL80211_REG_NUM_POWER_MODES;
+
+	heop = (struct ieee80211_he_operation *)(&ie[3]);
+	if (!(heop->he_oper_params & HE_OPERATION_6GHZ_OPER_INFO))
+		return NL80211_REG_NUM_POWER_MODES;
+
+	if (heop->he_oper_params & HE_OPERATION_VHT_OPER_INFO)
+		pos += 3;
+	if (heop->he_oper_params & HE_OPERATION_COHOSTED_BSS)
+		pos += 1;
+
+	he_oper_6g = (struct ieee80211_he_6ghz_oper_info *)(ie + pos);
+	he_reg_info = (he_oper_6g->control &
+		       HE_6GHZ_OPER_INFO_CTRL_REG_INFO_MASK) >>
+		       HE_6GHZ_OPER_INFO_CTRL_REG_INFO_SHIFT;
+
+	if (he_reg_info == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP)
+		he_reg_info = HE_REG_INFO_6GHZ_AP_TYPE_SP;
+
+	return he_reg_info;
+}
+
+bool wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
+				     const struct wpa_bss *bss)
+{
+	struct wpa_supplicant_extn *wpas_extn;
+	u16 center_freq, bw;
+	u8 pwr_mode;
+
+	if (!wpa_s || !bss || !is_6ghz_freq(bss->freq))
+		return true;
+
+	wpas_extn = &wpa_s->wpas_extn;
+	if (!wpas_extn->check_hw_blocklist ||
+	    !wpas_extn->hw_blocklist_info ||
+	    !wpas_extn->num_hw_blocklist)
+		return true;
+
+	pwr_mode = wpas_get_6ghz_bss_pwr_mode_extn(bss);
+	if (pwr_mode >= NL80211_REG_NUM_POWER_MODES)
+		return true;
+
+	bw = channel_width_to_int(bss->max_cw);
+	if (!bw)
+		bw = 20;
+
+	/*
+	 * Compute center frequency. Use ccfs0 from the Operation IE when
+	 * available (center_freq1_idx != 0). For 320 MHz, ccfs0 unambiguously
+	 * identifies the segment. When center_freq1_idx is zero (IE not
+	 * parsed), fall back to hostapd_get_bonded_chan_center_freq() which
+	 * uses the bonded channel table; for 320 MHz it returns the first
+	 * matching segment's center — good enough for a conservative check.
+	 */
+	if (bss->center_freq1_idx == 2)
+		center_freq = 5935;
+	else if (bss->center_freq1_idx)
+		center_freq = 5950 + bss->center_freq1_idx * 5;
+	else
+		center_freq = hostapd_get_bonded_chan_center_freq(
+			(u16)bss->freq, bw, 0, 0);
+
+	if (hw_features_is_channel_in_hw_blocklist_for_hw_idx_extn(
+		    wpas_extn->hw_blocklist_info,
+		    wpas_extn->num_hw_blocklist,
+		    NL80211_WIPHY_RADIO_ID_MAX,
+		    (u16)bss->freq, center_freq, bw,
+		    pwr_mode, bss->punc_bitmap)) {
+		wpa_printf(MSG_DEBUG,
+			   "HWBL: 6 GHz BSS freq=%d bw=%u center=%u pwr=%u blocked",
+			   bss->freq, bw, center_freq, pwr_mode);
+		return false;
+	}
+
+	return true;
+}
+
+static size_t wpas_qcn_buflen_add_he_mcs_12_13_attr(struct wpa_supplicant *wpa_s)
+{
+	if (!wpa_s->conf->conf_extn.he_mcs_12_13_enabled ||
+	    !(wpa_s->hw_capab & BIT(CAPAB_HE)))
+		return 0;
+
+	return QCN_ATTRIB_HDR_LEN + QCN_HE_MCS_12_13_SUPP_ATTRIB_LEN;
+}
+
+size_t wpas_modify_buflen_for_qcn_ie_extn(struct wpa_supplicant *wpa_s)
+{
+	size_t attr_len = 0;
+
+	attr_len += wpas_qcn_buflen_add_he_mcs_12_13_attr(wpa_s);
+	if (attr_len)
+		attr_len += QCN_IE_HDR_LEN;
+
+	return attr_len;
+}
+
+u8 * wpas_eid_qcn_vendor_ie_extn(struct wpa_supplicant *wpa_s, u8 *eid)
+{
+	struct wpa_supplicant_extn *wpas_extn = &wpa_s->wpas_extn;
+	u8 *len_ptr = NULL;
+	u8 *pos = eid;
+
+	if (!eid)
+		return eid;
+
+	pos = qcn_ie_begin(pos, &len_ptr);
+	pos = qcn_eid_add_he_mcs_12_13_attr(wpas_extn->he_mcs_12_13_radio_cap,
+					   wpa_s->conf->conf_extn.he_mcs_12_13_enabled &&
+					   !!(wpa_s->hw_capab & BIT(CAPAB_HE)),
+					   pos);
+
+	if (pos == eid + QCN_IE_HDR_LEN)
+		return eid;
+
+	qcn_ie_end(len_ptr, pos);
+	return pos;
+}
+
+#ifdef CONFIG_SME
+void wpas_add_qcn_ie_probe_req_extn(struct wpa_supplicant *wpa_s,
+				    struct wpabuf **extra_ie)
+{
+	size_t ie_len;
+	u8 *eid, *eid_end;
+
+	ie_len = wpas_modify_buflen_for_qcn_ie_extn(wpa_s);
+	if (!ie_len)
+		return;
+
+	if (wpa_s->drv_max_probe_req_ie_len &&
+	    wpabuf_len(*extra_ie) + ie_len > wpa_s->drv_max_probe_req_ie_len)
+		return;
+
+	if (wpabuf_resize(extra_ie, ie_len) != 0)
+		return;
+
+	if (wpa_s->sme.freq &&
+	    wpas_set_he_mcs_12_13_cap_extn(wpa_s, wpa_s->sme.freq))
+		return;
+
+	eid = wpabuf_put(*extra_ie, 0);
+	eid_end = wpas_eid_qcn_vendor_ie_extn(wpa_s, eid);
+	wpabuf_put(*extra_ie, eid_end - eid);
+}
+
+void wpas_add_qcn_ie_assoc_req_extn(struct wpa_supplicant *wpa_s)
+{
+	size_t ie_len;
+	u8 *eid, *eid_end;
+
+	ie_len = wpas_modify_buflen_for_qcn_ie_extn(wpa_s);
+	if (!ie_len)
+		return;
+
+	if (wpa_s->sme.assoc_req_ie_len + ie_len >
+	    sizeof(wpa_s->sme.assoc_req_ie))
+		return;
+
+	if (wpas_set_he_mcs_12_13_cap_extn(wpa_s, wpa_s->current_bss->freq))
+		return;
+
+	eid = wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len;
+	eid_end = wpas_eid_qcn_vendor_ie_extn(wpa_s, eid);
+	wpa_s->sme.assoc_req_ie_len += eid_end - eid;
+}
+#endif /* CONFIG_SME */
+
+#ifdef UCODE_SUPPORT
+static int wpa_drv_notify_rcsa(struct wpa_supplicant *wpa_s, int freq,
+			       u32 chan, u8 cs_count, u32 switch_mode,
+			       u8 *opt_ie, size_t opt_ie_len)
+{
+	struct wpabuf *buf = NULL;
+	s8 res;
+	s8 target_hw_idx;
+	s8 link_id = -1;
+	u8 i = 0;
+	u32 tx_freq = wpa_s->assoc_freq;
+	size_t total_len = RCSA_MIN_FRAME_LEN;
+
+	if (wpa_s->wpa_state != WPA_COMPLETED && !wpa_s->sta_dfs_en)
+		return -1;
+
+	wpa_printf(MSG_DEBUG, "rcsa: freq %u chan %u cs_count %u",
+		   freq, chan, cs_count);
+
+	if (opt_ie && opt_ie_len > 0)
+		total_len += opt_ie_len;
+
+	buf = wpabuf_alloc(total_len);
+	if (!buf) {
+		wpa_printf(MSG_DEBUG, "rcsa: Memory allocation failed");
+		return -1;
+	}
+
+	wpabuf_put_u8(buf, WLAN_ACTION_VENDOR_SPECIFIC);
+	wpabuf_put_be24(buf, OUI_QCOM);
+	wpabuf_put_u8(buf, WLAN_EID_CHANNEL_SWITCH);
+	wpabuf_put_u8(buf, IEEE80211_CSA_IE_MIN_LEN);
+	wpabuf_put_u8(buf, switch_mode);
+	wpabuf_put_u8(buf, 36);
+	wpabuf_put_u8(buf, cs_count);
+
+	if (opt_ie && opt_ie_len > 0)
+		wpabuf_put_data(buf, opt_ie, opt_ie_len);
+
+	/*
+	 * hapd and wpa link ids in a repeater may not map to same
+	 * band. Derive the link_id to be used for tx of rcs in wpa side.
+	 * consider case for splitphy as well.
+	 *
+	 * if ml_info ie is present, it means, tx should be link agnistic.
+	 * So, no need to derive link_id and tx freq
+	 */
+	if (wpa_s->valid_links) {
+		target_hw_idx = wpa_get_hw_idx_by_freq(wpa_s, freq);
+		for_each_link(wpa_s->valid_links, i) {
+			if (is_5ghz_freq(wpa_s->links[i].freq) &&
+			    (target_hw_idx == wpa_get_hw_idx_by_freq(wpa_s, wpa_s->links[i].freq))) {
+				link_id = i;
+				tx_freq = wpa_s->links[i].freq;
+				break;
+			}
+		}
+	}
+
+	if (!wpa_s->sta_dfs_en) {
+		/*
+		 * link bitmap in ml info ie is populated by repeater hostapd.
+		 * This can't be mapped to root hostapd, so replace bitmap with
+		 * wpa_supplicant link bitmap(linkids of repeater wpa and root
+		 * hostapd are same).
+		 */
+		if (optional_ml_info_ie_access(opt_ie, opt_ie_len, &link_id, 1))
+			link_id = -1;
+	} else {
+		tx_freq = freq;
+	}
+	wpa_printf(MSG_DEBUG, "rcsa: sending on %d link freq %u",
+		   link_id, tx_freq);
+	wpa_hexdump_buf(MSG_INFO, "rcsa: Action frame payload", buf);
+	res = wpa_drv_send_action_extn(wpa_s, tx_freq, 0,
+				       wpa_s->bssid,
+				       wpa_s->own_addr, wpa_s->bssid,
+				       wpabuf_head(buf), wpabuf_len(buf),
+				       0, link_id);
+	if (res < 0)
+		wpa_printf(MSG_ERROR, "rcsa: Failed to send action frame");
+	wpabuf_free(buf);
+
+	return res;
+}
+
+struct uc_value *uc_wpas_notify_rcsa_extn(struct uc_vm *vm, size_t nargs)
+{
+	struct wpa_supplicant *wpa_s = uc_fn_thisval("wpas.iface");
+	uc_value_t *info = uc_fn_arg(0);
+	u32 freq = 0;
+	u32 chan = 0;
+	u32 cs_count = 0;
+	u32 switch_mode = 0;
+	u64 intval;
+	uc_value_t *opt_ie_hex;
+	const char *hex;
+	u8 *opt_ie = NULL;
+	size_t opt_ie_len = 0;
+
+	if (!wpa_s || ucv_type(info) != UC_OBJECT)
+		return NULL;
+
+	if ((intval = ucv_int64_get(ucv_object_get(info, "csa_count",
+						   NULL))) && !errno)
+		cs_count = intval;
+	if ((intval = ucv_int64_get(ucv_object_get(info, "frequency",
+						   NULL))) && !errno)
+		freq = intval;
+	if ((intval = ucv_int64_get(ucv_object_get(info, "channel",
+						   NULL))) && !errno)
+		chan = intval;
+	if ((intval = ucv_int64_get(ucv_object_get(info, "switch_mode", NULL)))
+	    && !errno)
+		switch_mode = intval;
+
+	opt_ie_hex = ucv_object_get(info, "optional_ie_hex", NULL);
+	if (opt_ie_hex && ucv_type(opt_ie_hex) == UC_STRING) {
+		hex = ucv_string_get(opt_ie_hex);
+		if (hex && *hex) {
+			opt_ie_len = os_strlen(hex) / 2;
+			opt_ie = os_malloc(opt_ie_len);
+			if (!opt_ie)
+				return NULL;
+			if (hexstr2bin(hex, opt_ie, opt_ie_len)) {
+				os_free(opt_ie);
+				return NULL;
+			}
+		}
+	}
+
+	wpa_drv_notify_rcsa(wpa_s, freq, chan, cs_count, switch_mode,
+			    opt_ie, opt_ie_len);
+
+	os_free(opt_ie);
+
+	return ucv_boolean_new(1);
+}
+#endif /* UCODE_SUPPORT */
+
+static void wpa_rcsa_get_local_ml_info(struct wpa_supplicant *wpa_s,
+					  bool *include_ml_ie,
+					  u16 *link_id_bitmap, u16 *link_id)
+{
+	u16 i;
+	*include_ml_ie = false;
+	*link_id_bitmap = 0;
+
+	if (!wpa_s)
+		return;
+
+#ifdef CONFIG_IEEE80211BE
+	if (!wpa_s->valid_links)
+		return;
+
+	for_each_link(wpa_s->valid_links, i) {
+		int freq = wpa_s->links[i].freq;
+
+		if (!freq)
+			continue;
+
+		if (freq == wpa_s->assoc_freq)
+			*link_id = i;
+
+		if (is_5ghz_freq(freq) && (wpa_s->wpa_state == WPA_STACACING ||
+		    wpa_s->links[i].pending_ch_switch_freq)) {
+			*include_ml_ie = true;
+			*link_id_bitmap = BIT(i);
+			wpa_printf(MSG_DEBUG,
+				   "rcsa: selecting 5G link %u (freq=%d) for ML info IE",
+				   i, freq);
+			break;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+}
+
+static int wpa_rcsa_prepare_nol_ie(const struct dfs_event *radar,
+				   u8 *nol_ie_buf,
+				   size_t nol_ie_buf_len)
+{
+	enum dfs_nol_ie_bw_mhz bw_mhz;
+	int bandwidth_mhz;
+	int n_subchans;
+	u16 bitmap_mask;
+	u16 radar_bitmap_oper;
+	int start_idx;
+	int end_idx;
+	int contiguous_count;
+	u16 contiguous_bitmap;
+	u8 *pos, *len_pos;
+	size_t needed_len;
+
+	bw_mhz = channel_width_to_int(radar->chan_width);
+	bandwidth_mhz = (int) bw_mhz;
+	n_subchans = bandwidth_mhz / MIN_DFS_SUBCHAN_BW;
+	if (n_subchans <= 0 || n_subchans > DFS_MAX_20M_SUB_CH) {
+		wpa_printf(MSG_DEBUG,
+			   "rcsa: invalid subchannel count %d for bw=%d",
+			   n_subchans, bandwidth_mhz);
+		return -1;
+	}
+
+	bitmap_mask = DFS_NOL_IE_BITMAP_MASK(n_subchans);
+	radar_bitmap_oper = radar->radar_bitmap & bitmap_mask;
+
+	if (!radar_bitmap_oper) {
+		wpa_printf(MSG_DEBUG,
+			   "rcsa: radar_bitmap is 0 after masking (0x%04x)",
+			   radar->radar_bitmap);
+		return -1;
+	}
+
+	start_idx = 0;
+	while (start_idx < n_subchans &&
+			!(radar_bitmap_oper & (1U << start_idx)))
+		start_idx++;
+
+	if (start_idx >= n_subchans) {
+		wpa_printf(MSG_DEBUG,
+				"rcsa: no radar-affected subchannel found");
+		return -1;
+	}
+
+	end_idx = start_idx;
+	while (end_idx < n_subchans &&
+			(radar_bitmap_oper & (1U << end_idx)))
+		end_idx++;
+
+	contiguous_count = end_idx - start_idx;
+	contiguous_bitmap = (1U << contiguous_count) - 1;
+
+	wpa_printf(MSG_DEBUG,
+		   "rcsa: STA NOL IE base_freq=%d bw=%u bitmap=0x%02x"
+		   " (start_idx=%d count=%d)",
+		   radar->freq, (unsigned int) DFS_NOL_IE_BW_20_MHZ,
+		   (u8) (contiguous_bitmap & 0xFF),
+		   start_idx, contiguous_count);
+
+	/* Build NOL IE — same wire format as hostapd_build_nol_ie():
+	 *   EID_VENDOR_SPECIFIC | len | bw(1) | freq_le16(2) | bitmap(1)
+	 * bw is MIN_DFS_SUBCHAN_BW (20 MHz), freq is the primary radar subchan,
+	 * bitmap is the contiguous radar subchannel mask from the event.
+	 */
+	needed_len = 2 + 1 + 2 + 1;
+	if (nol_ie_buf_len < needed_len)
+		return -1;
+
+	pos = nol_ie_buf;
+	*pos++ = WLAN_EID_VENDOR_SPECIFIC;
+	len_pos = pos++;
+	*pos++ = (u8) RCSA_MIN_DFS_SUBCHAN_BW;
+	WPA_PUT_LE16(pos, (u16)radar->freq +
+		    start_idx * MIN_DFS_SUBCHAN_BW);
+	pos += 2;
+	*pos++ = (u8)(contiguous_bitmap & 0xFF);
+	*len_pos = pos - len_pos - 1;
+
+	return pos - nol_ie_buf;
+}
+
+static size_t wpa_rcsa_build_opt_ies(struct wpa_supplicant *wpa_s,
+				     const u8 *nol_ie, size_t nol_ie_len,
+				     u8 *opt_ie, size_t opt_ie_buf_len,
+				     u16 *link_id)
+{
+	bool include_ml_ie;
+	u16 link_id_bitmap;
+
+	wpa_rcsa_get_local_ml_info(wpa_s, &include_ml_ie,
+				   &link_id_bitmap, link_id);
+
+	return hostapd_build_rcsa_optional_ies(
+		nol_ie_len > 0 ? nol_ie : NULL,
+		nol_ie_len > 0 ? nol_ie_len : 0,
+		include_ml_ie, link_id_bitmap,
+		opt_ie, opt_ie_buf_len);
+}
+
+void wpa_rcsa_handle_radar(struct wpa_supplicant *wpa_s,
+			   const struct dfs_event *radar)
+{
+	u8 nol_ie_buf[RCSA_MAX_OPTIONAL_IE_LEN];
+	u8 opt_ie[RCSA_MAX_OPTIONAL_IE_LEN];
+	int nol_ie_len;
+	size_t opt_ie_len;
+	u8 chan;
+	u16 link_id = -1;
+	unsigned int tx_freq;
+
+	nol_ie_len = wpa_rcsa_prepare_nol_ie(radar,
+					     nol_ie_buf,
+					     sizeof(nol_ie_buf));
+	if (nol_ie_len < 0)
+		return;
+
+	opt_ie_len = wpa_rcsa_build_opt_ies(wpa_s,
+					    nol_ie_buf,
+					    (size_t) nol_ie_len,
+					    opt_ie,
+					    sizeof(opt_ie), &link_id);
+
+	if (link_id < 0)
+		return;
+
+	if (wpa_s->links[link_id].pending_ch_switch_freq)
+		tx_freq = wpa_s->links[link_id].pending_ch_switch_freq;
+	else
+		tx_freq = wpa_s->assoc_freq;
+	ieee80211_freq_to_chan(tx_freq, &chan);
+	wpa_printf(MSG_INFO,
+		   "rcsa: radar detected freq %d [%d], sending RCSA Txfreq=%d  bw=%u"
+		   "bitmap=0x%04x opt_len=%zu wpa_s->assoc_freq %d chan %d",
+		   radar->freq, link_id, tx_freq, radar->chan_width,
+		   radar->radar_bitmap, opt_ie_len,wpa_s->assoc_freq, chan);
+
+	/* Currently only one RCSA sent. TODO sending RCSA for 5 TBTT */
+#ifdef UCODE_SUPPORT
+	wpa_drv_notify_rcsa(wpa_s,
+			    tx_freq,
+			    chan,
+			    HOSTAPD_RCSA_TX_COUNT,
+			    HOSTAPD_RCSA_SWITCH_MODE,
+			    opt_ie_len ? opt_ie : NULL,
+			    opt_ie_len);
+#endif
 }

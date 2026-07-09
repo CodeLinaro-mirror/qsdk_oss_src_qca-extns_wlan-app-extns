@@ -12,8 +12,6 @@
 #include "ap/hostapd.h"
 #include "ap/hw_features.h"
 #include "ap/ieee802_11.h"
-#include "../wpa_supplicant/wpa_supplicant_i.h"
-#include "../wpa_supplicant/bss.h"
 #include "reg_extn.h"
 #include "ap/ap_drv_ops.h"
 
@@ -103,104 +101,6 @@ void hostapd_query_hw_blocklist_extn(struct hostapd_iface *iface,
 	}
 }
 
-static struct hostapd_multi_hw_info *
-wpas_get_current_hw_info_extn(struct wpa_supplicant *wpa_s, int freq)
-{
-	u8 i;
-
-	if (!wpa_s || !freq || !wpa_s->multi_hw_info || !wpa_s->num_multi_hws)
-		return NULL;
-
-	for (i = 0; i < wpa_s->num_multi_hws; i++) {
-		struct hostapd_multi_hw_info *hw_info = &wpa_s->multi_hw_info[i];
-
-		if (hw_info->start_freq <= freq && hw_info->end_freq >= freq)
-			return hw_info;
-	}
-
-	return NULL;
-}
-
-void wpas_query_hw_blocklist_extn(struct wpa_supplicant *wpa_s)
-{
-	struct hostapd_multi_hw_info *hw_info;
-	int radio_idx = -1;
-	int query_freq = 0;
-	int ret;
-
-	if (!wpa_s || !wpa_s->support_6ghz)
-		return;
-
-	if (!wpa_s->driver || !wpa_s->drv_priv ||
-	    !wpa_s->driver->is_6ghz_hw_blocked_chans_supported ||
-	    !wpa_s->driver->fetch_hw_blocked_chans)
-		return;
-
-	if (!wpa_s->driver->is_6ghz_hw_blocked_chans_supported(wpa_s->drv_priv))
-		return;
-
-	/* For MLO connections, query HWBL for each unique radio across all
-	 * active links. For SLO, fall back to assoc_freq/current_bss. */
-	if (wpa_s->valid_links) {
-		u32 queried_mask = 0;
-		int i;
-
-		for_each_link(wpa_s->valid_links, i) {
-			unsigned int freq = wpa_s->links[i].freq;
-
-			if (!freq)
-				continue;
-			/* HWBL is 6 GHz only — skip 2.4/5 GHz links */
-			if (!is_6ghz_freq(freq))
-				continue;
-			hw_info = wpas_get_current_hw_info_extn(wpa_s, freq);
-			if (!hw_info)
-				continue;
-			if (queried_mask & BIT(hw_info->hw_idx))
-				continue;
-			queried_mask |= BIT(hw_info->hw_idx);
-
-			wpa_printf(MSG_DEBUG,
-				   "Query HW blocklist for ML link=%d freq=%d hw_idx=%u",
-				   i, freq, hw_info->hw_idx);
-			ret = wpa_s->driver->fetch_hw_blocked_chans(
-				wpa_s->drv_priv, hw_info->hw_idx);
-			if (ret)
-				wpa_printf(MSG_DEBUG,
-					   "wpas: Failed to fetch HW blocklist (ifname=%s link=%d radio_idx=%u ret=%d)",
-					   wpa_s->ifname, i, hw_info->hw_idx,
-					   ret);
-		}
-		return;
-	}
-
-	if (wpa_s->assoc_freq) {
-		query_freq = wpa_s->assoc_freq;
-		wpa_printf(MSG_DEBUG,
-			   "Query HW blocklist for assoc_freq=%d",
-			   wpa_s->assoc_freq);
-	} else if (wpa_s->current_bss) {
-		query_freq = wpa_s->current_bss->freq;
-		wpa_printf(MSG_DEBUG,
-			   "Query HW blocklist for current_bss freq=%d",
-			   wpa_s->current_bss->freq);
-	} else {
-		wpa_printf(MSG_DEBUG,
-			   "No assoc_freq or current_bss, query HW blocklist for all radios");
-	}
-
-	hw_info = wpas_get_current_hw_info_extn(wpa_s, query_freq);
-	if (query_freq && hw_info)
-		radio_idx = hw_info->hw_idx;
-
-	ret = wpa_s->driver->fetch_hw_blocked_chans(wpa_s->drv_priv,
-						    radio_idx);
-	if (ret) {
-		wpa_printf(MSG_DEBUG,
-			   "wpas: Failed to fetch HW blocklist channels (ifname=%s radio_idx=%d ret=%d)",
-			   wpa_s->ifname, radio_idx, ret);
-	}
-}
 
 static void hw_blocklist_free_entry_extn(
 	struct hostapd_hw_blocklist_info *hw_blocklist_info)
@@ -288,7 +188,7 @@ fail:
 	return -ENOMEM;
 }
 
-static int hw_blocklist_update_list_extn(
+int hw_blocklist_update_list_extn(
 	struct hostapd_hw_blocklist_info **hw_blocklist_info,
 	unsigned int *num_hw_blocklist,
 	const struct hostapd_hw_blocklist_info *new_entry)
@@ -327,61 +227,6 @@ static int hw_blocklist_update_list_extn(
 	return 0;
 }
 
-void wpas_event_hw_blocklist_notify_extn(
-	struct wpa_supplicant *wpa_s,
-	const struct hostapd_hw_blocklist_info *hw_blocklist_info)
-{
-	struct wpa_supplicant *w;
-
-	if (!wpa_s || !hw_blocklist_info)
-		return;
-
-	wpa_printf(MSG_DEBUG, "Received HW blocklist update event for hw_idx=%u modes=%u ifaces %p",
-		   hw_blocklist_info->hw_idx, hw_blocklist_info->num_pwr_modes, wpa_s->global->ifaces);
-
-	if (!wpa_s->global->ifaces) {
-		wpa_printf(MSG_ERROR,
-			   "wpas: No ifaces available to store HW BL for hw_idx=%u, store in wpa_s context",
-			   hw_blocklist_info->hw_idx);
-		if (hw_blocklist_update_list_extn(&wpa_s->wpas_extn.hw_blocklist_info,
-						  &wpa_s->wpas_extn.num_hw_blocklist,
-						  hw_blocklist_info)) {
-			wpa_printf(MSG_ERROR,
-				   "wpas: Failed to store HW blocklist info for hw_idx=%u",
-				   hw_blocklist_info->hw_idx);
-			return;
-		}
-
-		wpa_printf(MSG_DEBUG,
-			   "wpas: Stored HW blocklist info for ifname=%s hw_idx=%u modes=%u total_hw=%u",
-			   wpa_s->ifname, hw_blocklist_info->hw_idx, hw_blocklist_info->num_pwr_modes,
-			   wpa_s->wpas_extn.num_hw_blocklist);
-		return;
-	}
-
-	/* multi_hw_info is wiphy-wide: all wpa_s instances share the same
-	 * physical radios. Store the blocklist in every interface so that
-	 * whichever wpa_s later performs 6 GHz BSS filtering finds the data. */
-	for (w = wpa_s->global->ifaces; w; w = w->next) {
-		int ret;
-
-		ret = hw_blocklist_update_list_extn(&w->wpas_extn.hw_blocklist_info,
-						    &w->wpas_extn.num_hw_blocklist,
-						    hw_blocklist_info);
-		if (ret) {
-			wpa_printf(MSG_ERROR,
-				   "wpas: Failed to store HW blocklist info for ifname=%s hw_idx=%u ret=%d",
-				   w->ifname, hw_blocklist_info->hw_idx, ret);
-			continue;
-		}
-
-		wpa_printf(MSG_DEBUG,
-			   "wpas: Stored HW blocklist info for ifname=%s hw_idx=%u modes=%u total_hw=%u",
-			   w->ifname, hw_blocklist_info->hw_idx,
-			   hw_blocklist_info->num_pwr_modes,
-			   w->wpas_extn.num_hw_blocklist);
-	}
-}
 
 static void hostapd_reg_dump_hw_blocklist_extn(struct hostapd_iface *iface)
 {
@@ -691,7 +536,7 @@ static bool hw_features_is_channel_in_hw_blocklist_extn(
 		puncture_pattern, center_freq, bw);
 }
 
-static bool hw_features_is_channel_in_hw_blocklist_for_hw_idx_extn(
+bool hw_features_is_channel_in_hw_blocklist_for_hw_idx_extn(
 	const struct hostapd_hw_blocklist_info *hw_blocklist_info,
 	unsigned int num_hw_blocklist, u8 hw_idx,
 	u16 freq, u16 center_freq, u16 bw, u8 pwr_mode_id,
@@ -864,111 +709,3 @@ int hostapd_validate_current_6ghz_hw_blocklist_extn(
 		iface, &freq_params, pwr_mode_id, op_name);
 }
 
-/**
- * wpas_get_6ghz_bss_pwr_mode_extn - Extract 6 GHz regulatory power mode from BSS
- * @bss: BSS scan result entry
- *
- * Parses the HE Operation IE to extract the AP's regulatory power mode
- * (LPI/SP/VLP) for 6 GHz operation.
- *
- * Return: NL80211_REG_AP_LPI/SP/VLP on success, NL80211_REG_NUM_POWER_MODES
- *         if the IE is absent or power mode cannot be determined.
- */
-static u8 wpas_get_6ghz_bss_pwr_mode_extn(const struct wpa_bss *bss)
-{
-	const u8 *ie;
-	struct ieee80211_he_operation *heop;
-	struct ieee80211_he_6ghz_oper_info *he_oper_6g;
-	u8 pos = 9;
-	u8 he_reg_info;
-
-	ie = get_ie_ext(bss->ies, bss->ie_len, WLAN_EID_EXT_HE_OPERATION);
-	if (!ie || ie[1] < 6)
-		return NL80211_REG_NUM_POWER_MODES;
-
-	heop = (struct ieee80211_he_operation *)(&ie[3]);
-	if (!(heop->he_oper_params & HE_OPERATION_6GHZ_OPER_INFO))
-		return NL80211_REG_NUM_POWER_MODES;
-
-	if (heop->he_oper_params & HE_OPERATION_VHT_OPER_INFO)
-		pos += 3;
-	if (heop->he_oper_params & HE_OPERATION_COHOSTED_BSS)
-		pos += 1;
-
-	he_oper_6g = (struct ieee80211_he_6ghz_oper_info *)(ie + pos);
-	he_reg_info = (he_oper_6g->control &
-		       HE_6GHZ_OPER_INFO_CTRL_REG_INFO_MASK) >>
-		       HE_6GHZ_OPER_INFO_CTRL_REG_INFO_SHIFT;
-
-	if (he_reg_info == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP)
-		he_reg_info = HE_REG_INFO_6GHZ_AP_TYPE_SP;
-
-	return he_reg_info;
-}
-
-/**
- * wpas_is_6ghz_hwbl_link_ok_extn - Check if a 6 GHz BSS is HW blocklisted
- * @wpa_s: wpa_supplicant context
- * @bss: BSS scan result to validate
- *
- * Validates the 6 GHz BSS channel/bandwidth/power-mode combination against
- * the HW blocklist. Called alongside wpa_is_6ghz_power_mode_match() during
- * scan result processing to skip blacklisted links and downgrade to a
- * reduced number of links during connection.
- *
- * Return: true if the BSS is valid (not blocked), false if blocklisted.
- */
-bool wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
-				     const struct wpa_bss *bss)
-{
-	struct wpa_supplicant_extn *wpas_extn;
-	u16 center_freq, bw;
-	u8 pwr_mode;
-
-	if (!wpa_s || !bss || !is_6ghz_freq(bss->freq))
-		return true;
-
-	wpas_extn = &wpa_s->wpas_extn;
-	if (!wpas_extn->check_hw_blocklist ||
-	    !wpas_extn->hw_blocklist_info ||
-	    !wpas_extn->num_hw_blocklist)
-		return true;
-
-	pwr_mode = wpas_get_6ghz_bss_pwr_mode_extn(bss);
-	if (pwr_mode >= NL80211_REG_NUM_POWER_MODES)
-		return true;
-
-	bw = channel_width_to_int(bss->max_cw);
-	if (!bw)
-		bw = 20;
-
-	/*
-	 * Compute center frequency. Use ccfs0 from the Operation IE when
-	 * available (center_freq1_idx != 0). For 320 MHz, ccfs0 unambiguously
-	 * identifies the segment. When center_freq1_idx is zero (IE not
-	 * parsed), fall back to hostapd_get_bonded_chan_center_freq() which
-	 * uses the bonded channel table; for 320 MHz it returns the first
-	 * matching segment's center — good enough for a conservative check.
-	 */
-	if (bss->center_freq1_idx == 2)
-		center_freq = 5935;
-	else if (bss->center_freq1_idx)
-		center_freq = 5950 + bss->center_freq1_idx * 5;
-	else
-		center_freq = hostapd_get_bonded_chan_center_freq(
-			(u16)bss->freq, bw, 0, 0);
-
-	if (hw_features_is_channel_in_hw_blocklist_for_hw_idx_extn(
-		    wpas_extn->hw_blocklist_info,
-		    wpas_extn->num_hw_blocklist,
-		    NL80211_WIPHY_RADIO_ID_MAX,
-		    (u16)bss->freq, center_freq, bw,
-		    pwr_mode, bss->punc_bitmap)) {
-		wpa_printf(MSG_DEBUG,
-			   "HWBL: 6 GHz BSS freq=%d bw=%u center=%u pwr=%u blocked",
-			   bss->freq, bw, center_freq, pwr_mode);
-		return false;
-	}
-
-	return true;
-}
