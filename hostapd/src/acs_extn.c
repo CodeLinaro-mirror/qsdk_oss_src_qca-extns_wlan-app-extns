@@ -331,7 +331,7 @@ static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
 	}
 
 	/* Call the ICM/ACS API for the currently selected band/mode */
-	int ret = qacs_scan_report(mode, acs_report);
+	int ret = qacs_scan_report(iface, mode, acs_report);
 	if (ret <= 0) {
 		wpa_printf(MSG_ERROR, "No ACS report available");
 		free(acs_report);
