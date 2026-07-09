@@ -27,7 +27,6 @@ OBJS += \
 	qcn_extns/wpa_supplicant_extn.o \
 	qcn_extns/mucapwar.o \
 	qcn_extns/dcs.o \
-	qcn_extns/cbs.o \
 	qcn_extns/afc.o \
 	qcn_extns/hostapd_extn.o \
 	qcn_extns/qcn_ie_extn.o \
@@ -36,10 +35,6 @@ OBJS += \
 	qcn_extns/dfs_rcsa_extn.o \
 	qcn_extns/wds_ie.o
 
-ifdef CONFIG_ACS
-	OBJS += qcn_extns/acs_extn.o
-endif
-
 ifdef CONFIG_EXTERNAL_PLUGIN
 CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN
 CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN_TESTAPP
@@ -47,7 +42,12 @@ OBJS += qcn_extns/hostapd_if_eloop.o
 OBJS += qcn_extns/hostapd_if_plugin.o
 endif
 
+ifdef CONFIG_ACS
+OBJS += qcn_extns/acs_extn.o
+OBJS += qcn_extns/cbs.o
+
 ifneq ($(wildcard ../qcn_extns/qacs/qacs.c),)
-	CFLAGS += -DCONFIG_QCN_APP_EXTN
-	OBJS += qcn_extns/qacs/qacs.o
+CFLAGS += -DCONFIG_QCN_APP_EXTN
+OBJS += qcn_extns/qacs/qacs.o
+endif
 endif

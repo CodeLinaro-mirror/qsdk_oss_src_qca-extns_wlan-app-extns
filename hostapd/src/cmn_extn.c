@@ -33,7 +33,9 @@ void hostapd_iface_deinit_extn(struct hostapd_iface *iface)
 void hostapd_free_hw_features_extn(struct hostapd_hw_modes *hw_features,
 				   size_t num_hw_features)
 {
+#ifdef CONFIG_QCN_APP_EXTN
 	size_t i;
+#endif
 
 	if (!hw_features)
 		return;
