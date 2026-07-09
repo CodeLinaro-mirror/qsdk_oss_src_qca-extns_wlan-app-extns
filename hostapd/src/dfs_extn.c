@@ -1611,6 +1611,9 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 	if (!iface || !iface->conf)
 		return false;
 
+	if (!is_5ghz_freq(iface->freq))
+		return false;
+
 	if (!((iface->drv_flags2 & WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC) &&
 	      !iface->conf->conf_extn.disable_iface_during_cac &&
 	      hostapd_is_cac_required(iface)))
