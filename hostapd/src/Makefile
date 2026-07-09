@@ -24,16 +24,19 @@ OBJS += \
 	qcn_extns/repurpose.o \
 	qcn_extns/dfs_extn.o \
 	qcn_extns/ucode_extn.o \
-	qcn_extns/wpa_supplicant_extn.o \
 	qcn_extns/mucapwar.o \
 	qcn_extns/dcs.o \
 	qcn_extns/afc.o \
 	qcn_extns/hostapd_extn.o \
 	qcn_extns/qcn_ie_extn.o \
 	qcn_extns/ttlm_extn.o \
-	qcn_extns/wpa_config_extn.o \
 	qcn_extns/dfs_rcsa_extn.o \
 	qcn_extns/wds_ie.o
+
+ifdef CONFIG_QCA_WPA_SUPPLICANT_BUILD
+OBJS += qcn_extns/wpa_supplicant_extn.o
+OBJS += qcn_extns/wpa_config_extn.o
+endif
 
 ifdef CONFIG_EXTERNAL_PLUGIN
 CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN

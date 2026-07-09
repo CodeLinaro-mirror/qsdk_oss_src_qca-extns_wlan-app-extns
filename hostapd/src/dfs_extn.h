@@ -100,5 +100,29 @@ bool dfs_chan_skip_by_flags_extn(struct hostapd_iface *iface,
 int dfs_nol_ie_chan_width_to_bw_mhz(enum oper_chan_width chan_width,
 				    int freq, int cf1,
 				    int *bandwidth_mhz);
+bool optional_ml_info_ie_access(u8 *buf, size_t buf_len,
+				s8 *link_id, bool set);
+
+
+/*
+ * RCSA Vendor Specific Action frame:
+ * category(1) + Atheros OUI(3) + CSA IE [+ optional QCA NOL IE].
+ */
+#define RCSA_VENDOR_ACTION_HDR_LEN 4
+#define RCSA_CSA_IE_HDR_LEN 2
+#define RCSA_NOL_IE_INFO_LEN 4
+#define RCSA_NOL_IE_TOTAL_LEN (RCSA_CSA_IE_HDR_LEN + RCSA_NOL_IE_INFO_LEN)
+#define RCSA_MIN_FRAME_LEN \
+	(RCSA_VENDOR_ACTION_HDR_LEN + RCSA_CSA_IE_HDR_LEN + \
+	 IEEE80211_CSA_IE_MIN_LEN)
+#define RCSA_MIN_DFS_SUBCHAN_BW 20
+#define RCSA_MAX_20M_SUB_CH 8
+
+#define HOSTAPD_RCSA_TX_COUNT 5
+#define HOSTAPD_RCSA_SWITCH_MODE 1
+#define HAPD_DFS_WAIT_FOR_RCSA_FROM_ROOT_DUR_US(bcn_intval) (HOSTAPD_RCSA_TX_COUNT * (bcn_intval) * 2)
+#define HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_US 1000
+#define HOSTAPD_RCSA_INTVAL_US (100 * 1000)
+
 #endif /* CONFIG_QCN_EXTN */
 #endif /* DFS_EXTN_H */

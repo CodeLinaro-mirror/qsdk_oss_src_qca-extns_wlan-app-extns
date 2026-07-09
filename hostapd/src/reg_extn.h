@@ -96,4 +96,15 @@ void wpas_event_hw_blocklist_notify_extn(
 	struct wpa_supplicant *wpa_s,
 	const struct hostapd_hw_blocklist_info *hw_blocklist_info);
 
+int hw_blocklist_update_list_extn(
+	struct hostapd_hw_blocklist_info **hw_blocklist_info,
+	unsigned int *num_hw_blocklist,
+	const struct hostapd_hw_blocklist_info *new_entry);
+
+bool hw_features_is_channel_in_hw_blocklist_for_hw_idx_extn(
+	const struct hostapd_hw_blocklist_info *hw_blocklist_info,
+	unsigned int num_hw_blocklist, u8 hw_idx,
+	u16 freq, u16 center_freq, u16 bw, u8 pwr_mode_id,
+	u16 puncture_pattern);
+
 #endif /* REG_EXTN_H */
