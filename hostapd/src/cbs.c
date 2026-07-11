@@ -18,8 +18,16 @@
 #include "utils/eloop.h"
 #include "cbs.h"
 #include "dcs.h"
+#include "cmn.h"
+#include "acs_extn.h"
 
 #define HOSTAPD_CBS_BEST_CHAN_MAX_AGE_SEC 600
+#define HOSTAPD_CBS_RETRIGGER_MIN_AGE_SEC 300
+
+static void
+hostapd_cbs_find_acs_ideal_chan(struct hostapd_data *link_hapd,
+				struct hostapd_iface *iface,
+				struct hostapd_config_extn *conf_extn);
 
 static int
 cbs_print_usage_extn(char *reply, int reply_size)
@@ -71,9 +79,12 @@ static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
 	int val = atoi(pos);
 	int acs_ch_list_all = 0;
 	int *freq_list = NULL;
-	int ret;
+	int ret = 0;
 	struct hostapd_hw_modes *mode;
 	struct cbs_params_extn *cbs_params = &conf_extn->cbs_params;
+	struct os_reltime now, age;
+	bool skip_cbs_scan = false;
+	u64 age_ms;
 
 	if (!(val == 0 || val == 1 || val == 2)) {
 		wpa_printf(MSG_ERROR, "CBS: Invalid input: %d", val);
@@ -85,9 +96,12 @@ static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
 
 	if (!val) {
 		cbs_params->cbs_enable = 0;
-		return hapd->driver->set_cbs(hapd->drv_priv,
-					     cbs_params, NULL,
-					     hapd->mld_link_id);
+		ret = hapd->driver->set_cbs(hapd->drv_priv,
+					    cbs_params, NULL,
+					    hapd->mld_link_id);
+		if (!ret)
+			wpa_msg(hapd->msg_ctx, MSG_INFO, CBS_EVENT_ABORTED);
+		return ret;
 	}
 
 	if (!hapd->iface->current_mode)
@@ -112,16 +126,38 @@ static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
 		return -1;
 	}
 
+	if (val == 1 && cbs_params->best_chan) {
+		os_get_reltime(&now);
+		os_reltime_sub(&now, &cbs_params->cbs_scan_complete_ts, &age);
+		age_ms = (u64) age.sec * 1000 + (u64) age.usec / 1000;
+		if (age_ms < cbs_params->retrigger_time)
+			skip_cbs_scan = true;
+	}
+
 	cbs_params->cbs_enable = val;
 	cbs_params->best_chan = NULL;
-	acs_cleanup(hapd->iface);
-	qacs_reset_scan_stats(hapd->iface, mode);
+	if (!skip_cbs_scan) {
+		acs_cleanup(hapd->iface);
+		qacs_reset_scan_stats(hapd->iface, mode);
+	}
 
-	ret = hapd->driver->set_cbs(hapd->drv_priv,
-				    cbs_params, freq_list,
-				    hapd->mld_link_id);
-	if (ret)
-		cbs_params->cbs_enable = 0;
+	wpa_msg(hapd->msg_ctx, MSG_INFO, CBS_EVENT_STARTED);
+	acs_init_extn(hapd->iface, CBS_SCAN_TRIGGER);
+
+	if (skip_cbs_scan) {
+		wpa_printf(MSG_INFO,
+			   "CBS: skip cbs scan trigger as elapsed time is less than 5 mins, and directly trigger ACS to find ideal channel");
+		hostapd_cbs_find_acs_ideal_chan(hapd, hapd->iface,
+						conf_extn);
+	} else {
+		ret = hapd->driver->set_cbs(hapd->drv_priv,
+					    cbs_params, freq_list,
+					    hapd->mld_link_id);
+		if (ret) {
+			cbs_params->cbs_enable = 0;
+			wpa_msg(hapd->msg_ctx, MSG_INFO, CBS_EVENT_ABORTED);
+		}
+	}
 
 	os_free(freq_list);
 	return ret;
@@ -272,6 +308,34 @@ int hostapd_cbs_handle_single_channel_survey(struct hostapd_iface *iface,
 	return -1;
 }
 
+static void
+hostapd_cbs_find_acs_ideal_chan(struct hostapd_data *link_hapd,
+				struct hostapd_iface *iface,
+				struct hostapd_config_extn *conf_extn)
+{
+	if (conf_extn->qacs_enable) {
+		conf_extn->cbs_params.best_chan = qacs_find_ideal_chan(iface);
+	} else {
+		acs_study_options(iface);
+		conf_extn->cbs_params.best_chan = acs_find_ideal_chan(iface);
+	}
+
+	if (conf_extn->cbs_params.best_chan) {
+		os_get_reltime(&conf_extn->cbs_params.best_chan_fill_ts);
+		wpa_printf(MSG_INFO,
+			   "CBS best_chan filled at ts=%ld.%06ld (freq=%d)",
+			   conf_extn->cbs_params.best_chan_fill_ts.sec,
+			   conf_extn->cbs_params.best_chan_fill_ts.usec,
+			   conf_extn->cbs_params.best_chan->freq);
+		acs_fill_timestamp(iface, CBS_SCAN_TRIGGER, false);
+	}
+
+	if (conf_extn->cbs_params.cbs_enable == 1)
+		conf_extn->cbs_params.cbs_enable = 0;
+
+	wpa_msg(link_hapd->msg_ctx, MSG_INFO, CBS_EVENT_COMPLETED);
+}
+
 int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 				     union wpa_event_data *data)
 {
@@ -313,26 +377,8 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 	}
 
 	if (cbs_evt->status == VENDOR_SCAN_STATUS_NEW_RESULTS) {
-		if (conf_extn->qacs_enable) {
-			conf_extn->cbs_params.best_chan =
-				qacs_find_ideal_chan(iface);
-		} else {
-			acs_study_options(iface);
-			conf_extn->cbs_params.best_chan =
-				acs_find_ideal_chan(iface);
-		}
-
-		if (conf_extn->cbs_params.best_chan) {
-			os_get_reltime(&conf_extn->cbs_params.best_chan_fill_ts);
-			wpa_printf(MSG_INFO,
-				   "CBS best_chan filled at ts=%ld.%06ld (freq=%d)",
-				   conf_extn->cbs_params.best_chan_fill_ts.sec,
-				   conf_extn->cbs_params.best_chan_fill_ts.usec,
-				   conf_extn->cbs_params.best_chan->freq);
-		}
-
-		if (conf_extn->cbs_params.cbs_enable == 1)
-			conf_extn->cbs_params.cbs_enable = 0;
+		os_get_reltime(&conf_extn->cbs_params.cbs_scan_complete_ts);
+		hostapd_cbs_find_acs_ideal_chan(link_hapd, iface, conf_extn);
 	}
 
 	return 0;

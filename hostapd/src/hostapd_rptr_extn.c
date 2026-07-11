@@ -786,3 +786,74 @@ int hostapd_update_assoc_resp_with_hop_count_extn(struct hostapd_data *hapd)
 
 	return 0;
 }
+
+/**
+ * hostapd_beacon_set_skip_cac_extn - Set skip_cac in freq params for beacon setup
+ * @iface: Pointer to hostapd interface
+ * @freq_params: Pointer to frequency parameters to update
+ *
+ * Determines whether CAC can be skipped for a dependent repeater operating on
+ * a 5 GHz channel.
+ */
+void hostapd_beacon_set_skip_cac_extn(struct hostapd_iface *iface,
+				      struct hostapd_freq_params *freq_params)
+{
+	struct hostapd_config *iconf;
+	int chan_width;
+	int start_chan_idx, start_chan_idx1;
+	int n_chans, n_chans1;
+	bool is_dfs;
+	int res;
+
+	if (!iface || !iface->conf || !freq_params)
+		return;
+
+	if (!is_5ghz_freq(iface->freq))
+		return;
+
+	iconf = iface->conf;
+	if (!iconf->conf_extn.repeater || iconf->conf_extn.ind_rptr)
+		return;
+
+	chan_width = hostapd_get_oper_chwidth(iconf);
+	start_chan_idx = dfs_get_start_chan_idx(iface, &start_chan_idx1,
+					       chan_width,
+					       iconf->channel, false);
+	if (start_chan_idx == -1)
+		return;
+
+	n_chans = dfs_get_used_n_chans(iface, &n_chans1, chan_width);
+
+	res = dfs_check_chans_radar(iface, start_chan_idx, n_chans);
+	wpa_printf(MSG_DEBUG,
+		   "DFS %d channels required radar detection", res);
+	is_dfs = (res != 0);
+
+	if (!is_dfs) {
+		wpa_printf(MSG_DEBUG, "None of the channels are DFS");
+		return;
+	}
+
+	res = dfs_check_chans_available(iface, start_chan_idx, n_chans);
+	if (res) {
+		wpa_printf(MSG_DEBUG, "All channels already available");
+		return;
+	}
+
+	freq_params->skip_cac =
+		(iface->cac_type != HAPD_CAC_COMPLETE_AFTER_CSA) &&
+		iconf->conf_extn.skip_cac;
+	if (!freq_params->skip_cac &&
+	    hostapd_mcst_allows_skip_cac_extn(iface->mcst,
+					      iconf->beacon_int,
+					      is_dfs))
+		freq_params->skip_cac = true;
+
+	wpa_printf(MSG_INFO,
+		   "Dep Rptr: skip_cac = %d cac_type = %d"
+		   " conf_extn.skip_cac = %d mcst = %u",
+		   freq_params->skip_cac,
+		   iface->cac_type,
+		   iconf->conf_extn.skip_cac,
+		   iface->mcst);
+}

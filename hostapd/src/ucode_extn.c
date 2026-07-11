@@ -50,6 +50,61 @@ u32 wpas_ucode_get_link_mcst_extn(struct wpa_supplicant *wpa_s, int link_id)
 }
 
 
+bool wpas_ucode_freq_range_is_dfs(int center_freq, int bandwidth)
+{
+	int start_freq, end_freq, subchan_freq;
+
+	if (bandwidth <= 20)
+		return ieee80211_is_dfs(center_freq, NULL, 0);
+
+	start_freq = center_freq - bandwidth / 2 + 10;
+	end_freq = center_freq + bandwidth / 2 - 10;
+
+	for (subchan_freq = start_freq; subchan_freq <= end_freq;
+	     subchan_freq += 20) {
+		if (ieee80211_is_dfs(subchan_freq, NULL, 0))
+			return true;
+	}
+
+	return false;
+}
+
+bool wpas_ucode_is_dfs_chandef(int freq, enum chan_width ch_width,
+			       int cf1, int cf2)
+{
+	int bw;
+
+	if (ieee80211_is_dfs(freq, NULL, 0))
+		return true;
+
+	bw = channel_width_to_int(ch_width);
+	if (bw <= 20)
+		return false;
+
+	if (ch_width == CHAN_WIDTH_80P80) {
+		if (cf1 > 0 && wpas_ucode_freq_range_is_dfs(cf1, 80))
+			return true;
+		return cf2 > 0 && wpas_ucode_freq_range_is_dfs(cf2, 80);
+	}
+
+	if (bw == 320 && cf2 > 0) {
+		if (cf1 > 0 && wpas_ucode_freq_range_is_dfs(cf1, 160))
+			return true;
+		return wpas_ucode_freq_range_is_dfs(cf2, 80);
+	}
+
+	if (bw == 160 && cf2 > 0)
+		return wpas_ucode_freq_range_is_dfs(cf2, 160);
+
+	if (cf1 > 0)
+		return wpas_ucode_freq_range_is_dfs(cf1, bw);
+
+	if (freq > 0)
+		return wpas_ucode_freq_range_is_dfs(freq, bw);
+
+	return false;
+}
+
 #ifdef UCODE_SUPPORT
 void hostapd_ucode_notify_uplink_csa(struct hostapd_iface *hapd, int event, u8 channel,
 				     int freq, int csa_count, u8 new_ch_width,

@@ -1611,6 +1611,9 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 	if (!iface || !iface->conf)
 		return false;
 
+	if (!is_5ghz_freq(iface->freq))
+		return false;
+
 	if (!((iface->drv_flags2 & WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC) &&
 	      !iface->conf->conf_extn.disable_iface_during_cac &&
 	      hostapd_is_cac_required(iface)))
@@ -1626,6 +1629,18 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 	hostapd_set_state(iface, HAPD_IFACE_DFS);
 	iface->bootup_cac_in_progress = 1;
 	os_get_reltime(&iface->dfs_cac_start);
+
+	wpa_printf(MSG_DEBUG, "DFS start CAC on %d MHz%s", iface->freq,
+		   dfs_use_radar_background(iface) ? " (background)" : "");
+	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_START
+		"freq=%d chan=%d sec_chan=%d, width=%d, seg0=%d, seg1=%d, cac_time=%ds bitmap:0x%04x",
+		iface->freq,
+		iface->conf->channel, iface->conf->secondary_channel,
+		hostapd_get_oper_chwidth(iface->conf),
+		hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
+		hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
+		iface->dfs_cac_ms / 1000,
+		iface->conf->punct_bitmap);
 
 	return true;
 }

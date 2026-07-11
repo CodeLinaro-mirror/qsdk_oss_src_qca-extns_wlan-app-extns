@@ -796,6 +796,15 @@ struct hostapd_hw_modes_extn {
 #endif
 };
 
+#ifdef CONFIG_QCN_APP_EXTN 
+#define NORMAL_SCAN_TRIGGER normal_scan /* normal_scan and cbs_vendor_scan are defined in qacs.h file */
+#define CBS_SCAN_TRIGGER cbs_vendor_scan
+#else
+#define NORMAL_SCAN_TRIGGER 0
+#define CBS_SCAN_TRIGGER 1
+#endif
+
+
 enum hostapd_dcs_intf_type {
 	DCS_CW_INTF     = 0x0001,
 	DCS_WLAN_INTF   = 0x0002,
@@ -1472,6 +1481,12 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 	return -EOPNOTSUPP;
 }
 
+static inline void
+acs_init_extn(struct hostapd_iface *iface, uint8_t trigger)
+{
+	return;
+}
+
 static inline int
 hostapd_cbs_handle_single_channel_survey(struct hostapd_iface *iface,
 					 struct hostapd_channel_data *chan,
@@ -1595,6 +1610,12 @@ hostapd_iface_init_extn(struct hostapd_iface *iface)
 
 static inline void
 hostapd_iface_deinit_extn(struct hostapd_iface *iface)
+{
+}
+
+static inline void
+hostapd_free_hw_features_extn(struct hostapd_hw_modes *hw_features,
+			      size_t num_hw_features)
 {
 }
 
@@ -2117,6 +2138,8 @@ bool hostapd_ignorecac_should_skip_cac_extn(struct hostapd_iface *iface);
 void
 hostapd_ignorecac_update_freq_params_extn(struct hostapd_iface *iface,
 					  struct hostapd_freq_params *freq_params);
+void hostapd_beacon_set_skip_cac_extn(struct hostapd_iface *iface,
+				      struct hostapd_freq_params *freq_params);
 bool hostapd_ignorecac_handle_dfs_extn(struct hostapd_iface *iface,
 				       int start_idx, int n_chans);
 void hostapd_ignorecac_switch_channel_extn(struct hostapd_data *hapd,
@@ -2463,6 +2486,7 @@ int
 acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			       struct hostapd_channel_data *chan,
 			       int err);
+void acs_init_extn(struct hostapd_iface *iface, uint8_t trigger);
 int
 acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err);
 bool acs_hwbl_candidate_ok(struct hostapd_iface *iface,
@@ -2506,6 +2530,8 @@ int hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
 				  char *buf, size_t buflen);
 void hostapd_iface_init_extn(struct hostapd_iface *iface);
 void hostapd_iface_deinit_extn(struct hostapd_iface *iface);
+void hostapd_free_hw_features_extn(struct hostapd_hw_modes *hw_features,
+				   size_t num_hw_features);
 void wpas_iface_init_extn(struct wpa_supplicant *wpa_s);
 void wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s);
 /**
