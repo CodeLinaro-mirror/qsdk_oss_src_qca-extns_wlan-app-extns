@@ -692,6 +692,7 @@ void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 		l->center_freq2_idx = neigh_bss->center_freq2_idx;
 		l->width = neigh_bss->max_cw;
 		l->punc_bitmap = neigh_bss->punc_bitmap;
+		os_get_reltime(&neigh_bss->last_update);
 		wpa_printf(MSG_DEBUG, "%s: link_id=%u freq=%d cf1=%d cf2=%d width=%d punc=%d",
 			   __func__, link_id, l->freq, l->center_freq1_idx, l->center_freq2_idx,
 			   l->width, l->punc_bitmap);
