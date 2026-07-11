@@ -9,7 +9,10 @@
 #include <stddef.h>
 
 struct hostapd_iface;
+struct hostapd_config_extn;
 
+int hostapd_config_parse_block_chanlist(struct hostapd_config_extn *ce,
+					    const char *cmd);
 int hostapd_set_block_chanlist(struct hostapd_iface *iface, const char *cmd);
 int hostapd_clear_block_chanlist(struct hostapd_iface *iface, const char *cmd);
 int hostapd_get_block_chanlist(struct hostapd_iface *iface,

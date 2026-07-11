@@ -1555,6 +1555,12 @@ acs_hwbl_chan_ok_extn(struct hostapd_iface *iface,
 }
 
 static inline bool
+hostapd_acs_is_chan_blocked(struct hostapd_iface *iface, u8 chan)
+{
+	return false;
+}
+
+static inline bool
 hostapd_hwbl_validate_6ghz(struct hostapd_iface *iface,
 			    struct hostapd_channel_data *chan,
 			    u16 bw, u16 center_freq, u16 punct_bitmap,
@@ -2563,6 +2569,7 @@ bool acs_hwbl_chan_ok_extn(struct hostapd_iface *iface,
 			   struct hostapd_hw_modes *mode, u32 bw, int bw320_offset,
 			   int n_chans, struct hostapd_channel_data *chan,
 			   long double factor);
+bool hostapd_acs_is_chan_blocked(struct hostapd_iface *iface, u8 chan);
 #ifdef CONFIG_IEEE80211BE
 void acs_update_puncturing_bitmap(struct hostapd_iface *iface,
 				  struct hostapd_hw_modes *mode, u32 bw,
