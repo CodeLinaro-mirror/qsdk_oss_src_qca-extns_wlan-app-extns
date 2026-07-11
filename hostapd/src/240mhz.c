@@ -667,3 +667,59 @@ int hostapd_find_dfs_range_extn(struct hostapd_iface *iface,
 
 	return dfs_range;
 }
+
+
+static bool hostapd_is_5ghz_320mhz_csa_attr_required(struct hostapd_data *hapd)
+{
+	if (!hapd)
+		return false;
+
+	return hapd->cs_freq_params.bandwidth == CHWIDTH_320 &&
+	       is_5ghz_freq(hapd->cs_freq_params.freq) &&
+	       hapd->cs_freq_params.punct_bitmap;
+}
+
+size_t hostapd_qcn_buflen_add_5ghz_320mhz_csa_attr(struct hostapd_data *hapd)
+{
+	if (!hostapd_is_5ghz_320mhz_csa_attr_required(hapd))
+		return 0;
+
+	return QCN_ATTRIB_HDR_LEN +
+	       sizeof(struct ieee80211_240mhz_vendor_oper_extn_v2);
+}
+
+u8 * hostapd_qcn_eid_add_5ghz_320mhz_csa_attr(struct hostapd_data *hapd,
+					       u8 *pos)
+{
+	struct ieee80211_240mhz_vendor_oper_extn_v2 *cap;
+	u8 ccfs0, ccfs1;
+
+	if (!pos)
+		return pos;
+
+	if (!hostapd_is_5ghz_320mhz_csa_attr_required(hapd))
+		return pos;
+
+	if (ieee80211_freq_to_chan(hapd->cs_freq_params.center_freq1,
+				  &ccfs1) != HOSTAPD_MODE_IEEE80211A)
+		return pos;
+
+	ccfs0 = hapd->cs_freq_params.channel < ccfs1 ? ccfs1 - 16 : ccfs1 + 16;
+
+	*pos++ = QCN_ATTRIB_5GHZ_320MHZ_CSA;
+	*pos++ = sizeof(struct ieee80211_240mhz_vendor_oper_extn_v2);
+
+	cap = (struct ieee80211_240mhz_vendor_oper_extn_v2 *) pos;
+	os_memset(cap, 0, sizeof(*cap));
+	cap->ccfs0 = ccfs0;
+	cap->ccfs1 = ccfs1;
+	cap->punct_bitmap = host_to_le16(hapd->cs_freq_params.punct_bitmap);
+	cap->is5ghz240mhz = 1;
+	pos += sizeof(struct ieee80211_240mhz_vendor_oper_extn_v2);
+
+	wpa_printf(MSG_DEBUG,
+		   "5G 320MHz CSA QCN attr: ccfs0=%u ccfs1=%u punct=0x%04x",
+		   ccfs0, ccfs1, hapd->cs_freq_params.punct_bitmap);
+
+	return pos;
+}
