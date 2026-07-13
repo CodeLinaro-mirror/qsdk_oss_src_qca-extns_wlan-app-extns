@@ -375,30 +375,12 @@ skip_curr_ch_check:
 	return false;
 }
 
-int handle_action_extn(struct hostapd_data *hapd,
-		       const struct ieee80211_mgmt *mgmt, size_t len,
-		       unsigned int freq)
-{
-	if (!hapd || !mgmt)
-		return 0;
-
-	switch (mgmt->u.action.category) {
-		case WLAN_ACTION_SPECTRUM_MGMT:
-			if (hostapd_uplink_csa_hdl_extn(hapd, (const u8 *) mgmt, len))
-				 return 1;
-			break;
-		default:
-			return 0;
-	}
-	return 0;
-}
-
 int handle_action_vs_extn(struct hostapd_data *hapd,
 			  struct sta_info *sta,
 			  const struct ieee80211_mgmt *mgmt,
 			  size_t len, unsigned int freq, bool protected)
 {
-	const u8 *pos = (const u8 *)mgmt + IEEE80211_HDRLEN; 
+	const u8 *pos = (const u8 *)mgmt + IEEE80211_HDRLEN;
 
 	if (mgmt->u.action.category == WLAN_ACTION_VENDOR_SPECIFIC) {
 		wpa_printf(MSG_DEBUG,"received vendor action");
@@ -963,22 +945,8 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 	iface->iface_extn.nol_info_valid = false;
 }
 
-bool hostapd_uplink_csa_hdl(struct hostapd_data *hapd,
-				 const u8 *buf, size_t len)
-{
-	if (!hapd || !hapd->iface || !buf)
-		return 0;
-
-	if (dfs_is_uplink_csa_enabled(hapd->iface)) {
-		hostapd_handle_action_csa(hapd, buf, len);
-		return 1;
-	}
-
-	return 0;
-}
-
 /**
- * hostapd_uplink_csa_hdl_extn - Handle uplink CSA action frame at intermediate repeater
+ * hostapd_uplink_csa_hdl - Handle uplink CSA action frame at intermediate repeater
  * @hapd: hostapd BSS data structure
  * @buf: Raw 802.11 frame buffer
  * @len: Length of the frame buffer
@@ -997,8 +965,8 @@ bool hostapd_uplink_csa_hdl(struct hostapd_data *hapd,
  *
  * Return: true if the frame was handled, false otherwise.
  */
-bool hostapd_uplink_csa_hdl_extn(struct hostapd_data *hapd,
-				  const u8 *buf, size_t len)
+bool hostapd_uplink_csa_hdl(struct hostapd_data *hapd,
+			    const u8 *buf, size_t len)
 {
 	if (!hapd || !hapd->iface || !buf)
 		return false;
@@ -1021,6 +989,24 @@ bool hostapd_uplink_csa_hdl_extn(struct hostapd_data *hapd,
 	 */
 	hostapd_handle_action_csa(hapd, buf, len);
 	return true;
+}
+
+int handle_action_extn(struct hostapd_data *hapd,
+		       const struct ieee80211_mgmt *mgmt, size_t len,
+		       unsigned int freq)
+{
+	if (!hapd || !mgmt)
+		return 0;
+
+	switch (mgmt->u.action.category) {
+		case WLAN_ACTION_SPECTRUM_MGMT:
+			if (hostapd_uplink_csa_hdl(hapd, (const u8 *) mgmt, len))
+				 return 1;
+			break;
+		default:
+			return 0;
+	}
+	return 0;
 }
 
 /**
