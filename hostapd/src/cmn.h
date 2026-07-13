@@ -409,6 +409,8 @@ struct hostapd_data_extn {
 	bool mu_cap_war_override;
 	struct dl_list mu_cap_war_sta_list;
 #endif /* CONFIG_IEEE80211AC */
+	/* Dedup list: STAs for which a trigger event was already sent. */
+	struct dl_list log_trigger_sent;
 };
 
 /* NOL IE vendor element encoding/decoding constants */
