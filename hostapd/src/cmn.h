@@ -7,6 +7,7 @@
 #define CMN_H
 
 #include "includes.h"
+#include "common/defs.h"
 
 #ifdef CONFIG_QCN_APP_EXTN
 #include "qacs/qacs.h"
@@ -1130,6 +1131,11 @@ inline int nl80211_disable_opclass_chans_extn(void *priv, u8 link_id,
 	return -1;
 }
 
+static inline int netlink_increase_rcvbuf_extn(int sock)
+{
+	return -1;
+}
+
 static inline int wpa_driver_nl80211_cbs_trigger_scan(void *priv,
 						      const struct cbs_params_extn *params,
 						      int *freq_list, int link_id)
@@ -2184,6 +2190,7 @@ int nl80211_disable_opclass_chans_extn(void *priv, u8 link_id,
 				       u8 opclass,
 				       const u8 *chan_list,
 				       size_t chan_count);
+int netlink_increase_rcvbuf_extn(int sock);
 int wpa_driver_nl80211_cbs_trigger_scan(void *priv,
 					const struct cbs_params_extn *params,
 					int *freq_list, int link_id);
