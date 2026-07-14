@@ -21,7 +21,7 @@ typedef struct dfs_nol_ie_info_extn dfs_nol_ie_info;
 #define IEEE80211_CSA_IE_TOTAL_LEN 5
 
 /* NOL IE constants - aligned with RCSA design */
-#define DFS_MAX_20M_SUB_CH 8
+#define DFS_MAX_20M_SUB_CH 16
 #define DFS_NOL_IE_TIMEOUT_MS 1800000  /* 30 minutes */
 #define MIN_DFS_SUBCHAN_BW 20          /* 20 MHz minimum subchannel */
 
@@ -124,5 +124,8 @@ bool optional_ml_info_ie_access(u8 *buf, size_t buf_len,
 #define HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_US 1000
 #define HOSTAPD_RCSA_INTVAL_US (100 * 1000)
 
+int dfs_nol_ie_get_subchan_count(enum oper_chan_width chan_width,
+				 int freq, int cf1,
+				 int *n_subchans);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* DFS_EXTN_H */

@@ -24,6 +24,7 @@
 #include "cmn.h"
 #include "../wpa_supplicant/config.h"
 #include "ap/hostapd.h"
+#include "ap/dfs.h"
 #include "reg_extn.h"
 #include "dfs_extn.h"
 #include "ucode_extn.h"
@@ -450,8 +451,7 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 		wpabuf_put_u8(buf, ch_seg_1);
 	}
 
-	/* Add NOL IE only when Wide BW IE is present */
-	if (is_wb_ie_present && nol_ie && nol_ie_len > 0) {
+	if (nol_ie && nol_ie_len > 0) {
 		wpabuf_put_data(buf, nol_ie, nol_ie_len);
 		wpa_hexdump(MSG_INFO, "Uplink CSA NOL IE", nol_ie, nol_ie_len);
 	}
@@ -1332,84 +1332,24 @@ static int wpa_rcsa_prepare_nol_ie(const struct dfs_event *radar,
 				   u8 *nol_ie_buf,
 				   size_t nol_ie_buf_len)
 {
-	enum dfs_nol_ie_bw_mhz bw_mhz;
-	int bandwidth_mhz;
-	int n_subchans;
-	u16 bitmap_mask;
-	u16 radar_bitmap_oper;
-	int start_idx;
-	int end_idx;
-	int contiguous_count;
-	u16 contiguous_bitmap;
-	u8 *pos, *len_pos;
-	size_t needed_len;
+	dfs_nol_ie_info nol_info;
 
-	bw_mhz = channel_width_to_int(radar->chan_width);
-	bandwidth_mhz = (int) bw_mhz;
-	n_subchans = bandwidth_mhz / MIN_DFS_SUBCHAN_BW;
-	if (n_subchans <= 0 || n_subchans > DFS_MAX_20M_SUB_CH) {
-		wpa_printf(MSG_DEBUG,
-			   "rcsa: invalid subchannel count %d for bw=%d",
-			   n_subchans, bandwidth_mhz);
+	if (!radar)
+		return -1;
+
+	if (dfs_prepare_nol_ie_bitmap(NULL, radar->freq,
+				      convert_to_oper_chan_width(radar->chan_width),
+				      radar->cf1, radar->cf2,
+				      radar->radar_bitmap, &nol_info)) {
+		wpa_printf(MSG_DEBUG, "rcsa: failed to prepare NOL IE bitmap");
 		return -1;
 	}
-
-	bitmap_mask = DFS_NOL_IE_BITMAP_MASK(n_subchans);
-	radar_bitmap_oper = radar->radar_bitmap & bitmap_mask;
-
-	if (!radar_bitmap_oper) {
-		wpa_printf(MSG_DEBUG,
-			   "rcsa: radar_bitmap is 0 after masking (0x%04x)",
-			   radar->radar_bitmap);
-		return -1;
-	}
-
-	start_idx = 0;
-	while (start_idx < n_subchans &&
-			!(radar_bitmap_oper & (1U << start_idx)))
-		start_idx++;
-
-	if (start_idx >= n_subchans) {
-		wpa_printf(MSG_DEBUG,
-				"rcsa: no radar-affected subchannel found");
-		return -1;
-	}
-
-	end_idx = start_idx;
-	while (end_idx < n_subchans &&
-			(radar_bitmap_oper & (1U << end_idx)))
-		end_idx++;
-
-	contiguous_count = end_idx - start_idx;
-	contiguous_bitmap = (1U << contiguous_count) - 1;
 
 	wpa_printf(MSG_DEBUG,
-		   "rcsa: STA NOL IE base_freq=%d bw=%u bitmap=0x%02x"
-		   " (start_idx=%d count=%d)",
-		   radar->freq, (unsigned int) DFS_NOL_IE_BW_20_MHZ,
-		   (u8) (contiguous_bitmap & 0xFF),
-		   start_idx, contiguous_count);
+		   "rcsa: STA NOL IE freq=%u bw=%u bitmap=0x%04x",
+		   nol_info.freq, nol_info.bandwidth, nol_info.subchan_bitmap);
 
-	/* Build NOL IE — same wire format as hostapd_build_nol_ie():
-	 *   EID_VENDOR_SPECIFIC | len | bw(1) | freq_le16(2) | bitmap(1)
-	 * bw is MIN_DFS_SUBCHAN_BW (20 MHz), freq is the primary radar subchan,
-	 * bitmap is the contiguous radar subchannel mask from the event.
-	 */
-	needed_len = 2 + 1 + 2 + 1;
-	if (nol_ie_buf_len < needed_len)
-		return -1;
-
-	pos = nol_ie_buf;
-	*pos++ = WLAN_EID_VENDOR_SPECIFIC;
-	len_pos = pos++;
-	*pos++ = (u8) RCSA_MIN_DFS_SUBCHAN_BW;
-	WPA_PUT_LE16(pos, (u16)radar->freq +
-		    start_idx * MIN_DFS_SUBCHAN_BW);
-	pos += 2;
-	*pos++ = (u8)(contiguous_bitmap & 0xFF);
-	*len_pos = pos - len_pos - 1;
-
-	return pos - nol_ie_buf;
+	return dfs_encode_nol_ie(&nol_info, nol_ie_buf, nol_ie_buf_len);
 }
 
 static size_t wpa_rcsa_build_opt_ies(struct wpa_supplicant *wpa_s,
