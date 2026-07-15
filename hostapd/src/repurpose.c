@@ -151,16 +151,24 @@ hostapd_link_remove_repurposed_bss_extn(struct hostapd_data *hapd,
 	struct hostapd_iface **tmp;
 	struct hapd_interfaces *interfaces = iface->interfaces;
 	unsigned int i;
+	bool is_6g = false;
 
 	if (removal_type == HAPD_LINK_DISABLE) {
 		hostapd_disable_bss(hapd, 0, AP_EVENT_DISABLED);
-		goto refresh_beacon;
+		return 0;
 	}
+
+	/* check this to verify if the removed BSS is 6 GHz,
+	 * otherwise updating only the partner beacon,
+	 * irrespective of the band is suffice.
+	 */
+	is_6g = is_6ghz_op_class(iface->conf->op_class);
 
 	if (iface->num_bss == 1) {
 		for (i = 0; i < interfaces->count; i++) {
 			if (interfaces->iface[i] == iface) {
 				hostapd_interface_deinit_free(iface);
+				iface = NULL;
 				os_remove_in_array(interfaces->iface,
 						   interfaces->count,
 						   sizeof(struct hostapd_iface *),
@@ -199,10 +207,16 @@ hostapd_link_remove_repurposed_bss_extn(struct hostapd_data *hapd,
 			ieee802_11_update_beacon_mbssid(tx_hapd);
 	}
 
-refresh_beacon:
-	/* Refresh all the partner beacons */
-	if (interfaces->count > 0)
-		hostapd_refresh_all_iface_beacons(interfaces->iface[0]);
+	/* For 6G, OOB advertisement also needs to be refreshed in all
+	 * enabled lower bands, hence invoke other iface beacon refresh
+	 * to update all the entries properly
+	 */
+	if (is_6g) {
+		if (!iface && interfaces->count > 0)
+			hostapd_refresh_all_iface_beacons(interfaces->iface[0]);
+		else
+			hostapd_refresh_other_iface_beacons(iface);
+	}
 
 	return 0;
 }
