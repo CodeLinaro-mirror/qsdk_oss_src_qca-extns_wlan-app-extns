@@ -1583,6 +1583,75 @@ bool hostapd_bss_rnr_eligible_extn(struct hostapd_data *bss)
 }
 
 /**
+ * dfs_range_has_nol_extn - Check whether a channel range includes NOL
+ * @mode: Hardware mode containing the channel table
+ * @start_idx: Start index in @mode channel table
+ * @n_chans: Number of 20 MHz channels to check
+ *
+ * Check whether any channel in the specified range is marked
+ * DFS_UNAVAILABLE. A DFS_UNAVAILABLE channel is in NOL/NOP and must not be
+ * used for CAC or AP bring-up until NOP expires.
+ *
+ * Return: true if any channel in the range is in NOL, false otherwise.
+ */
+static bool dfs_range_has_nol_extn(struct hostapd_hw_modes *mode,
+				   int start_idx, int n_chans)
+{
+	int i;
+
+	if (!mode || start_idx < 0 || n_chans <= 0)
+		return false;
+
+	for (i = 0; i < n_chans && start_idx + i < mode->num_channels; i++) {
+		struct hostapd_channel_data *channel;
+
+		channel = &mode->channels[start_idx + i];
+		if ((channel->flag & HOSTAPD_CHAN_DFS_MASK) ==
+		    HOSTAPD_CHAN_DFS_UNAVAILABLE)
+			return true;
+	}
+
+	return false;
+}
+
+/**
+ * bootup_cac_current_channel_has_nol_extn - Check current channel for NOL
+ * @iface: Pointer to hostapd interface data
+ *
+ * Check whether the currently configured operating channel, including all
+ * active 20 MHz subchannels and the secondary segment for 80+80 MHz, contains
+ * any channel marked DFS_UNAVAILABLE. A DFS_UNAVAILABLE channel is in NOL/NOP
+ * and must not be used for CAC or AP bring-up until NOP expires.
+ *
+ * Return: true if the current channel configuration contains a DFS unavailable
+ * channel, false otherwise.
+ */
+static bool bootup_cac_current_channel_has_nol_extn(struct hostapd_iface *iface)
+{
+	struct hostapd_hw_modes *mode;
+	int start_chan_idx, start_chan_idx1;
+	int n_chans, n_chans1;
+	int chan_width;
+
+	if (!iface || !iface->conf || !iface->current_mode)
+		return false;
+
+	mode = iface->current_mode;
+	chan_width = hostapd_get_oper_chwidth(iface->conf);
+
+	start_chan_idx = dfs_get_start_chan_idx(iface, &start_chan_idx1,
+						chan_width,
+						iface->conf->channel, false);
+	if (start_chan_idx < 0)
+		return false;
+
+	n_chans = dfs_get_used_n_chans(iface, &n_chans1, chan_width);
+
+	return dfs_range_has_nol_extn(mode, start_chan_idx, n_chans) ||
+	       dfs_range_has_nol_extn(mode, start_chan_idx1, n_chans1);
+}
+
+/**
  * hostapd_bootup_cac_start_extn - Start boot-up CAC if the driver and config allow it.
  *
  * When the driver advertises WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC and
@@ -1604,6 +1673,13 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 	      !iface->conf->conf_extn.disable_iface_during_cac &&
 	      hostapd_is_cac_required(iface)))
 		return false;
+
+	if (bootup_cac_current_channel_has_nol_extn(iface)) {
+		wpa_printf(MSG_DEBUG,
+			   "Boot-up CAC: skipping on DFS unavailable/NOL channel %d MHz",
+			   iface->freq);
+		return false;
+	}
 
 	if (hostapd_set_dfs_cac_time(iface))
 		return false;
