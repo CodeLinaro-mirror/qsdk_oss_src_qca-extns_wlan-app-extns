@@ -952,6 +952,19 @@ hostapd_modify_buflen_for_qcn_ie_extn(struct hostapd_data *hapd)
 }
 
 static inline size_t
+hostapd_qcn_buflen_add_5ghz_320mhz_csa_attr(struct hostapd_data *hapd)
+{
+	return 0;
+}
+
+static inline u8 *
+hostapd_qcn_eid_add_5ghz_320mhz_csa_attr(struct hostapd_data *hapd,
+					       u8 *pos)
+{
+	return pos;
+}
+
+static inline size_t
 wpas_modify_buflen_for_qcn_ie_extn(struct wpa_supplicant *wpa_s)
 {
 	return 0;
@@ -1003,6 +1016,28 @@ hostapd_drv_set_peer_he_mcs_12_13_cap_extn(struct hostapd_data *hapd,
 static inline void
 wpas_drv_set_peer_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq,
 					const u8 *ies, size_t ies_len)
+{
+	return;
+}
+
+static inline void
+wpa_bss_check_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
+				       struct wpa_bss *bss)
+{
+	return;
+}
+
+static inline bool
+wpas_sta_cac_5g_320mhz_update_freq_params_extn(enum chan_width width,
+					     u8 cf2_idx,
+					     struct hostapd_freq_params *params)
+{
+	return false;
+}
+
+static inline void
+wpas_ch_switch_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
+					union wpa_event_data *data)
 {
 	return;
 }
@@ -1520,6 +1555,12 @@ acs_hwbl_chan_ok_extn(struct hostapd_iface *iface,
 }
 
 static inline bool
+hostapd_acs_is_chan_blocked(struct hostapd_iface *iface, u8 chan)
+{
+	return false;
+}
+
+static inline bool
 hostapd_hwbl_validate_6ghz(struct hostapd_iface *iface,
 			    struct hostapd_channel_data *chan,
 			    u16 bw, u16 center_freq, u16 punct_bitmap,
@@ -2027,6 +2068,29 @@ size_t hostapd_qcn_buflen_add_240mhz_attr(struct hostapd_data *hapd);
 u8 * hostapd_qcn_eid_add_240mhz_attr(struct hostapd_data *hapd, u8 *pos,
 				     enum ieee80211_op_mode opmode);
 
+/**
+ * hostapd_qcn_buflen_add_5ghz_320mhz_csa_attr - Compute CSA 320 MHz
+ * QCN attribute byte count
+ * @hapd: per-BSS hostapd context
+ *
+ * Returns: number of bytes needed for the CSA 320 MHz QCN attribute, or 0 if
+ * not needed.
+ */
+size_t hostapd_qcn_buflen_add_5ghz_320mhz_csa_attr(struct hostapd_data *hapd);
+
+/**
+ * hostapd_qcn_eid_add_5ghz_320mhz_csa_attr - Encode CSA 320 MHz QCN attribute
+ * @hapd: per-BSS hostapd context
+ * @pos: write cursor inside an already-started QCN vendor IE
+ *
+ * Appends QCN_ATTRIB_5GHZ_320MHZ_CSA carrying CSA target center segment
+ * fields and puncture bitmap from cs_freq_params.
+ *
+ * Returns: updated write cursor, or the original @pos when skipped.
+ */
+u8 * hostapd_qcn_eid_add_5ghz_320mhz_csa_attr(struct hostapd_data *hapd,
+					       u8 *pos);
+
 int hostapd_dfs_get_start_chan_idx_extn(struct hostapd_iface *iface);
 int hostapd_get_n_chans_and_frequency_extn(enum oper_chan_width oper_chwidth,
 					   int cf1,
@@ -2081,6 +2145,14 @@ void hostapd_drv_set_peer_he_mcs_12_13_cap_extn(struct hostapd_data *hapd,
  */
 void wpas_drv_set_peer_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq,
 					     const u8 *ies, size_t ies_len);
+
+void wpa_bss_check_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
+					    struct wpa_bss *bss);
+bool wpas_sta_cac_5g_320mhz_update_freq_params_extn(enum chan_width width,
+					     u8 cf2_idx,
+					     struct hostapd_freq_params *params);
+void wpas_ch_switch_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
+					    union wpa_event_data *data);
 
 void hostapd_get_eht_240mhz_cap_extn(struct hostapd_data *hapd,
 				     struct sta_info_extn *sta_extn,
@@ -2497,6 +2569,7 @@ bool acs_hwbl_chan_ok_extn(struct hostapd_iface *iface,
 			   struct hostapd_hw_modes *mode, u32 bw, int bw320_offset,
 			   int n_chans, struct hostapd_channel_data *chan,
 			   long double factor);
+bool hostapd_acs_is_chan_blocked(struct hostapd_iface *iface, u8 chan);
 #ifdef CONFIG_IEEE80211BE
 void acs_update_puncturing_bitmap(struct hostapd_iface *iface,
 				  struct hostapd_hw_modes *mode, u32 bw,

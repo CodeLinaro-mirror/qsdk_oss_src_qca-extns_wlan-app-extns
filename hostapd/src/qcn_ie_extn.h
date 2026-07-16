@@ -23,7 +23,9 @@
 #define QCN_ATTRIB_HDR_LEN			2
 
 #define QCN_ATTRIB_HE_240_MHZ_SUPP		0X0B
+#define QCN_ATTRIB_5GHZ_320MHZ_CSA		0X0C
 #define QCN_HE_240_MHZ_MAX_ELEM_LEN		9
+#define QCN_5GHZ_320MHZ_CSA_ELEM_LEN		9
 
 /*
  * QCN IE fixed overhead:
