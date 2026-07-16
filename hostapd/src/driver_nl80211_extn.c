@@ -2148,3 +2148,31 @@ fail:
 	nlmsg_free(msg);
 	return -ENOBUFS;
 }
+
+int netlink_increase_rcvbuf_extn(int sock)
+{
+	int rcvbuf = 1 * 1024 * 1024; /* 1 MB */
+
+	/*
+	 * Increase the socket receive buffer to avoid dropping RTM_NEWLINK
+	 * events during large-scale interface bringup (e.g. 16-MLD setups).
+	 * Each AP BSS generates ~20 RTM_NEWLINK events (created, UP, bridge
+	 * add, AF_BRIDGE) averaging ~1 KB each; 16 BSSes produce ~320 KB of
+	 * events which overflows the default 208 KB kernel netlink socket
+	 * buffer. Lost events cause monitor interface tracking to fail,
+	 * breaking AFC-triggered CSA. Use SO_RCVBUFFORCE so the request is
+	 * not capped by rmem_max (hostapd has CAP_NET_ADMIN). Fall back to
+	 * SO_RCVBUF if SO_RCVBUFFORCE is not available.
+	 */
+	if (setsockopt(sock, SOL_SOCKET, SO_RCVBUFFORCE,
+		       &rcvbuf, sizeof(rcvbuf)) < 0 &&
+	    setsockopt(sock, SOL_SOCKET, SO_RCVBUF,
+		       &rcvbuf, sizeof(rcvbuf)) < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "netlink: Could not increase SO_RCVBUF: %s",
+			   strerror(errno));
+		return -1;
+	}
+
+	return 0;
+}
