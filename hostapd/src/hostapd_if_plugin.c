@@ -944,9 +944,12 @@ static int interface_create(char *ifname, void *ctx)
 	return 0;
 }
 
-static void interface_remove(char *ifname)
+static void interface_remove(char *ifname, void *ctx)
 {
 	struct plugin_hapd_iface *iface;
+	struct hostapd_data *hapd;
+
+	hapd = ctx;
 
 	if (!ifname)
 		return;
@@ -954,6 +957,10 @@ static void interface_remove(char *ifname)
 	pthread_mutex_lock(&plugin_iface_mutex);
 
 	iface = plugin_hapd_iface_get(ifname);
+	wpa_printf(MSG_DEBUG,
+		   "plugin: removed plugin_hapd_iface for %s %d\n", ifname,
+		   hapd->iface->freq);
+
 	if (!iface) {
 		wpa_printf(MSG_DEBUG,
 			   "plugin: interface_remove: no iface found for %s\n",
@@ -964,8 +971,6 @@ static void interface_remove(char *ifname)
 
 	dl_list_del(&iface->list);
 	os_free(iface);
-	wpa_printf(MSG_DEBUG,
-		   "plugin: removed plugin_hapd_iface for %s\n", ifname);
 
 	pthread_mutex_unlock(&plugin_iface_mutex);
 }

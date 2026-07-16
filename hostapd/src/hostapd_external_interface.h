@@ -512,7 +512,7 @@ struct hostapd_external_app_object {
 	void (*init)();
 
 	int (*interface_create)(char *ifname, void *ctx);
-	void (*interface_remove)(char *ifname);
+	void (*interface_remove)(char *ifname, void *ctx);
 	void (*invoke_assoc)(char *ifname, uint8_t *sta_mac,
 			     const uint8_t *frame, uint16_t frame_len,
 			     struct hostapd_if_frame_ctx *ctx);
