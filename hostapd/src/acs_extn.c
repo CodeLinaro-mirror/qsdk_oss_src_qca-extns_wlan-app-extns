@@ -21,6 +21,7 @@
 #include "block_channel.h"
 #include "utils/eloop.h"
 #include "cmn.h"
+#include "acs_extn.h"
 
 int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
 				 struct hostapd_channel_data *chan,
@@ -586,34 +587,35 @@ static void acs_fill_algo_type(struct hostapd_iface *iface)
 
 int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd, enum dynamic_acs_action_extn acs_action)
 {
-        struct hostapd_iface *iface = hapd->iface;
-        int status;
+	struct hostapd_iface *iface = hapd->iface;
+	int status;
 
-        if (!hapd->iface->current_mode)
-            return -1;
+	if (!hapd->iface->current_mode)
+		return -1;
 
 
-        if (iface->iface_extn.dynamic_acs_action) {
-                wpa_printf(MSG_ERROR, "Dynamic ACS is already in progress");
-                return -1;
-        }
+	if (iface->iface_extn.dynamic_acs_action) {
+		wpa_printf(MSG_ERROR, "Dynamic ACS is already in progress");
+		return -1;
+	}
 
-        iface->iface_extn.dynamic_acs_action = acs_action;
-        qacs_reset_scan_stats(iface, hapd->iface->current_mode);
+	iface->iface_extn.dynamic_acs_action = acs_action;
+	wpa_msg(hapd->msg_ctx, MSG_INFO, DYNAMIC_ACS_EVENT_STARTED);
+	qacs_reset_scan_stats(iface, hapd->iface->current_mode);
 	/* Notify wpa_supplicant to abort scans before starting ACS */
 	if (!hostapd_is_bh_sta_connecting_or_connected_extn(iface))
 		hostapd_ucode_notify_acs_start(iface);
 
-        status = acs_init(iface);
-        if (status != HOSTAPD_CHAN_ACS) {
-                wpa_printf(MSG_ERROR, "Could not start ACS, error: %d", status);
-                iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+	status = acs_init(iface);
+	if (status != HOSTAPD_CHAN_ACS) {
+		wpa_printf(MSG_ERROR, "Could not start ACS, error: %d", status);
+		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
 		/* Notify wpa_supplicant to resume scans on failure */
 		hostapd_ml_acs_check_and_notify(iface, 0);
-                return -1;
-        }
+		return -1;
+	}
 
-        return 0;
+	return 0;
 }
 
 static void hostapd_periodic_acs_timeout(void *eloop_ctx, void *timeout_ctx)
@@ -1420,6 +1422,11 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 
 	acs_fill_timestamp(iface, NORMAL_SCAN_TRIGGER, false);
 
+	if (!chan || err)
+		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DYNAMIC_ACS_EVENT_FAILED);
+	else
+		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DYNAMIC_ACS_EVENT_COMPLETED);
+
 	if (iface->iface_extn.dynamic_acs_action == NO_CHANNEL_CHANGE) {
 		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
 		/* Notify wpa_supplicant to resume scans on success but no channel change requested */
@@ -1475,6 +1482,7 @@ acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
 
 	wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
 		   err);
+	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DYNAMIC_ACS_EVENT_FAILED);
 	/* Notify wpa_supplicant to resume scans on failure */
 	hostapd_ml_acs_check_and_notify(iface, 0);
 	hostapd_dcs_restore_extn(iface, "ACS failed");
