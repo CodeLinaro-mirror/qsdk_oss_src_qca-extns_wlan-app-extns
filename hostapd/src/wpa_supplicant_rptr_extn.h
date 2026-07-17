@@ -10,6 +10,11 @@
 
 void wpa_bss_check_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
 					    struct wpa_bss *bss);
+bool wpas_sta_cac_5g_320mhz_update_freq_params_extn(enum chan_width width,
+					     u8 cf2_idx,
+					     struct hostapd_freq_params *params);
+void wpas_ch_switch_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
+					    union wpa_event_data *data);
 int wpa_config_process_cswopts_extn(struct wpa_config *config, int line,
 				    const char *pos);
 int wpa_supplicant_ctrl_iface_set_cswopts_extn(struct wpa_supplicant *wpa_s,

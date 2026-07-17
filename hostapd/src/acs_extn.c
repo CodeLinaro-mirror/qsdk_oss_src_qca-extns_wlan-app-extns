@@ -18,9 +18,9 @@
 #include "ap/hw_features.h"
 #include "ap/acs.h"
 #include "ap/dfs.h"
+#include "block_channel.h"
 #include "utils/eloop.h"
 #include "cmn.h"
-#include "block_channel.h"
 
 int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
 				 struct hostapd_channel_data *chan,
@@ -453,7 +453,7 @@ static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
 	}
 
 	/* Call the ICM/ACS API for the currently selected band/mode */
-	int ret = qacs_scan_report(mode, acs_report);
+	int ret = qacs_scan_report(iface, mode, acs_report);
 	if (ret <= 0) {
 		wpa_printf(MSG_ERROR, "No ACS report available");
 		free(acs_report);
@@ -1055,6 +1055,25 @@ static int hostapd_acs_get_6g_only_psc_extn(struct hostapd_config *conf,
 	return ret;
 }
 
+
+bool
+hostapd_acs_is_chan_blocked(struct hostapd_iface *iface, u8 chan)
+{
+	struct hostapd_config_extn *ce;
+	int i;
+
+	if (!iface || !iface->conf)
+		return false;
+
+	ce = &iface->conf->conf_extn;
+
+	for (i = 0; i < ce->block_chan_list.n_chan; i++) {
+		if (ce->block_chan_list.chans[i] == chan)
+			return true;
+	}
+
+	return false;
+}
 
 static int hostapd_acs_set_block_chanlist(struct hostapd_data *hapd,
 		const char *cmd)

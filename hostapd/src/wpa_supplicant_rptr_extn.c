@@ -121,11 +121,17 @@ int wpa_ctrl_chan_sw_finished_notify_extn(struct wpa_supplicant *wpa_s, const ch
 void wpa_bss_check_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
 					    struct wpa_bss *bss)
 {
+	const struct ieee80211_240mhz_vendor_oper_extn_v2 *oper_240 = NULL;
+	const u8 *vendor_ie;
+	const u8 *pos;
+	size_t elen;
+	size_t off = 0;
+
 	if (bss->max_cw != CHAN_WIDTH_160 || !is_5ghz_freq(bss->freq))
 		return;
 
 	/* Look for QCN Vendor Specific IE for 5G 320MHz support */
-	const u8 *vendor_ie = wpa_bss_get_vendor_ie(bss, QCN_IE_VENDOR_TYPE);
+	vendor_ie = wpa_bss_get_vendor_ie(bss, QCN_IE_VENDOR_TYPE);
 	if (!vendor_ie) {
 		wpa_dbg(wpa_s, MSG_ERROR,
 			"5G 320MHz check: QCN Vendor IE not found, keeping 160MHz");
@@ -136,8 +142,8 @@ void wpa_bss_check_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
 	if (vendor_ie[1] < 4)
 		return;
 
-	const u8 *pos = vendor_ie + 2; /* Skip Element ID and Length */
-	size_t elen = vendor_ie[1];
+	pos = vendor_ie + 2; /* Skip Element ID and Length */
+	elen = vendor_ie[1];
 
 	/* Skip OUI (3 bytes) + OUI Type (1 byte) */
 	if (pos[3] != QCN_OUI_TYPE)
@@ -147,8 +153,6 @@ void wpa_bss_check_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
 	elen -= 4;
 
 	/* Parse TLV attributes */
-	size_t off = 0;
-
 	while (off + 2 <= elen) {
 		u8 attr_id  = pos[off];
 		u8 attr_len = pos[off + 1];
@@ -160,50 +164,84 @@ void wpa_bss_check_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
 			break;
 		}
 
-		if (attr_id == QCN_ATTRIB_HE_240_MHZ_SUPP &&
-		    attr_len <= QCN_HE_240_MHZ_MAX_ELEM_LEN &&
-		    attr_len >= sizeof(struct ieee80211_240mhz_vendor_oper_extn_v2)) {
-
-			const struct ieee80211_240mhz_vendor_oper_extn_v2 *oper_240 =
-				(const struct ieee80211_240mhz_vendor_oper_extn_v2 *)(pos + off + 2);
-
-			wpa_hexdump(MSG_DEBUG,
-				    "5G 320MHz check: 240MHz vendor oper structure",
-				    (const u8 *)oper_240,
-				    sizeof(struct ieee80211_240mhz_vendor_oper_extn_v2));
-
-			wpa_dbg(wpa_s, MSG_DEBUG,
-				"5G 320MHz check: is5ghz240mhz=%u ccfs0=%u ccfs1=%u punct_bitmap=0x%04x",
-				oper_240->is5ghz240mhz, oper_240->ccfs0,
-				oper_240->ccfs1, le_to_host16(oper_240->punct_bitmap));
-
-			/* Validate 5G 320MHz (240MHz) support */
-			if (oper_240->is5ghz240mhz) {
-				wpa_printf(MSG_INFO,
-					   "5G 320MHz: Upgrading bandwidth from 160MHz to 320MHz");
-
-				/* Update to 320MHz bandwidth */
-				bss->max_cw = CHAN_WIDTH_320;
-
-				/* Update center frequency indices from vendor IE */
-				bss->center_freq1_idx = oper_240->ccfs0;
-				bss->center_freq2_idx = oper_240->ccfs1;
-
-				/* Update puncturing bitmap from vendor IE */
-				bss->punc_bitmap = le_to_host16(oper_240->punct_bitmap);
-
-				wpa_printf(MSG_INFO,
-					   "5G 320MHz: Updated BSS " MACSTR " - "
-					   "freq=%d center_freq1_idx=%u center_freq2_idx=%u "
-					   "punct_bitmap=0x%04x",
-					   MAC2STR(bss->bssid), bss->freq,
-					   bss->center_freq1_idx, bss->center_freq2_idx,
-					   bss->punc_bitmap);
-			}
-			break;
+		if ((attr_id == QCN_ATTRIB_5GHZ_320MHZ_CSA &&
+		     attr_len == QCN_5GHZ_320MHZ_CSA_ELEM_LEN) ||
+		    (attr_id == QCN_ATTRIB_HE_240_MHZ_SUPP && !oper_240 &&
+		     attr_len <= QCN_HE_240_MHZ_MAX_ELEM_LEN &&
+		     attr_len >= sizeof(struct ieee80211_240mhz_vendor_oper_extn_v2))) {
+			oper_240 = (const struct ieee80211_240mhz_vendor_oper_extn_v2 *)
+				(pos + off + 2);
+			if (attr_id == QCN_ATTRIB_5GHZ_320MHZ_CSA)
+				break;
 		}
+
 		off += 2 + attr_len;
 	}
+
+	if (!oper_240)
+		return;
+
+	wpa_hexdump(MSG_DEBUG,
+		    "5G 320MHz check: 240MHz vendor oper structure",
+		    (const u8 *)oper_240,
+		    sizeof(struct ieee80211_240mhz_vendor_oper_extn_v2));
+
+	wpa_dbg(wpa_s, MSG_DEBUG,
+		"5G 320MHz check: is5ghz240mhz=%u ccfs0=%u ccfs1=%u punct_bitmap=0x%04x",
+		oper_240->is5ghz240mhz, oper_240->ccfs0,
+		oper_240->ccfs1, le_to_host16(oper_240->punct_bitmap));
+
+	/* Validate 5G 320MHz (240MHz) support */
+	if (!oper_240->is5ghz240mhz)
+		return;
+
+	wpa_printf(MSG_INFO,
+		   "5G 320MHz: Upgrading bandwidth from 160MHz to 320MHz");
+
+	/* Update to 320MHz bandwidth */
+	bss->max_cw = CHAN_WIDTH_320;
+
+	/* Update center frequency indices from vendor IE */
+	bss->center_freq1_idx = oper_240->ccfs0;
+	bss->center_freq2_idx = oper_240->ccfs1;
+
+	/* Update puncturing bitmap from vendor IE */
+	bss->punc_bitmap = le_to_host16(oper_240->punct_bitmap);
+
+	wpa_printf(MSG_INFO,
+		   "5G 320MHz: Updated BSS " MACSTR " - "
+		   "freq=%d center_freq1_idx=%u center_freq2_idx=%u "
+		   "punct_bitmap=0x%04x",
+		   MAC2STR(bss->bssid), bss->freq,
+		   bss->center_freq1_idx, bss->center_freq2_idx,
+		   bss->punc_bitmap);
+}
+
+bool wpas_sta_cac_5g_320mhz_update_freq_params_extn(enum chan_width width,
+					     u8 cf2_idx,
+					     struct hostapd_freq_params *params)
+{
+	if (width != CHAN_WIDTH_320 || !cf2_idx || !params)
+		return false;
+
+	params->center_freq1 = 5000 + 5 * cf2_idx;
+	params->center_freq2 = 0;
+
+	return true;
+}
+
+void wpas_ch_switch_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
+					    union wpa_event_data *data)
+{
+	if (!wpa_s || !data || !wpa_s->current_bss)
+		return;
+
+	if ((data->ch_switch.ch_width != CHAN_WIDTH_160 &&
+	     data->ch_switch.ch_width != CHAN_WIDTH_80) ||
+	    !is_5ghz_freq(data->ch_switch.freq))
+		return;
+
+	wpa_bss_check_5g_320mhz_vendor_ie_extn(wpa_s, wpa_s->current_bss);
 }
 
 /**

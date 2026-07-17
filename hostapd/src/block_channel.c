@@ -9,6 +9,65 @@
 #include "ap/ap_config.h"
 #include "cmn.h"
 
+int hostapd_config_parse_block_chanlist(struct hostapd_config_extn *ce,
+					    const char *cmd)
+{
+	char *tmp, *token, *context = NULL, *end = NULL;
+	long chan;
+	int i;
+
+	if (!ce || !cmd) {
+		wpa_printf(MSG_ERROR, "Invalid input for block channel list config");
+		return -1;
+	}
+
+	while (*cmd == ' ')
+		cmd++;
+
+	if (*cmd == '\0') {
+		wpa_printf(MSG_ERROR,
+			   "acs_block_chan_list: no channels specified");
+		return -1;
+	}
+
+	tmp = os_strdup(cmd);
+	if (!tmp)
+		return -1;
+
+	while ((token = str_token(tmp, " ", &context))) {
+		chan = strtol(token, &end, 10);
+		if (*token == '\0' || (end && *end != '\0') || chan < 1 || chan > 255) {
+			wpa_printf(MSG_ERROR, "acs_block_chan_list: invalid channel: '%s'",
+				   token);
+			os_free(tmp);
+			return -1;
+		}
+
+		for (i = 0; i < ce->block_chan_list.n_chan; i++) {
+			if (ce->block_chan_list.chans[i] == (u8) chan)
+				break;
+		}
+		if (i != ce->block_chan_list.n_chan)
+			continue;
+
+		if (ce->block_chan_list.n_chan >= EXTN_MAX_BLOCK_CHAN_LIST) {
+			wpa_printf(MSG_ERROR,
+				   "acs_block_chan_list: exceeded max size %d",
+				   EXTN_MAX_BLOCK_CHAN_LIST);
+			os_free(tmp);
+			return -1;
+		}
+
+		ce->block_chan_list.chans[ce->block_chan_list.n_chan++] = (u8) chan;
+	}
+
+	os_free(tmp);
+	wpa_printf(MSG_DEBUG, "acs_block_chan_list: configured %u blocked channels",
+		   ce->block_chan_list.n_chan);
+
+	return 0;
+}
+
 int hostapd_set_block_chanlist(struct hostapd_iface *iface, const char *cmd)
 {
 	char *tmp, *token, *context = NULL, *end = NULL;

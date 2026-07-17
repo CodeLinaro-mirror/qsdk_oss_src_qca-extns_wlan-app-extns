@@ -344,6 +344,9 @@ void handle_assoc_cb_wds_ie_extn(struct hostapd_data *hapd,
 void ap_free_sta_wds_ie_extn(struct hostapd_data *hapd, struct sta_info *sta)
 {
 	struct sta_info_extn *sta_extn;
+	struct hostapd_data *phapd;
+	struct sta_info *psta;
+	int aid;
 
 	if (!hapd || !sta)
 		return;
@@ -353,11 +356,43 @@ void ap_free_sta_wds_ie_extn(struct hostapd_data *hapd, struct sta_info *sta)
 	if (!hapd->conf->bss_extn.wds_ie || !sta_extn->wds_ie_peer)
 		return;
 
+	/*
+	 * For MLD STAs, only tear down the WDS interface when the last link
+	 * is gone.  Per-link AP-STA-DISCONNECTED fires for each removed link
+	 * individually; tearing down wlan0.staX on the first one breaks the
+	 * bridge path for the remaining links (wds_sta mode avoids this by
+	 * doing the same check in ap_free_sta()).
+	 */
+	if (ap_sta_is_mld(hapd, sta)) {
+		for_each_mld_link(phapd, hapd) {
+			if (phapd == hapd)
+				continue;
+			psta = ap_get_sta(phapd, sta->addr);
+			if (psta) {
+				wpa_printf(MSG_DEBUG,
+					   "WDS IE: %s - skipping WDS teardown for "
+					    MACSTR " (still connected on partner link)",
+					    hapd->conf->iface, MAC2STR(sta->addr));
+				return;
+			}
+		}
+	}
+
+	if (hapd->conf->mld_ap)
+		aid = sta->wds_mld_uid;
+	else
+		aid = sta->aid;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		aid = sta->aid;
+#endif /* CONFIG_QCN_EXTN */
+
 	wpa_printf(MSG_DEBUG,
 		   "WDS IE: %s - disabling WDS mode for " MACSTR
 		   " (station disconnected)",
 		   hapd->conf->iface, MAC2STR(sta->addr));
 
-	hostapd_set_wds_sta(hapd, NULL, sta->addr, sta->aid, 0);
+	hostapd_set_wds_sta(hapd, NULL, sta->addr, aid, 0);
 	sta_extn->wds_ie_peer = false;
 }

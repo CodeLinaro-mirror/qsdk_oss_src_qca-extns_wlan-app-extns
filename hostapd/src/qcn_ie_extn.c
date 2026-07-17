@@ -151,6 +151,7 @@ size_t hostapd_modify_buflen_for_qcn_ie_extn(struct hostapd_data *hapd)
 	size_t attr_len = 0;
 
 	attr_len += hostapd_qcn_buflen_add_240mhz_attr(hapd);
+	attr_len += hostapd_qcn_buflen_add_5ghz_320mhz_csa_attr(hapd);
 	attr_len += hostapd_qcn_buflen_add_he_mcs_12_13_attr(hapd);
 	if (attr_len)
 		attr_len += QCN_IE_HDR_LEN;
@@ -206,6 +207,7 @@ u8 * hostapd_eid_qcn_vendor_ie_extn(struct hostapd_data *hapd, u8 *eid,
 
 	pos = qcn_ie_begin(pos, &len_ptr);
 	pos = hostapd_qcn_eid_add_240mhz_attr(hapd, pos, opmode);
+	pos = hostapd_qcn_eid_add_5ghz_320mhz_csa_attr(hapd, pos);
 	pos = qcn_eid_add_he_mcs_12_13_attr(hapd->iface->iface_extn.he_mcs_12_13_radio_cap,
 					   hapd->iconf->conf_extn.he_mcs_12_13_enabled &&
 					   hostapd_is_he_enabled(hapd),

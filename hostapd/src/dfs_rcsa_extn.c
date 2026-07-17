@@ -26,6 +26,7 @@
 #include "utils/common.h"
 #include "utils/eloop.h"
 #include "qcn_ie_extn.h"
+#include "acs_extn.h"
 
 /*
  * RCSA Vendor Specific Action frame:
