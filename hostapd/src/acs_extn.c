@@ -1252,7 +1252,7 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
 	u8 chan_no;
 
 	os_memset(&settings, 0, sizeof(settings));
-	settings.cs_count = 5;
+	settings.cs_count = 10;
 
 	settings.freq_params.sec_channel_offset = iface->conf->secondary_channel;
 	settings.freq_params.freq = chan->freq;
