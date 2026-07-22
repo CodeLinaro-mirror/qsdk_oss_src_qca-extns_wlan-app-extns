@@ -474,6 +474,28 @@ static int dfs_nol_ie_bw_mhz_to_chan_width(u32 bandwidth_mhz,
 	}
 }
 
+static int dfs_nol_ie_get_base_freq(int freq, int cf1,
+				    enum oper_chan_width chan_width,
+				    int *base_freq)
+{
+	int bandwidth_mhz = 0;
+
+	if (!base_freq)
+		return -1;
+
+	if (dfs_nol_ie_chan_width_to_bw_mhz(chan_width, freq, cf1,
+					    &bandwidth_mhz))
+		return -1;
+
+	/*
+	 * cf1 is the operating center frequency in MHz. Convert it to the
+	 * first 20 MHz subchannel center so radar bitmap bit positions map to
+	 * the actual operating subchannels instead of the primary channel.
+	 */
+	*base_freq = cf1 - (bandwidth_mhz / 2) + (MIN_DFS_SUBCHAN_BW / 2);
+	return 0;
+}
+
 int dfs_is_uplink_csa_enabled(struct hostapd_iface *iface)
 {
 	if (!iface || !iface->conf)
@@ -1020,6 +1042,7 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 			      u16 radar_bitmap,
 			      dfs_nol_ie_info *nol_info)
 {
+	int base_freq = 0;
 	int bandwidth_mhz;
 	int n_subchans;
 	u16 bitmap_mask;
@@ -1046,6 +1069,12 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 	if (n_subchans <= 0 || n_subchans > DFS_MAX_20M_SUB_CH) {
 		wpa_printf(MSG_ERROR, "DFS NOL IE: Invalid subchannel count %d",
 			   n_subchans);
+		return -1;
+	}
+
+	if (dfs_nol_ie_get_base_freq(freq, cf1, chan_width, &base_freq)) {
+		wpa_printf(MSG_ERROR,
+			   "DFS NOL IE: Failed to derive base frequency");
 		return -1;
 	}
 
@@ -1101,7 +1130,7 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 	 *   - Affected: 5520 (bit1), 5540 (bit2)
 	 *   - NOL IE: freq=5520, bandwidth=20, bitmap=0b0011
 	 */
-	nol_info->freq = freq + (start_subchan_idx * MIN_DFS_SUBCHAN_BW);
+	nol_info->freq = base_freq + (start_subchan_idx * MIN_DFS_SUBCHAN_BW);
 	nol_info->bandwidth = MIN_DFS_SUBCHAN_BW;
 	nol_info->subchan_bitmap = contiguous_bitmap;
 
@@ -1110,8 +1139,8 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 		   cf1, bandwidth_mhz, radar_bitmap);
 
 	wpa_printf(MSG_DEBUG,
-		   "DFS NOL IE: Calculated - primary_freq=%d n_subchans=%d",
-		   freq, n_subchans);
+		   "DFS NOL IE: Calculated - base_freq=%d primary_freq=%d n_subchans=%d",
+		   base_freq, freq, n_subchans);
 
 	wpa_printf(MSG_DEBUG,
 		   "DFS NOL IE: Affected subchannels - start_idx=%d end_idx=%d count=%d",
