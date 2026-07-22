@@ -9,12 +9,9 @@
 #include "common/ieee802_11_defs.h"
 #include "ap/hostapd.h"
 #include "ap/sta_info.h"
-#include "../wpa_supplicant/wpa_supplicant_i.h"
-#include "../wpa_supplicant/bss.h"
 #include "cmn.h"
 #include "wds_ie.h"
 #include "qcn_ie_extn.h"
-#include "../wpa_supplicant/config.h"
 #include "240mhz.h"
 
 /**
@@ -27,7 +24,7 @@
  *
  * Returns the updated write pointer.
  */
-static u8 *qcn_ie_begin(u8 *pos, u8 **len_ptr)
+u8 *qcn_ie_begin(u8 *pos, u8 **len_ptr)
 {
 	*pos++ = WLAN_EID_VENDOR_SPECIFIC;
 	*len_ptr = pos;
@@ -49,7 +46,7 @@ static u8 *qcn_ie_begin(u8 *pos, u8 **len_ptr)
  *
  * The Len field covers everything after itself: OUI(3)+type(1)+attrs.
  */
-static void qcn_ie_end(u8 *len_ptr, const u8 *end)
+void qcn_ie_end(u8 *len_ptr, const u8 *end)
 {
 	*len_ptr = (u8)(end - len_ptr - 1);
 }
@@ -159,27 +156,8 @@ size_t hostapd_modify_buflen_for_qcn_ie_extn(struct hostapd_data *hapd)
 	return attr_len;
 }
 
-static size_t wpas_qcn_buflen_add_he_mcs_12_13_attr(struct wpa_supplicant *wpa_s)
-{
-	if (!wpa_s->conf->conf_extn.he_mcs_12_13_enabled ||
-	    !(wpa_s->hw_capab & BIT(CAPAB_HE)))
-		return 0;
 
-	return QCN_ATTRIB_HDR_LEN + QCN_HE_MCS_12_13_SUPP_ATTRIB_LEN;
-}
-
-size_t wpas_modify_buflen_for_qcn_ie_extn(struct wpa_supplicant *wpa_s)
-{
-	size_t attr_len = 0;
-
-	attr_len += wpas_qcn_buflen_add_he_mcs_12_13_attr(wpa_s);
-	if (attr_len)
-		attr_len += QCN_IE_HDR_LEN;
-
-	return attr_len;
-}
-
-static u8 * qcn_eid_add_he_mcs_12_13_attr(u16 self_cap, bool is_enabled, u8 *pos)
+u8 * qcn_eid_add_he_mcs_12_13_attr(u16 self_cap, bool is_enabled, u8 *pos)
 {
 	u8 l80_nss, g80_nss;
 
@@ -220,27 +198,6 @@ u8 * hostapd_eid_qcn_vendor_ie_extn(struct hostapd_data *hapd, u8 *eid,
 	return pos;
 }
 
-u8 * wpas_eid_qcn_vendor_ie_extn(struct wpa_supplicant *wpa_s, u8 *eid)
-{
-	struct wpa_supplicant_extn *wpas_extn = &wpa_s->wpas_extn;
-	u8 *len_ptr = NULL;
-	u8 *pos = eid;
-
-	if (!eid)
-		return eid;
-
-	pos = qcn_ie_begin(pos, &len_ptr);
-	pos = qcn_eid_add_he_mcs_12_13_attr(wpas_extn->he_mcs_12_13_radio_cap,
-					   wpa_s->conf->conf_extn.he_mcs_12_13_enabled &&
-					   !!(wpa_s->hw_capab & BIT(CAPAB_HE)),
-					   pos);
-
-	if (pos == eid + QCN_IE_HDR_LEN)
-		return eid;
-
-	qcn_ie_end(len_ptr, pos);
-	return pos;
-}
 
 void hostapd_drv_set_peer_he_mcs_12_13_cap_extn(struct hostapd_data *hapd,
 						struct ieee802_11_elems_extn *elems_extn)
@@ -254,51 +211,3 @@ void hostapd_drv_set_peer_he_mcs_12_13_cap_extn(struct hostapd_data *hapd,
 	return;
 }
 
-#ifdef CONFIG_SME
-void wpas_add_qcn_ie_probe_req_extn(struct wpa_supplicant *wpa_s,
-				    struct wpabuf **extra_ie)
-{
-	size_t ie_len;
-	u8 *eid, *eid_end;
-
-	ie_len = wpas_modify_buflen_for_qcn_ie_extn(wpa_s);
-	if (!ie_len)
-		return;
-
-	if (wpa_s->drv_max_probe_req_ie_len &&
-	    wpabuf_len(*extra_ie) + ie_len > wpa_s->drv_max_probe_req_ie_len)
-		return;
-
-	if (wpabuf_resize(extra_ie, ie_len) != 0)
-		return;
-
-	if (wpa_s->sme.freq &&
-	    wpas_set_he_mcs_12_13_cap_extn(wpa_s, wpa_s->sme.freq))
-		return;
-
-	eid = wpabuf_put(*extra_ie, 0);
-	eid_end = wpas_eid_qcn_vendor_ie_extn(wpa_s, eid);
-	wpabuf_put(*extra_ie, eid_end - eid);
-}
-
-void wpas_add_qcn_ie_assoc_req_extn(struct wpa_supplicant *wpa_s)
-{
-	size_t ie_len;
-	u8 *eid, *eid_end;
-
-	ie_len = wpas_modify_buflen_for_qcn_ie_extn(wpa_s);
-	if (!ie_len)
-		return;
-
-	if (wpa_s->sme.assoc_req_ie_len + ie_len >
-	    sizeof(wpa_s->sme.assoc_req_ie))
-		return;
-
-	if (wpas_set_he_mcs_12_13_cap_extn(wpa_s, wpa_s->current_bss->freq))
-		return;
-
-	eid = wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len;
-	eid_end = wpas_eid_qcn_vendor_ie_extn(wpa_s, eid);
-	wpa_s->sme.assoc_req_ie_len += eid_end - eid;
-}
-#endif /* CONFIG_SME */
