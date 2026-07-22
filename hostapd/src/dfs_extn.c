@@ -1644,6 +1644,7 @@ void hostapd_bootup_cac_complete_extn(struct hostapd_iface *iface)
 {
 	iface->bootup_cac_in_progress = 0;
 	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
 
 #ifdef CONFIG_MESH
 	if (iface->mconf)
