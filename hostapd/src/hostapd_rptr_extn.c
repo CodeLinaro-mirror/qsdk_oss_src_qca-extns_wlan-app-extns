@@ -842,6 +842,7 @@ void hostapd_beacon_set_skip_cac_extn(struct hostapd_iface *iface,
 
 	freq_params->skip_cac =
 		(iface->cac_type != HAPD_CAC_COMPLETE_AFTER_CSA) &&
+		iface->iface_extn.dfs_available_from_sta &&
 		iconf->conf_extn.skip_cac;
 	if (!freq_params->skip_cac &&
 	    hostapd_mcst_allows_skip_cac_extn(iface->mcst,
