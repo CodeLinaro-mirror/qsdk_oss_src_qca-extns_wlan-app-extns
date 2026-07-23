@@ -647,6 +647,70 @@ int hostapd_send_uplink_csa_extn(struct hostapd_iface *iface,
 	return 0;
 }
 
+/**
+ * hostapd_handle_missing_nol_ie - Derive full-band NOL info when IE is absent
+ * @iface: hostapd interface context
+ * @nol_info: output NOL entry to populate
+ *
+ * When uplink CSA or RCSA is received without an explicit NOL IE, treat it as
+ * full-band radar for the current operating channel and populate @nol_info
+ * with the corresponding primary frequency, operating bandwidth, and complete
+ * subchannel bitmap.
+ */
+static void
+hostapd_handle_missing_nol_ie(struct hostapd_iface *iface,
+			      dfs_nol_ie_info *nol_info)
+{
+	struct hostapd_hw_modes *mode;
+	enum oper_chan_width oper_chwidth;
+	int center_freq1 = 0;
+	int bandwidth_mhz = 0;
+	int n_subchans = 0;
+	int start_chan_idx = 0;
+	int seg1_start = 0;
+
+	if (!iface || !nol_info || hostapd_is_backhaul_sta_configured(iface))
+		return;
+
+	mode = iface->current_mode;
+	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	center_freq1 = iface->freq;
+	if (oper_chwidth == CONF_OPER_CHWIDTH_USE_HT &&
+	    iface->conf->secondary_channel)
+		center_freq1 += iface->conf->secondary_channel * 10;
+
+	if (!mode ||
+	    dfs_nol_ie_chan_width_to_bw_mhz(oper_chwidth, iface->freq,
+					    center_freq1, &bandwidth_mhz) ||
+	    dfs_nol_ie_get_subchan_count(oper_chwidth, iface->freq,
+					 center_freq1, &n_subchans) ||
+	    n_subchans <= 0 || n_subchans > DFS_MAX_20M_SUB_CH) {
+		wpa_printf(MSG_WARNING,
+			   "uplink_csa: Failed to derive full-BW NOL fallback");
+		return;
+	}
+
+	start_chan_idx = dfs_get_start_chan_idx(iface, &seg1_start, oper_chwidth,
+						iface->conf->channel, false);
+	if (start_chan_idx < 0 || start_chan_idx >= mode->num_channels) {
+		wpa_printf(MSG_WARNING,
+			   "uplink_csa: Failed to derive start channel for full-BW NOL");
+		return;
+	}
+
+	nol_info->freq = mode->channels[start_chan_idx].freq;
+	nol_info->bandwidth = bandwidth_mhz;
+	nol_info->subchan_bitmap = DFS_NOL_IE_BITMAP_MASK(n_subchans);
+
+	if (dfs_process_nol_ie_bitmap(iface, nol_info) == 0) {
+		wpa_printf(MSG_INFO,
+			   "uplink_csa: Missing NOL IE treated as full-BW radar");
+	} else {
+		wpa_printf(MSG_WARNING,
+			   "uplink_csa: Failed to update full-BW NOL");
+	}
+}
+
 /*
  * IEEE 802.11 Spectrum Management Action frame specifics.
  *
@@ -946,6 +1010,7 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 	} else {
 		wpa_printf(MSG_INFO,
 			   "uplink_csa: No NOL IE found in received uplink CSA");
+		hostapd_handle_missing_nol_ie(iface, &nol_info);
 	}
 
 	if (iface->cac_started) {

@@ -1384,8 +1384,14 @@ void wpa_rcsa_handle_radar(struct wpa_supplicant *wpa_s,
 	nol_ie_len = wpa_rcsa_prepare_nol_ie(radar,
 					     nol_ie_buf,
 					     sizeof(nol_ie_buf));
-	if (nol_ie_len < 0)
-		return;
+	if (nol_ie_len < 0) {
+		if (radar->radar_bitmap)
+			return;
+
+		nol_ie_len = 0;
+		wpa_printf(MSG_INFO,
+			   "rcsa: full-BW radar detected, sending RCSA without NOL IE");
+	}
 
 	opt_ie_len = wpa_rcsa_build_opt_ies(wpa_s,
 					    nol_ie_buf,
