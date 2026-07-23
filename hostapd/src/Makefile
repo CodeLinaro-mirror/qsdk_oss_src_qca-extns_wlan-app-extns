@@ -40,6 +40,19 @@ OBJS += qcn_extns/wpa_supplicant_extn.o
 OBJS += qcn_extns/wpa_config_extn.o
 endif
 
+ifdef CONFIG_UDBG_ENH
+CFLAGS += -DCONFIG_UDBG_ENH
+ifndef UDBG_CLIENT_CORE_INC
+$(error UDBG_CLIENT_CORE_INC must be provided when CONFIG_UDBG_ENH is enabled)
+endif
+ifndef UDBG_CLIENT_CORE_LIB
+$(error UDBG_CLIENT_CORE_LIB must be provided when CONFIG_UDBG_ENH is enabled)
+endif
+CFLAGS += -I$(UDBG_CLIENT_CORE_INC)
+LIBS += $(UDBG_CLIENT_CORE_LIB)
+OBJS += qcn_extns/udbg_enh.o
+endif
+
 ifdef CONFIG_EXTERNAL_PLUGIN
 CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN
 CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN_TESTAPP
