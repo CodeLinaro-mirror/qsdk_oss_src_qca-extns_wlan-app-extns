@@ -1,4 +1,5 @@
 CFLAGS += -DCONFIG_QCN_EXTN
+CFLAGS += -DCONFIG_QCN_LOG_EXTN
 
 ifdef CONFIG_QCA_LAB_TEST_FEATURES
 CFLAGS += -DCONFIG_QCA_LAB_TEST_FEATURES
@@ -28,6 +29,7 @@ OBJS += \
 	qcn_extns/dcs.o \
 	qcn_extns/afc.o \
 	qcn_extns/hostapd_extn.o \
+	qcn_extns/hostapd_log_extn.o \
 	qcn_extns/qcn_ie_extn.o \
 	qcn_extns/ttlm_extn.o \
 	qcn_extns/dfs_rcsa_extn.o \
