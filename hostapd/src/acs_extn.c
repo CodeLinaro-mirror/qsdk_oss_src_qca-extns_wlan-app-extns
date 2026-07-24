@@ -1275,6 +1275,13 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
 	    iface->conf->enable_best_power_mode) {
 		int best_power_mode;
 
+		hostapd_get_6ghz_best_pp(iface,
+					 settings.freq_params.freq,
+					 settings.freq_params.center_freq1,
+					 settings.freq_params.bandwidth,
+					 &settings.freq_params.punct_bitmap,
+					 iface->conf->enable_best_power_mode);
+
 		best_power_mode =
 			hostapd_get_best_ap_6ghz_power_mode(iface,
 				settings.freq_params.freq,
