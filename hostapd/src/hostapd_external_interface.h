@@ -511,7 +511,7 @@ struct hostapd_external_app_object {
 	 */
 	void (*init)();
 
-	void (*interface_create)(char *ifname, void *ctx);
+	int (*interface_create)(char *ifname, void *ctx);
 	void (*interface_remove)(char *ifname);
 	void (*invoke_assoc)(char *ifname, uint8_t *sta_mac,
 			     const uint8_t *frame, uint16_t frame_len,
@@ -521,23 +521,23 @@ struct hostapd_external_app_object {
 			    const uint8_t *frame, uint16_t frame_len,
 			    struct hostapd_if_frame_ctx *ctx);
 
-	void (*notify_assoc)(char *ifname, uint8_t *sta_mac,
+	void (*notify_assoc)(void *hapd_ctx, char *ifname, uint8_t *sta_mac,
 			     const uint8_t *frame, uint16_t frame_len,
 			     struct hostapd_if_frame_ctx *ctx);
 
-	void (*notify_auth)(char *ifname, uint8_t *sta_mac,
+	void (*notify_auth)(void *hapd_ctx, char *ifname, uint8_t *sta_mac,
 			    const uint8_t *frame, uint16_t frame_len,
 			    struct hostapd_if_frame_ctx *ctx);
 
-	void (*notify_deauth)(char *ifname, uint8_t *sta_mac,
+	void (*notify_deauth)(void *hapd_ctx, char *ifname, uint8_t *sta_mac,
 			      const void *frame, size_t frame_len,
 			      struct hostapd_if_frame_ctx *ctx);
 
-	void (*notify_disassoc)(char *ifname, uint8_t *sta_mac,
+	void (*notify_disassoc)(void *hapd_ctx, char *ifname, uint8_t *sta_mac,
 				const void *frame, size_t frame_len,
 				struct hostapd_if_frame_ctx *ctx);
 
-	void (*notify_event)(struct hostapd_if_event *event);
+	void (*notify_event)(void *hapd_ctx, struct hostapd_if_event *event);
 
 	void (*eapol_rx)(char *ifname, uint8_t link_id, const uint8_t *sa,
 			 uint8_t *frame, uint16_t frame_len);

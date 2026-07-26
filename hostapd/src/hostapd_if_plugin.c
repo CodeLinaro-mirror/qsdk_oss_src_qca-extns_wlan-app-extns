@@ -302,7 +302,7 @@ const char *hostapd_if_event_string(enum hostapd_if_event_type type)
 	return event_str;
 }
 
-static void notify_event(struct hostapd_if_event *event)
+static void notify_event(void *hapd_ctx, struct hostapd_if_event *event)
 {
 	struct invoke_plugin_datablock *datablock;
 
@@ -489,7 +489,7 @@ static void invoke_remote_auth(char *ifname, uint8_t *sta_mac,
 	return;
 }
 
-static void notify_assoc(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
+static void notify_assoc(void *hapd_ctx, char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 			 uint16_t frame_len, struct hostapd_if_frame_ctx *ctx)
 {
 	uint16_t notify_status_code;
@@ -554,7 +554,7 @@ static void offload_action(char *ifname, const uint8_t *sta_mac, const uint8_t *
 		   category, action_code, rssi);
 }
 
-static void notify_auth(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
+static void notify_auth(void *hapd_ctx, char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 			uint16_t frame_len, struct hostapd_if_frame_ctx *ctx)
 {
 	uint16_t auth_alg = 0;
@@ -607,8 +607,9 @@ static void notify_remote_auth(char *ifname, uint8_t *sta_mac,
 		   ctx->data.remote_auth_req.is_ml_sta);
 }
 
-static void notify_deauth(char *ifname, uint8_t *sta_mac, const void *frame,
-			  size_t frame_len, struct hostapd_if_frame_ctx *ctx)
+static void notify_deauth(void *hapd_ctx, char *ifname, uint8_t *sta_mac,
+			  const void *frame, size_t frame_len,
+			  struct hostapd_if_frame_ctx *ctx)
 {
 	uint16_t reason = 0xFFFF;
 	const char *dir = "UNKNOWN";
@@ -630,8 +631,9 @@ static void notify_deauth(char *ifname, uint8_t *sta_mac, const void *frame,
 		   reason, frame_len);
 }
 
-static void notify_disassoc(char *ifname, uint8_t *sta_mac, const void *frame,
-			    size_t frame_len, struct hostapd_if_frame_ctx *ctx)
+static void notify_disassoc(void *hapd_ctx, char *ifname, uint8_t *sta_mac,
+			    const void *frame, size_t frame_len,
+			    struct hostapd_if_frame_ctx *ctx)
 {
 	uint16_t reason = 0xFFFF;
 	const char *dir = "UNKNOWN";
@@ -790,7 +792,7 @@ static int pull_pmk_r1(char *ifname, uint8_t *sta_mac,
 	return -1;
 }
 
-static void interface_create(char *ifname, void *ctx)
+static int interface_create(char *ifname, void *ctx)
 {
 	struct plugin_hapd_iface *iface;
 
@@ -804,10 +806,10 @@ static void interface_create(char *ifname, void *ctx)
 
 	hapd = ctx;
 	if (!ifname)
-		return;
+		return -1;
 
 	if (!test_plugin.register_frame)
-		return;
+		return -1;
 
 	pthread_mutex_lock(&plugin_iface_mutex);
 
@@ -819,7 +821,7 @@ static void interface_create(char *ifname, void *ctx)
 				   "plugin: failed to alloc iface for %s\n",
 				   ifname);
 			pthread_mutex_unlock(&plugin_iface_mutex);
-			return;
+			return -1;
 		}
 		os_strlcpy(iface->ifname, ifname, sizeof(iface->ifname));
 		iface->hapd = hapd;
@@ -939,6 +941,7 @@ static void interface_create(char *ifname, void *ctx)
 				     true);
 
 	pthread_mutex_unlock(&plugin_iface_mutex);
+	return 0;
 }
 
 static void interface_remove(char *ifname)
