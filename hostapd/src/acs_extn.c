@@ -1270,6 +1270,7 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
 	settings.freq_params.vht_enabled = iface->conf->ieee80211ac;
 	settings.freq_params.he_enabled = iface->conf->ieee80211ax;
 	settings.freq_params.eht_enabled= iface->conf->ieee80211be;
+	settings.freq_params.uhr_enabled = iface->conf->ieee80211bn;
 	settings.freq_params.punct_bitmap = chan->punct_bitmap;
 	settings.power_mode = -1;
 
