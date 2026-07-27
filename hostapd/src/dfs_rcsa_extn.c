@@ -340,11 +340,17 @@ static int hostapd_validate_rcsa_nol_info(struct hostapd_iface *iface,
 static int hostapd_get_rcsa_oper_bw(struct hostapd_iface *iface,
 				    int *bandwidth_mhz)
 {
+	int cf1;
 	int oper_chwidth;
 
 	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	cf1 = iface->freq;
+	if (oper_chwidth == CONF_OPER_CHWIDTH_USE_HT &&
+	    iface->conf->secondary_channel)
+		cf1 += iface->conf->secondary_channel * 10;
+
 	if (dfs_nol_ie_chan_width_to_bw_mhz(oper_chwidth, iface->freq,
-					    iface->freq, bandwidth_mhz)) {
+					    cf1, bandwidth_mhz)) {
 		wpa_printf(MSG_ERROR, "RCSA: unsupported oper chwidth=%d",
 			   oper_chwidth);
 		return -1;
@@ -448,7 +454,9 @@ static int hostapd_extract_rcsa_nol_ie_bitmap(struct hostapd_iface *iface,
 	u16 nol_ie_bitmap;
 	int base_freq;
 	int bandwidth_mhz;
+	int cf1;
 	int n_subchans;
+	int oper_chwidth;
 	int start_subchan_idx;
 
 	if (hostapd_validate_rcsa_nol_info(iface, rcsa_nol, nol_info))
@@ -458,8 +466,13 @@ static int hostapd_extract_rcsa_nol_ie_bitmap(struct hostapd_iface *iface,
 	if (hostapd_get_rcsa_oper_bw(iface, &bandwidth_mhz))
 		return -1;
 
-	if (dfs_nol_ie_get_subchan_count(hostapd_get_oper_chwidth(iface->conf),
-					iface->freq, iface->freq,
+	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	cf1 = iface->freq;
+	if (oper_chwidth == CONF_OPER_CHWIDTH_USE_HT &&
+	    iface->conf->secondary_channel)
+		cf1 += iface->conf->secondary_channel * 10;
+
+	if (dfs_nol_ie_get_subchan_count(oper_chwidth, iface->freq, cf1,
 					&n_subchans)) {
 		wpa_printf(MSG_ERROR,
 			   "RCSA: failed to get subchannel count bw=%d",
@@ -590,6 +603,7 @@ static bool hostapd_parse_rcsa_nol_ie(struct hostapd_iface *iface,
 	int n_subchans = 0;
 	int start_chan_idx = 0;
 	int start_chan_idx1 = 0;
+	int center_freq1 = 0;
 	int oper_chwidth = 0;
 
 	if (!iface)
@@ -636,10 +650,16 @@ static bool hostapd_parse_rcsa_nol_ie(struct hostapd_iface *iface,
 		return false;
 
 	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	center_freq1 = iface->freq;
+	if (oper_chwidth == CONF_OPER_CHWIDTH_USE_HT &&
+	    iface->conf->secondary_channel)
+		center_freq1 += iface->conf->secondary_channel * 10;
+
 	if (hostapd_get_rcsa_oper_bw(iface, &bandwidth_mhz))
 		return false;
 
-	if (dfs_nol_ie_get_subchan_count(oper_chwidth, iface->freq, iface->freq,
+	if (dfs_nol_ie_get_subchan_count(oper_chwidth, iface->freq,
+					 center_freq1,
 					 &n_subchans))
 		return false;
 
