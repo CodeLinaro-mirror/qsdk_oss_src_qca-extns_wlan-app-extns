@@ -447,31 +447,30 @@ int dfs_nol_ie_chan_width_to_bw_mhz(enum oper_chan_width chan_width,
 	}
 }
 
-static int dfs_nol_ie_bw_mhz_to_chan_width(u32 bandwidth_mhz,
-					   int *chan_width)
+int dfs_nol_ie_get_subchan_count(enum oper_chan_width chan_width,
+				 int freq, int cf1,
+				 int *n_subchans)
 {
-	if (!chan_width)
+	int bandwidth_mhz;
+
+	if (!n_subchans)
 		return -1;
 
-	switch (bandwidth_mhz) {
-	case DFS_NOL_IE_BW_20_MHZ:
-		*chan_width = CHAN_WIDTH_20;
+	if (chan_width == CONF_OPER_CHWIDTH_320MHZ && is_5ghz_freq(freq)) {
+		/*
+		 * UD 5 GHz "320 MHz" operation is the 240 MHz special case and
+		 * spans only 12 contiguous 20 MHz subchannels.
+		 */
+		*n_subchans = 12;
 		return 0;
-	case DFS_NOL_IE_BW_40_MHZ:
-		*chan_width = CHAN_WIDTH_40;
-		return 0;
-	case DFS_NOL_IE_BW_80_MHZ:
-		*chan_width = CHAN_WIDTH_80;
-		return 0;
-	case DFS_NOL_IE_BW_160_MHZ:
-		*chan_width = CHAN_WIDTH_160;
-		return 0;
-	case DFS_NOL_IE_BW_320_MHZ:
-		*chan_width = CHAN_WIDTH_320;
-		return 0;
-	default:
-		return -1;
 	}
+
+	if (dfs_nol_ie_chan_width_to_bw_mhz(chan_width, freq, cf1,
+					    &bandwidth_mhz))
+		return -1;
+
+	*n_subchans = bandwidth_mhz / MIN_DFS_SUBCHAN_BW;
+	return 0;
 }
 
 static int dfs_nol_ie_get_base_freq(int freq, int cf1,
@@ -1052,7 +1051,7 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 	int contiguous_count;
 	u16 contiguous_bitmap;
 
-	if (!iface || !nol_info) {
+	if (!nol_info) {
 		wpa_printf(MSG_ERROR, "DFS NOL IE: Invalid parameters");
 		return -1;
 	}
@@ -1065,8 +1064,8 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 		return -1;
 	}
 
-	n_subchans = bandwidth_mhz / MIN_DFS_SUBCHAN_BW;
-	if (n_subchans <= 0 || n_subchans > DFS_MAX_20M_SUB_CH) {
+	if (dfs_nol_ie_get_subchan_count(chan_width, freq, cf1, &n_subchans) ||
+	    n_subchans <= 0 || n_subchans > DFS_MAX_20M_SUB_CH) {
 		wpa_printf(MSG_ERROR, "DFS NOL IE: Invalid subchannel count %d",
 			   n_subchans);
 		return -1;
@@ -1116,7 +1115,7 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 	 * radar_bitmap),
 	 * the NOL IE bitmap should be 0b0011 (bits 0-1 set).
 	 */
-	contiguous_bitmap = (1U << contiguous_count) - 1;
+	contiguous_bitmap = (u16) ((1U << contiguous_count) - 1);
 
 	/*
 	 * RCSA design for NOL IE
@@ -1391,7 +1390,6 @@ int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
 	u32 base_freq;
 	u16 bm;
 	int bw_mhz;
-	int chan_width_enum;
 	int bit;
 	int ret = 0;
  
@@ -1409,11 +1407,6 @@ int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
 	}
 
 	bw_mhz = (int)nol_info->bandwidth;
-	if (dfs_nol_ie_bw_mhz_to_chan_width(bw_mhz, &chan_width_enum)) {
-		wpa_printf(MSG_ERROR,
-			   "DFS NOL IE: Unsupported bandwidth %d MHz", bw_mhz);
-		return -1;
-	}
 
 	base_freq = nol_info->freq;
 	wpa_printf(MSG_INFO,
@@ -1423,7 +1416,7 @@ int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
 	/*
 	 * Each bit k in bm represents a 20 MHz subchannel:
 	 *   freq_k = base_freq + k * MIN_DFS_SUBCHAN_BW
-	 * Only DFS_MAX_20M_SUB_CH (8) bits are valid.
+	 * The NOL bitmap is carried as u16, so process the full 16-bit range.
 	 */
 	for (bit = 0; bit < DFS_MAX_20M_SUB_CH; bit++) {
 		u32 chan_freq;
@@ -1436,8 +1429,13 @@ int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
 			   "DFS NOL IE: Marking %u MHz as NOL (base=%u bit=%d)",
 			   chan_freq, base_freq, bit);
 
+		/*
+		 * This loop processes one 20 MHz subchannel at a time, so DFS
+		 * state must be updated using a 20 MHz chandef even when the
+		 * original operating bandwidth was wider.
+		 */
 		if (!set_dfs_state(iface, chan_freq, 1, 0,
-				   chan_width_enum, chan_freq, 0,
+				   CHAN_WIDTH_20, chan_freq, 0,
 				   HOSTAPD_CHAN_DFS_UNAVAILABLE,
 				   DFS_NOL_IE_SINGLE_SUBCHAN_BITMAP)) {
 			wpa_printf(MSG_WARNING,

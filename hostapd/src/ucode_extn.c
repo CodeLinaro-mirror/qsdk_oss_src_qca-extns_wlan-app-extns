@@ -262,7 +262,8 @@ uc_value_t *uc_wpas_notify_uplink_csa_extn(uc_vm_t *vm, size_t nargs)
 
 	wpa_printf(MSG_INFO,
 		   "%s freq=%d chan=%d csa_count=%d new_ch_width=%u ch_seg_0=%u ch_seg_1=%u cac_abort=%d",
-		   __func__, freq, chan, cs_count, new_ch_width, ch_seg_0, ch_seg_1, cac_abort);
+		   __func__, freq, chan, cs_count, new_ch_width, ch_seg_0,
+		   ch_seg_1, cac_abort);
 
 	nol_channel = ucv_object_get(info, "nol_channel", NULL);
 	if (nol_channel && ucv_type(nol_channel) == UC_OBJECT) {
