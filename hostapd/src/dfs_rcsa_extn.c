@@ -897,12 +897,13 @@ bool hostapd_rcsa_rx_hdl(struct hostapd_data *hapd,
 	if (!iface)
 		return 0;
 
-	if (iface->iface_extn.nol_info_valid &&
-	    !hostapd_is_backhaul_sta_configured(iface)) {
-		wpa_printf(MSG_DEBUG, "RCSA: notifying radar from parsed NOL IE");
+	if (iface->iface_extn.nol_info_valid) {
+		wpa_printf(MSG_DEBUG,
+			   "RCSA: applying parsed NOL IE on local receiver");
 		hostapd_rcsa_notify_radar(target_hapd);
 
-		if (!hostapd_csa_in_progress(iface)) {
+		if (!hostapd_is_backhaul_sta_configured(iface) &&
+		    !hostapd_csa_in_progress(iface)) {
 			wpa_printf(MSG_DEBUG,
 				   "RCSA: root triggering DFS channel switch from parsed NOL IE");
 			hostapd_dfs_start_channel_switch(iface);
