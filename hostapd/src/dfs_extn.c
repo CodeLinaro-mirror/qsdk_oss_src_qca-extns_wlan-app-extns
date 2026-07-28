@@ -550,6 +550,12 @@ static void hostapd_notify_uplink_csa(struct hostapd_iface *iface, u8 channel, i
 {
 	wpa_printf(MSG_INFO, "DFS channel uplink notifcation %d", channel);
 
+	if (iface->num_bss && iface->bss && iface->bss[0])
+		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_UPLINK_CSA
+			"freq=%d cs_count=%d chan_width=%d cf1=%d cf2=%d",
+			freq, HAPD_DFS_UPLINK_CSA_COUNT, new_ch_width,
+			ch_seg_0, ch_seg_1);
+
 	if (nol_info)
 		wpa_printf(MSG_INFO, "DFS: NOL entry present freq=%u bw=%u bitmap=0x%04x",
 			   nol_info->freq, nol_info->bandwidth, nol_info->subchan_bitmap);
@@ -557,11 +563,12 @@ static void hostapd_notify_uplink_csa(struct hostapd_iface *iface, u8 channel, i
 		wpa_printf(MSG_INFO, "DFS: No NOL entry");
 
 	wpa_printf(MSG_INFO, "freq=%d channel=%d cs_count=%d chan_width=%d cf1=%d cf2=%d",
-		   freq, channel, 10, new_ch_width, ch_seg_0, ch_seg_1);
+		   freq, channel, HAPD_DFS_UPLINK_CSA_COUNT, new_ch_width, ch_seg_0, ch_seg_1);
 
 	/* Notify wpa_supplicant to send uplink csa action frame */
 	hostapd_ucode_notify_uplink_csa(iface, EVENT_DFS_UPLINK_CHANNEL_SELECTED, channel,
-					freq, 10, new_ch_width, ch_seg_0, ch_seg_1,
+					freq, HAPD_DFS_UPLINK_CSA_COUNT,
+					new_ch_width, ch_seg_0, ch_seg_1,
 					nol_info);
 
 	/* start timer for fallback mechanism, disconnect backhaul station when
