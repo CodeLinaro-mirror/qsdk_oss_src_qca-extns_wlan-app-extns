@@ -575,7 +575,8 @@ static bool hostapd_store_rcsa_nol_info(struct hostapd_iface *iface,
  *
  * On success, updates iface->iface_extn.nol_info and sets
  * iface->iface_extn.nol_info_valid to true. Existing NOL state is cleared
- * before parsing to avoid using stale data.
+ * before parsing to avoid using stale data. Missing NOL IE on root AP is
+ * treated as full-bandwidth radar.
  *
  * Return: true when a valid NOL IE is parsed, false otherwise.
  */
@@ -585,6 +586,11 @@ static bool hostapd_parse_rcsa_nol_ie(struct hostapd_iface *iface,
 	const u8 *pos = ies;
 	size_t rem_len = ies_len;
 	dfs_nol_ie_info parsed_nol_info;
+	int bandwidth_mhz = 0;
+	int n_subchans = 0;
+	int start_chan_idx = 0;
+	int start_chan_idx1 = 0;
+	int oper_chwidth = 0;
 
 	if (!iface)
 		return false;
@@ -593,7 +599,7 @@ static bool hostapd_parse_rcsa_nol_ie(struct hostapd_iface *iface,
 	os_memset(&iface->iface_extn.nol_info, 0,
 		  sizeof(iface->iface_extn.nol_info));
 	if (!ies || !ies_len)
-		return false;
+		rem_len = 0;
 
 	while (rem_len >= 2) {
 		size_t ie_len = (size_t) pos[1] + 2;
@@ -626,7 +632,40 @@ static bool hostapd_parse_rcsa_nol_ie(struct hostapd_iface *iface,
 		rem_len -= ie_len;
 	}
 
-	return false;
+	if (hostapd_is_backhaul_sta_configured(iface) || !iface->current_mode)
+		return false;
+
+	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	if (hostapd_get_rcsa_oper_bw(iface, &bandwidth_mhz))
+		return false;
+
+	if (dfs_nol_ie_get_subchan_count(oper_chwidth, iface->freq, iface->freq,
+					 &n_subchans))
+		return false;
+
+	if (n_subchans <= 0 || n_subchans > DFS_MAX_20M_SUB_CH)
+		return false;
+
+	start_chan_idx = dfs_get_start_chan_idx(iface, &start_chan_idx1,
+						oper_chwidth,
+						iface->conf->channel, false);
+	if (start_chan_idx < 0 ||
+	    start_chan_idx >= iface->current_mode->num_channels)
+		return false;
+
+	iface->iface_extn.nol_info.freq =
+		iface->current_mode->channels[start_chan_idx].freq;
+	iface->iface_extn.nol_info.bandwidth = bandwidth_mhz;
+	iface->iface_extn.nol_info.subchan_bitmap =
+		DFS_NOL_IE_BITMAP_MASK(n_subchans);
+	iface->iface_extn.nol_info_valid = true;
+	wpa_printf(MSG_INFO,
+		   "RCSA: Missing NOL IE treated as full-BW radar freq=%u bw=%u bitmap=0x%04x",
+		   iface->iface_extn.nol_info.freq,
+		   iface->iface_extn.nol_info.bandwidth,
+		   iface->iface_extn.nol_info.subchan_bitmap);
+
+	return true;
 }
 
 void hostapd_trigger_rcsa_tx(void *eloop_data, void *user_data)
