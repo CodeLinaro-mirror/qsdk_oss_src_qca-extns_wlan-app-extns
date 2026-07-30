@@ -2515,6 +2515,19 @@ static inline void acs_rank_channels(struct hostapd_hw_modes *mode)
 {
 }
 
+#ifdef CONFIG_IEEE80211BN
+static inline int
+qacs_select_best_npca_chan(struct hostapd_iface *iface,
+		struct hostapd_hw_modes *mode,
+		struct hostapd_channel_data *ideal_chan,
+		enum oper_chan_width chwidth,
+		u8 *npca_primary_channel,
+		u16 *npca_punct_bitmap)
+{
+	return -EOPNOTSUPP;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 #else
 void acs_update_total_interference_factor_extn(struct hostapd_iface *iface,
                       struct hostapd_hw_modes *mode, u32 bw, int bw320_offset,
@@ -2529,6 +2542,16 @@ int acs_process_hostapd_scan_data_per_freq(struct hostapd_iface *iface,
 					       int freq_filter);
 void qacs_reset_scan_stats(struct hostapd_iface *iface,
 			   struct hostapd_hw_modes *mode);
+
+#ifdef CONFIG_IEEE80211BN
+int qacs_select_best_npca_chan(struct hostapd_iface *iface,
+		struct hostapd_hw_modes *mode,
+		struct hostapd_channel_data *ideal_chan,
+		enum oper_chan_width chwidth,
+		u8 *npca_primary_channel,
+		u16 *npca_punct_bitmap);
+#endif /* CONFIG_IEEE80211BN */
+
 #endif /*CONFIG_QCN_APP_EXTN */
 
 int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_data *hapd,
