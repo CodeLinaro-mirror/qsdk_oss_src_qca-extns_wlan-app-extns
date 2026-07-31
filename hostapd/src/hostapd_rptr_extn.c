@@ -15,6 +15,7 @@
 #include "drivers/driver.h"
 #include "common/ieee802_11_defs.h"
 #include "common/defs.h"
+#include "common/wpa_ctrl.h"
 #include "hostapd_rptr_extn.h"
 
 /**
@@ -214,12 +215,18 @@ static int uc_hostapd_handle_csa_during_cac_extn(struct hostapd_iface *iface,
 {
 	int i, ret;
 	u8 oper_chwidth;
+	u8 op_class;
 	u8 seg0 = 0;
 	u8 seg1 = 0;
 	u8 channel = 0;
+	u8 chan;
 
-	if (!iface->cac_started)
+	if (!iface->cac_started && !iface->bootup_cac_in_progress)
 		return 1;
+
+	if (!csa->cs_count)
+		csa->cs_count = 5;
+	csa->block_tx = 1;
 
 	ieee80211_freq_to_chan(csa->freq_params.freq, &channel);
 	oper_chwidth = uc_hostapd_bandwidth_to_oper_chwidth_extn(
@@ -233,16 +240,27 @@ static int uc_hostapd_handle_csa_during_cac_extn(struct hostapd_iface *iface,
 	wpa_printf(MSG_INFO,
 		   "CAC active on iface %s - abort CAC and queue deferred CSA "
 		   "for freq=%d chan=%d bw=%d oper_chwidth=%d sec_chan=%d "
-		   "seg0=%u seg1=%u cf1=%d cf2=%d",
+		   "seg0=%u seg1=%u cf1=%d cf2=%d cac_started=%d bootup_cac=%d",
 		   iface->bss[0]->conf->iface, csa->freq_params.freq,
 		   channel, csa->freq_params.bandwidth, oper_chwidth,
 		   csa->freq_params.sec_channel_offset, seg0, seg1,
-		   csa->freq_params.center_freq1, csa->freq_params.center_freq2);
+		   csa->freq_params.center_freq1, csa->freq_params.center_freq2,
+		   iface->cac_started, iface->bootup_cac_in_progress);
 
-	ret = hostapd_dfs_abort_cac_and_request_channel_switch(
-		iface, channel, csa->freq_params.freq,
-		csa->freq_params.sec_channel_offset, oper_chwidth,
-		seg0, seg1, csa->freq_params.punct_bitmap);
+	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_NEW_CHANNEL
+		"freq=%d chan=%d sec_chan=%d", csa->freq_params.freq,
+		channel, csa->freq_params.sec_channel_offset);
+
+	if (ieee80211_freq_to_channel_ext(csa->freq_params.freq,
+					  csa->freq_params.sec_channel_offset,
+					  oper_chwidth, &op_class, &chan) !=
+					  NUM_HOSTAPD_MODES) {
+		wpa_printf(MSG_DEBUG, "Update op_class %d->%d",
+			   iface->conf->op_class, op_class);
+		iface->conf->op_class = op_class;
+	}
+
+	ret = hostapd_abort_cac_for_channel_switch(iface, csa);
 	if (ret) {
 		wpa_printf(MSG_ERROR,
 			   "CAC abort channel switch request failed ret=%d", ret);
@@ -396,10 +414,15 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 		return ret;
 	}
 
+	wpa_printf(MSG_INFO,
+		   "CSA: cac_started=%d bootup_cac=%d is_dfs=%d skip_cac=%d",
+		   iface->cac_started, iface->bootup_cac_in_progress, is_dfs,
+		   csa->freq_params.skip_cac);
+
 	/* If channel params differ, perform CSA and track per-BSS completion */
 	if (!uc_hostapd_compare_channel_params_extn(conf, csa->freq_params, iface->freq) ||
 	     iface->conf->conf_extn.rpt_max_phy) {
-		if (iface->cac_started) {
+		if (iface->cac_started || iface->bootup_cac_in_progress) {
 			ret = uc_hostapd_handle_csa_during_cac_extn(iface, csa,
 								    pre_connect);
 			if (ret <= 0)
@@ -446,6 +469,15 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 			if (pre_connect)
 				iface->iface_extn.csa_bitmap |= BIT(i);
 		}
+	} else if (is_dfs &&
+		   (iface->cac_started || iface->bootup_cac_in_progress) &&
+		   csa->freq_params.skip_cac) {
+		wpa_printf(MSG_INFO,
+			   "AP is already on requested DFS channel, abort CAC and honor skip_cac CSA");
+		ret = uc_hostapd_handle_csa_during_cac_extn(iface, csa,
+							    pre_connect);
+		if (ret <= 0)
+			return ret;
 	} else {
 		/* No CSA needed; notify supplicant only in PRE_CONNECT */
 		wpa_printf(MSG_INFO, "AP is already UP in same channel");
