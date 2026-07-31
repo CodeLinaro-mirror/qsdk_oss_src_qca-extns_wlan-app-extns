@@ -1293,7 +1293,7 @@ struct uc_value *uc_wpas_notify_rcsa_extn(struct uc_vm *vm, size_t nargs)
 
 static void wpa_rcsa_get_local_ml_info(struct wpa_supplicant *wpa_s,
 					  bool *include_ml_ie,
-					  u16 *link_id_bitmap, u16 *link_id)
+					  u16 *link_id_bitmap, int *link_id)
 {
 	u16 i;
 	*include_ml_ie = false;
@@ -1415,7 +1415,7 @@ static int wpa_rcsa_prepare_nol_ie(const struct dfs_event *radar,
 static size_t wpa_rcsa_build_opt_ies(struct wpa_supplicant *wpa_s,
 				     const u8 *nol_ie, size_t nol_ie_len,
 				     u8 *opt_ie, size_t opt_ie_buf_len,
-				     u16 *link_id)
+				     int *link_id)
 {
 	bool include_ml_ie;
 	u16 link_id_bitmap;
@@ -1438,7 +1438,7 @@ void wpa_rcsa_handle_radar(struct wpa_supplicant *wpa_s,
 	int nol_ie_len;
 	size_t opt_ie_len;
 	u8 chan;
-	u16 link_id = -1;
+	int link_id = -1;
 	unsigned int tx_freq;
 
 	nol_ie_len = wpa_rcsa_prepare_nol_ie(radar,
@@ -1453,13 +1453,14 @@ void wpa_rcsa_handle_radar(struct wpa_supplicant *wpa_s,
 					    opt_ie,
 					    sizeof(opt_ie), &link_id);
 
-	if (link_id < 0)
-		return;
-
-	if (wpa_s->links[link_id].pending_ch_switch_freq)
-		tx_freq = wpa_s->links[link_id].pending_ch_switch_freq;
-	else
+	if (link_id >= 0 && link_id < MAX_NUM_MLD_LINKS) {
+		if (wpa_s->links[link_id].pending_ch_switch_freq)
+			tx_freq = wpa_s->links[link_id].pending_ch_switch_freq;
+		else
+			tx_freq = wpa_s->links[link_id].freq;
+	} else {
 		tx_freq = wpa_s->assoc_freq;
+	}
 	ieee80211_freq_to_chan(tx_freq, &chan);
 	wpa_printf(MSG_INFO,
 		   "rcsa: radar detected freq %d [%d], sending RCSA Txfreq=%d  bw=%u"
