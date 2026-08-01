@@ -1858,6 +1858,13 @@ wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, struct wpa_bss *bss
 	return false;
 }
 
+static inline bool
+wpas_link_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, int freq,
+					enum chan_width width, int cf1, int cf2)
+{
+	return false;
+}
+
 static inline void
 wpas_dfs_radar_detected_sta_mode(struct wpa_supplicant *wpa_s,
 				      struct dfs_event *radar)
@@ -2925,6 +2932,8 @@ enum chan_width
 hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
 				       int sec_channel_offset);
 bool wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, struct wpa_bss *bss);
+bool wpas_link_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, int freq,
+				     enum chan_width width, int cf1, int cf2);
 void wpas_dfs_radar_detected_sta_mode(struct wpa_supplicant *wpa_s,
 				      struct dfs_event *radar);
 void wpas_dfs_nop_finished_sta_mode(struct wpa_supplicant *wpa_s,
