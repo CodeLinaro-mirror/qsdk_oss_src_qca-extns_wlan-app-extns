@@ -1767,10 +1767,39 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 		return false;
 
 	if (bootup_cac_current_channel_has_nol_extn(iface)) {
+		struct hostapd_channel_data *channel;
+		int secondary_channel;
+		u8 oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx;
+		u8 oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+		int channel_type = DFS_ANY_CHANNEL_EXTN;
+
 		wpa_printf(MSG_DEBUG,
-			   "Boot-up CAC: skipping on DFS unavailable/NOL channel %d MHz",
+			   "Boot-up CAC: configured channel %d MHz is in NOL, trying bandwidth downgrade",
 			   iface->freq);
-		return false;
+
+		channel = dfs_downgrade_bandwidth_helper(iface, &secondary_channel,
+							 &oper_centr_freq_seg0_idx,
+							 &oper_centr_freq_seg1_idx,
+							 &oper_chwidth,
+							 &channel_type);
+		if (channel) {
+			wpa_printf(MSG_DEBUG,
+				   "Boot-up CAC: NOL fallback channel %d MHz (chan=%d width=%d)",
+				   channel->freq, channel->chan, oper_chwidth);
+			iface->freq = channel->freq;
+			iface->conf->channel = channel->chan;
+			iface->conf->secondary_channel = secondary_channel;
+			hostapd_set_oper_chwidth(iface->conf, oper_chwidth);
+			hostapd_set_oper_centr_freq_seg0_idx(iface->conf,
+							     oper_centr_freq_seg0_idx);
+			hostapd_set_oper_centr_freq_seg1_idx(iface->conf,
+							     oper_centr_freq_seg1_idx);
+		} else {
+			wpa_printf(MSG_DEBUG,
+				   "Boot-up CAC: no fallback channel found for NOL channel %d MHz",
+				   iface->freq);
+			return false;
+		}
 	}
 
 	if (hostapd_set_dfs_cac_time(iface))
