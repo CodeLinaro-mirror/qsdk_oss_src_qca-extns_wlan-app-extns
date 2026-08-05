@@ -1744,6 +1744,21 @@ static bool bootup_cac_current_channel_has_nol_extn(struct hostapd_iface *iface)
 }
 
 /**
+ * hostapd_bootup_cac_enabled_extn - Check whether driver-managed boot-up CAC is enabled
+ *
+ * Returns true when the driver advertises
+ * WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC and interface teardown during
+ * CAC is not requested through disable_iface_during_cac configuration.
+ *
+ * Return: true if driver-managed boot-up CAC is enabled, false otherwise.
+ */
+bool hostapd_bootup_cac_enabled_extn(struct hostapd_iface *iface)
+{
+	return (iface->drv_flags2 & WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC) &&
+	       !iface->conf->conf_extn.disable_iface_during_cac;
+}
+
+/**
  * hostapd_bootup_cac_start_extn - Start boot-up CAC if the driver and config allow it.
  *
  * When the driver advertises WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC and
@@ -1761,10 +1776,11 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 	if (!is_5ghz_freq(iface->freq))
 		return false;
 
-	if (!((iface->drv_flags2 & WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC) &&
-	      !iface->conf->conf_extn.disable_iface_during_cac &&
-	      hostapd_is_cac_required(iface)))
+	if (!hostapd_bootup_cac_enabled_extn(iface))
 		return false;
+
+	if (!hostapd_is_cac_required(iface))
+		return true;
 
 	if (bootup_cac_current_channel_has_nol_extn(iface)) {
 		wpa_printf(MSG_DEBUG,
@@ -1786,6 +1802,7 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 
 	wpa_printf(MSG_DEBUG, "DFS start CAC on %d MHz%s", iface->freq,
 		   dfs_use_radar_background(iface) ? " (background)" : "");
+
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_START
 		"freq=%d chan=%d sec_chan=%d, width=%d, seg0=%d, seg1=%d, cac_time=%ds bitmap:0x%04x",
 		iface->freq,
