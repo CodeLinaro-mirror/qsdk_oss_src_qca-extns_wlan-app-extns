@@ -503,9 +503,9 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		return hostapd_config_parse_block_chanlist(conf_extn, pos);
 	} else if (os_strcmp(buf, "acs_periodic_interval") == 0) {
 		val = atoi(pos);
-		if (val < 60 || val > 86400) {
+		if (val != 0 && (val < 60 || val > 86400)) {
 			wpa_printf(MSG_ERROR,
-				   "Line %d: invalid acs_periodic_interval %d (expected 60..86400)",
+				   "Line %d: invalid acs_periodic_interval %d (expected 0 or 60..86400)",
 				   line, val);
 			return -1;
 		}
