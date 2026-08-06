@@ -1352,7 +1352,7 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
 				   settings.freq_params.sec_channel_offset,
 				   settings.freq_params.bandwidth);
 			return -1;
-	}
+		}
 
 
 	if (iface->conf->disable_csa_dfs == 1) {
@@ -1370,17 +1370,20 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
                    settings.freq_params.bandwidth,
                    settings.freq_params.center_freq1);
 
-        /* Perform CAC and switch channel via fallback */
+	if(iface->cac_started || iface->bootup_cac_in_progress) {
+		wpa_printf(MSG_DEBUG, "ACS: CAC in progress and ACS invoked - Aborting CAC");
+		return hostapd_abort_cac_for_channel_switch(iface, &settings);
+	}
+
+	/* Perform CAC and switch channel via fallback */
         iface->is_ch_switch_dfs = true;
         hostapd_switch_channel_fallback(iface, &settings.freq_params);
         return 0;
     }
 
-    if (iface->cac_started) {
-        wpa_printf(MSG_DEBUG,
-                   "ACS: CAC in progress - switching channel without CSA");
-        return hostapd_force_channel_switch(iface, &settings);
-    }
+	if (iface->cac_started || iface->bootup_cac_in_progress) {
+		return hostapd_abort_cac_for_channel_switch(iface, &settings);
+	}
 
     if (iface->conf->disable_csa_dfs == 1) {
         wpa_printf(MSG_DEBUG, "ACS: cancel radar handling timer for %s",
