@@ -5,6 +5,8 @@
 
 #include "utils/includes.h"
 #include <math.h>
+#include <arpa/inet.h>
+#include <limits.h>
 
 #include "utils/common.h"
 #include "utils/list.h"
@@ -19,6 +21,105 @@
 #include "ap/ieee802_11.h"
 #include "dcs.h"
 #include "block_channel.h"
+
+static char *hostapd_config_trim_extn(char *str)
+{
+	char *end;
+
+	if (!str)
+		return NULL;
+
+	while (*str == ' ' || *str == '\t' || *str == '\r')
+		str++;
+
+	end = str + os_strlen(str);
+	while (end > str &&
+	       (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r'))
+		*--end = '\0';
+
+	return str;
+}
+
+static int hostapd_config_set_udbg_ip(struct hostapd_config_extn *conf_extn,
+				      const char *value, int line)
+{
+	struct in_addr a4;
+	struct in6_addr a6;
+	char *tmp;
+	char *trimmed;
+
+	tmp = os_strdup(value ? value : "");
+	if (!tmp)
+		return -1;
+
+	trimmed = hostapd_config_trim_extn(tmp);
+	if (!trimmed[0]) {
+		wpa_printf(MSG_ERROR,
+			   "Line %d: invalid udbg_enh_server_ip (empty value)",
+			   line);
+		os_free(tmp);
+		return -1;
+	}
+
+	if (inet_pton(AF_INET, trimmed, &a4) != 1 &&
+	    inet_pton(AF_INET6, trimmed, &a6) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "Line %d: invalid udbg_enh_server_ip '%s' (expected numeric IPv4/IPv6)",
+			   line, trimmed);
+		os_free(tmp);
+		return -1;
+	}
+
+	if (os_strlen(trimmed) >= sizeof(conf_extn->udbg_enh_server_ip)) {
+		wpa_printf(MSG_ERROR,
+			   "Line %d: invalid udbg_enh_server_ip '%s' (maximum %zu characters)",
+			   line, trimmed,
+			   sizeof(conf_extn->udbg_enh_server_ip) - 1);
+		os_free(tmp);
+		return -1;
+	}
+
+	os_strlcpy(conf_extn->udbg_enh_server_ip, trimmed,
+		   sizeof(conf_extn->udbg_enh_server_ip));
+	os_free(tmp);
+
+	return 0;
+}
+
+static int hostapd_config_set_udbg_app_id(struct hostapd_config_extn *conf_extn,
+					  const char *value, int line)
+{
+	char *tmp;
+	char *trimmed;
+
+	tmp = os_strdup(value ? value : "");
+	if (!tmp)
+		return -1;
+
+	trimmed = hostapd_config_trim_extn(tmp);
+	if (!trimmed[0]) {
+		wpa_printf(MSG_ERROR,
+			   "Line %d: invalid udbg_enh_app_id (empty value)",
+			   line);
+		os_free(tmp);
+		return -1;
+	}
+
+	if (os_strlen(trimmed) >= sizeof(conf_extn->udbg_enh_app_id)) {
+		wpa_printf(MSG_ERROR,
+			   "Line %d: invalid udbg_enh_app_id '%s' (maximum %zu characters)",
+			   line, trimmed,
+			   sizeof(conf_extn->udbg_enh_app_id) - 1);
+		os_free(tmp);
+		return -1;
+	}
+
+	os_strlcpy(conf_extn->udbg_enh_app_id, trimmed,
+		   sizeof(conf_extn->udbg_enh_app_id));
+	os_free(tmp);
+
+	return 0;
+}
 
 void
 hostapd_config_defaults_extn(struct hostapd_config *conf)
@@ -99,6 +200,17 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->autorecovery_after_nol_vapdown = 1;
 
 	conf_extn->he_mcs_12_13_enabled = DEFAULT_HE_MCS_12_13_SUPPORT;
+
+	conf_extn->udbg_enh_enable = false;
+	os_strlcpy(conf_extn->udbg_enh_server_ip, "127.0.0.1",
+		   sizeof(conf_extn->udbg_enh_server_ip));
+	conf_extn->udbg_enh_server_port = 55555;
+	os_strlcpy(conf_extn->udbg_enh_app_id, "hostapd",
+		   sizeof(conf_extn->udbg_enh_app_id));
+	conf_extn->udbg_enh_records = 512;
+	conf_extn->udbg_enh_ring_max_bytes = 2097152;
+	conf_extn->udbg_enh_service_delay_ms = 1000;
+
 }
 
 void
@@ -510,6 +622,42 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		conf_extn->acs_periodic_interval = val;
+	} else if (os_strcmp(buf, "udbg_enh_enable") == 0) {
+		val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid udbg_enh_enable %d (expected 0 or 1)",
+				   line, val);
+			return -1;
+		}
+		conf_extn->udbg_enh_enable = val;
+		return 0;
+	} else if (os_strcmp(buf, "udbg_enh_server_ip") == 0) {
+		if (hostapd_config_set_udbg_ip(conf_extn, pos, line) < 0)
+			return -1;
+		return 0;
+	} else if (os_strcmp(buf, "udbg_enh_server_port") == 0) {
+		conf_extn->udbg_enh_server_port = (int) atol(pos);
+		return 0;
+	} else if (os_strcmp(buf, "udbg_enh_app_id") == 0) {
+		if (hostapd_config_set_udbg_app_id(conf_extn, pos, line) < 0)
+			return -1;
+		return 0;
+	} else if (os_strcmp(buf, "udbg_enh_records") == 0) {
+		conf_extn->udbg_enh_records = (size_t) atol(pos);
+		return 0;
+	} else if (os_strcmp(buf, "udbg_enh_ring_max_bytes") == 0) {
+		conf_extn->udbg_enh_ring_max_bytes = (size_t) atol(pos);
+		return 0;
+	} else if (os_strcmp(buf, "udbg_enh_service_delay_ms") == 0) {
+		conf_extn->udbg_enh_service_delay_ms = (uint32_t) atol(pos);
+		if (!conf_extn->udbg_enh_service_delay_ms) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid udbg_enh_service_delay_ms 0",
+				   line);
+			return -1;
+		}
+		return 0;
 	} else if (os_strcmp(buf, "wds_ie") == 0) {
 		/*
 		 * wds_ie - WDS vendor IE advertisement control

@@ -73,6 +73,9 @@ struct wpa_config;
 struct freq_survey;
 struct wpa_ssid;
 
+#define UDBG_ENH_SERVER_IP_SIZE INET6_ADDRSTRLEN
+#define UDBG_ENH_APP_ID_SIZE 64u
+
 struct ieee80211_240mhz_vendor_oper_extn {
 	u8 ccfs1;
 	u8 ccfs0;
@@ -579,6 +582,15 @@ struct hostapd_config_extn {
 
 	/* CBS (Continuous Background Scan) params */
 	struct cbs_params_extn cbs_params;
+
+	/* UDBG client config loaded from hostapd.conf */
+	bool udbg_enh_enable;
+	char udbg_enh_server_ip[UDBG_ENH_SERVER_IP_SIZE];
+	int udbg_enh_server_port;
+	char udbg_enh_app_id[UDBG_ENH_APP_ID_SIZE];
+	size_t udbg_enh_records;
+	size_t udbg_enh_ring_max_bytes;
+	uint32_t udbg_enh_service_delay_ms;
 };
 
 /**
