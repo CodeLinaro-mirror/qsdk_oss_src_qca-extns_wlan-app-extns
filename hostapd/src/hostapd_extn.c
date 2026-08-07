@@ -217,10 +217,29 @@ bool hostapd_is_mesh_vap_extn(struct hostapd_bss_config *conf)
 	return conf->bss_extn.vap_submode == QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH;
 }
 
+/* Returns the reserved trailing mesh MBSSID group, if any. The slot is
+ * retained (and its is_mesh_group marker stays set) across mesh VAP
+ * remove so it can be reused on the next mesh VAP add instead of
+ * growing multi_mbssid->group[] again. */
+struct hostapd_multi_mbssid_group *
+hostapd_get_mesh_group_extn(struct hostapd_multi_mbssid *multi_mbssid)
+{
+	struct hostapd_multi_mbssid_group *group;
+
+	if (!multi_mbssid->group || multi_mbssid->num_mbssid_groups < 1)
+		return NULL;
+
+	group = multi_mbssid->group[multi_mbssid->num_mbssid_groups - 1];
+	if (group && group->is_mesh_group)
+		return group;
+
+	return NULL;
+}
+
 bool hostapd_has_mesh_vap_in_group_extn(struct hostapd_data *hapd,
 					struct hostapd_multi_mbssid *multi_mbssid)
 {
-	struct hostapd_data *bss;
+	struct hostapd_multi_mbssid_group *group;
 
 	if (!hapd || !hapd->conf)
 		return false;
@@ -228,15 +247,11 @@ bool hostapd_has_mesh_vap_in_group_extn(struct hostapd_data *hapd,
 	if (hapd->iconf->mbssid != MULTI_MBSSID_GROUP_ENABLED)
 		return false;
 
-	if (!multi_mbssid->group || (multi_mbssid->num_mbssid_groups < 1) ||
-	    !multi_mbssid->group[multi_mbssid->num_mbssid_groups - 1])
-		return false;
-
-	bss = hostapd_get_multi_group_bss(multi_mbssid->group[multi_mbssid->num_mbssid_groups - 1], 0);
-	if (bss && hostapd_is_mesh_vap_extn(bss->conf)) {
+	group = hostapd_get_mesh_group_extn(multi_mbssid);
+	if (group) {
 		wpa_printf(MSG_DEBUG,
-			   "Found existing mesh VAP: %s in group %zu",
-			   bss->conf->iface, (multi_mbssid->num_mbssid_groups - 1));
+			   "Found mesh MBSSID group %zu (occupied=%d)",
+			   (multi_mbssid->num_mbssid_groups - 1), group->num_bss > 0);
 		return true;
 	}
 
@@ -259,11 +274,16 @@ void hostapd_mesh_mbssid_reserve_group_extn(struct hostapd_multi_mbssid *multi_m
 	*prefix_mask = UINT64_MAX << max_bssid_indicator;
 }
 
-/* Check if current VAP is mesh or if mesh VAP already exists in groups. */
+/* Reject only if the mesh MBSSID group already has an active mesh VAP. A
+ * reserved-but-emptied slot, retained after a previous mesh VAP removal,
+ * is meant to be reused rather than rejected. */
 bool hostapd_mesh_mbssid_reject_duplicate_extn(struct hostapd_data *hapd,
 					       struct hostapd_multi_mbssid *multi_mbssid)
 {
-	if (hostapd_has_mesh_vap_in_group_extn(hapd, multi_mbssid)) {
+	struct hostapd_multi_mbssid_group *mesh_group =
+		hostapd_get_mesh_group_extn(multi_mbssid);
+
+	if (mesh_group && mesh_group->num_bss) {
 		wpa_printf(MSG_ERROR,
 			   "Failed to add %s: Mesh vap MBSSID group exists already",
 			   hapd->conf->iface);
@@ -273,16 +293,29 @@ bool hostapd_mesh_mbssid_reject_duplicate_extn(struct hostapd_data *hapd,
 	return false;
 }
 
-/* If mesh VAP is being added and group array was allocated before mesh
- * VAP existed, we need to reallocate to accommodate the new last group
- * for mesh VAP. This handles the case where AP VAPs are brought up
- * first, then mesh VAP is added later. Returns -1 on allocation failure. */
-int hostapd_mesh_mbssid_grow_group_extn(struct hostapd_data *hapd,
-					struct hostapd_multi_mbssid *multi_mbssid,
-					u8 max_bssid_indicator,
-					u8 *group_index, u64 *prefix_mask)
+/* If mesh VAP is being added and the group array was allocated before the
+ * mesh VAP existed, reuse a previously retained empty mesh slot, or
+ * reallocate to accommodate a new last group for the mesh VAP. The
+ * reallocation case handles AP VAPs being brought up first, then the mesh
+ * VAP being added later. Returns -1 on allocation failure. */
+int hostapd_mesh_mbssid_grow_or_reuse_group_extn(struct hostapd_data *hapd,
+						 struct hostapd_multi_mbssid *multi_mbssid,
+						 u8 max_bssid_indicator,
+						 u8 *group_index, u64 *prefix_mask)
 {
+	struct hostapd_multi_mbssid_group *mesh_group =
+		hostapd_get_mesh_group_extn(multi_mbssid);
 	struct hostapd_multi_mbssid_group **new_group;
+
+	if (mesh_group) {
+		/* A previous mesh VAP remove left this slot allocated but
+		 * empty; reuse it instead of growing the group array again. */
+		*group_index = mesh_group->group_id;
+		*prefix_mask = UINT64_MAX << max_bssid_indicator;
+		wpa_printf(MSG_INFO, "Mesh vap detected: %s, reusing retained group %d",
+			   hapd->conf->iface, *group_index);
+		return 0;
+	}
 
 	new_group = os_realloc_array(multi_mbssid->group,
 				     multi_mbssid->num_mbssid_groups + 1,
@@ -293,8 +326,6 @@ int hostapd_mesh_mbssid_grow_group_extn(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	/* Update the num_mbssid_group to include the mesh group and
-	 * update the group_index and prefix mask for mesh vap */
 	multi_mbssid->num_mbssid_groups++;
 	*group_index = multi_mbssid->num_mbssid_groups - 1;
 	wpa_printf(MSG_INFO, "Mesh vap detected: %s, assigning to last group %d",
@@ -305,6 +336,12 @@ int hostapd_mesh_mbssid_grow_group_extn(struct hostapd_data *hapd,
 	multi_mbssid->group[multi_mbssid->num_mbssid_groups - 1] = NULL;
 
 	return 0;
+}
+
+void hostapd_mesh_mbssid_mark_group_extn(struct hostapd_data *hapd,
+					 struct hostapd_multi_mbssid_group *group)
+{
+	group->is_mesh_group = true;
 }
 
 #ifdef HOSTAPD
