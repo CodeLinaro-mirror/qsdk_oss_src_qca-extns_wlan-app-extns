@@ -45,6 +45,8 @@ enum oper_chan_width;
 enum chan_width;
 struct wpa_ctrl;
 struct hostapd_bss_config;
+struct hostapd_multi_mbssid;
+struct hostapd_multi_mbssid_group;
 struct i802_bss;
 enum wpa_event_type;
 struct nlattr;
@@ -2758,6 +2760,19 @@ int hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 void dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap);
 
 int hostapd_validate_mbssid_configuration_extn(struct hostapd_data *hapd);
+
+bool hostapd_is_mesh_vap_extn(struct hostapd_bss_config *conf);
+bool hostapd_has_mesh_vap_in_group_extn(struct hostapd_data *hapd,
+					struct hostapd_multi_mbssid *multi_mbssid);
+void hostapd_mesh_mbssid_reserve_group_extn(struct hostapd_multi_mbssid *multi_mbssid,
+					    u8 max_bssid_indicator,
+					    u8 *group_index, u64 *prefix_mask);
+bool hostapd_mesh_mbssid_reject_duplicate_extn(struct hostapd_data *hapd,
+					       struct hostapd_multi_mbssid *multi_mbssid);
+int hostapd_mesh_mbssid_grow_group_extn(struct hostapd_data *hapd,
+					struct hostapd_multi_mbssid *multi_mbssid,
+					u8 max_bssid_indicator,
+					u8 *group_index, u64 *prefix_mask);
 
 int hostapd_get_channel_idx(struct hostapd_hw_modes *mode, int channel_num);
 

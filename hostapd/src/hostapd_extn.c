@@ -212,6 +212,101 @@ int hostapd_validate_mbssid_configuration_extn(struct hostapd_data *hapd)
 	return 0;
 }
 
+bool hostapd_is_mesh_vap_extn(struct hostapd_bss_config *conf)
+{
+	return conf->bss_extn.vap_submode == QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH;
+}
+
+bool hostapd_has_mesh_vap_in_group_extn(struct hostapd_data *hapd,
+					struct hostapd_multi_mbssid *multi_mbssid)
+{
+	struct hostapd_data *bss;
+
+	if (!hapd || !hapd->conf)
+		return false;
+
+	if (hapd->iconf->mbssid != MULTI_MBSSID_GROUP_ENABLED)
+		return false;
+
+	if (!multi_mbssid->group || (multi_mbssid->num_mbssid_groups < 1) ||
+	    !multi_mbssid->group[multi_mbssid->num_mbssid_groups - 1])
+		return false;
+
+	bss = hostapd_get_multi_group_bss(multi_mbssid->group[multi_mbssid->num_mbssid_groups - 1], 0);
+	if (bss && hostapd_is_mesh_vap_extn(bss->conf)) {
+		wpa_printf(MSG_DEBUG,
+			   "Found existing mesh VAP: %s in group %zu",
+			   bss->conf->iface, (multi_mbssid->num_mbssid_groups - 1));
+		return true;
+	}
+
+	return false;
+}
+
+/* If mesh vap is the 1st vap to come up, adjust the num_mbssid_group to
+ * include the mesh group and assign the last group for the mesh vap. */
+void hostapd_mesh_mbssid_reserve_group_extn(struct hostapd_multi_mbssid *multi_mbssid,
+					    u8 max_bssid_indicator,
+					    u8 *group_index, u64 *prefix_mask)
+{
+	multi_mbssid->num_mbssid_groups++;
+
+	*group_index = multi_mbssid->num_mbssid_groups - 1;
+
+	wpa_printf(MSG_INFO, "Mesh vap detected, assigning to last group %d",
+		   *group_index);
+
+	*prefix_mask = UINT64_MAX << max_bssid_indicator;
+}
+
+/* Check if current VAP is mesh or if mesh VAP already exists in groups. */
+bool hostapd_mesh_mbssid_reject_duplicate_extn(struct hostapd_data *hapd,
+					       struct hostapd_multi_mbssid *multi_mbssid)
+{
+	if (hostapd_has_mesh_vap_in_group_extn(hapd, multi_mbssid)) {
+		wpa_printf(MSG_ERROR,
+			   "Failed to add %s: Mesh vap MBSSID group exists already",
+			   hapd->conf->iface);
+		return true;
+	}
+
+	return false;
+}
+
+/* If mesh VAP is being added and group array was allocated before mesh
+ * VAP existed, we need to reallocate to accommodate the new last group
+ * for mesh VAP. This handles the case where AP VAPs are brought up
+ * first, then mesh VAP is added later. Returns -1 on allocation failure. */
+int hostapd_mesh_mbssid_grow_group_extn(struct hostapd_data *hapd,
+					struct hostapd_multi_mbssid *multi_mbssid,
+					u8 max_bssid_indicator,
+					u8 *group_index, u64 *prefix_mask)
+{
+	struct hostapd_multi_mbssid_group **new_group;
+
+	new_group = os_realloc_array(multi_mbssid->group,
+				     multi_mbssid->num_mbssid_groups + 1,
+				     sizeof(struct hostapd_multi_mbssid_group *));
+
+	if (!new_group) {
+		wpa_printf(MSG_ERROR, "Failed to allocate MBSSID group for mesh VAP");
+		return -1;
+	}
+
+	/* Update the num_mbssid_group to include the mesh group and
+	 * update the group_index and prefix mask for mesh vap */
+	multi_mbssid->num_mbssid_groups++;
+	*group_index = multi_mbssid->num_mbssid_groups - 1;
+	wpa_printf(MSG_INFO, "Mesh vap detected: %s, assigning to last group %d",
+		   hapd->conf->iface, *group_index);
+
+	*prefix_mask = UINT64_MAX << max_bssid_indicator;
+	multi_mbssid->group = new_group;
+	multi_mbssid->group[multi_mbssid->num_mbssid_groups - 1] = NULL;
+
+	return 0;
+}
+
 #ifdef HOSTAPD
 bool hostapd_regdom_channel_supported(struct hostapd_iface *iface,
 				      struct hostapd_channel_data *chan)
