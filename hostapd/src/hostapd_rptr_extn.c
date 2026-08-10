@@ -882,6 +882,13 @@ void hostapd_beacon_set_skip_cac_extn(struct hostapd_iface *iface,
 					      is_dfs))
 		freq_params->skip_cac = true;
 
+	/* CSwOpts 0x4: AP must perform CAC on STA-triggered bring-up.
+	 * Override any skip_cac set above; the config-file skip_cac=1 may
+	 * have been restored by a config reload after the runtime CSwOpts
+	 * command cleared it to 0. */
+	if (IS_CSH_CAC_APUP_BYSTA_ENABLED(iconf->conf_extn.cswopts))
+		freq_params->skip_cac = false;
+
 	wpa_printf(MSG_INFO,
 		   "Dep Rptr: skip_cac = %d cac_type = %d"
 		   " conf_extn.skip_cac = %d mcst = %u",
