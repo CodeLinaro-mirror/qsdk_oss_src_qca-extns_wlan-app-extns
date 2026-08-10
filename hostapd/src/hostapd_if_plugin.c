@@ -1417,7 +1417,7 @@ void hostapd_if_plugin_deinit()
 
 static pthread_t invoke_thread;
 /* Constructor: called when the shared library is loaded */
-enum hostapd_if_eloop_type hostapd_if_plugin_init(void *arg)
+void hostapd_if_plugin_init(void *arg)
 {
 	global_conf.assoc.status_code = -1;
 	global_conf.auth.status_code = -1;
@@ -1456,7 +1456,6 @@ enum hostapd_if_eloop_type hostapd_if_plugin_init(void *arg)
 	test_plugin.pull_pmk_r1          = pull_pmk_r1;
 
 	hostapd_plugin_register(&test_plugin);
-	return HOSTAPD_IF_ELOOP_ROUTING;
 }
 
 static void hostapd_if_plugin_set_assoc_resp_ies(uint8_t *buf, size_t buf_len)
