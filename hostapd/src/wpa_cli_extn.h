@@ -8,8 +8,7 @@
 
 #ifdef CONFIG_QCN_EXTN
 #define WPA_CLI_CMD_FIELDS_EXTN \
-	"he_mcs_12_13_supp", \
-	"strict_passive_scan",
+	"he_mcs_12_13_supp",
 #else
 #define WPA_CLI_CMD_FIELDS_EXTN
 #endif /* CONFIG_QCN_EXTN */
