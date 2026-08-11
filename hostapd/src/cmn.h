@@ -416,6 +416,11 @@ struct hostapd_data_extn {
 	struct dl_list log_trigger_sent;
 };
 
+struct hapd_interfaces_extn {
+	/* Common BH STA connection state for dependent repeater AP bring-up. */
+	bool bh_sta_connected;
+};
+
 /* NOL IE vendor element encoding/decoding constants */
 #define DFS_NOL_IE_FIXED_HDR_LEN 7 /* EID+Len+OUI(3)+Type+Count */
 #define DFS_NOL_IE_ENTRY_LEN 10    /* freq(4)+bw(4)+bitmap(2) */
@@ -1778,6 +1783,12 @@ hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface)
 }
 
 static inline void
+hostapd_update_bh_sta_connected_extn(struct hostapd_iface *iface,
+				     const char *wpa_state)
+{
+}
+
+static inline void
 dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap)
 {
 }
@@ -2440,6 +2451,8 @@ void hostapd_update_nf(struct hostapd_iface *iface,
 void hostapd_ml_acs_check_and_notify(struct hostapd_iface *iface, bool status);
 void wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx);
 bool hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface);
+void hostapd_update_bh_sta_connected_extn(struct hostapd_iface *iface,
+					  const char *wpa_state);
 bool check_40mhz_2g4_bss_snr_below_threshold_extn(
 	const struct wpa_scan_res *bss,
 	const struct check_40mhz_2g4_extn_args *extn_args);
