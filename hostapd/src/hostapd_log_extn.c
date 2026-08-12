@@ -73,27 +73,32 @@ void hostapd_log_trigger_emit(struct hostapd_data *hapd, const u8 *addr,
 {
 	struct log_trigger_entry *e;
 	const char *iface_name;
+	const u8 *event_addr;
 
-	if (!hapd || !addr || !event_type)
+	if (!hapd || !event_type)
 		return;
 
-	if (log_trigger_find(hapd, addr))
-		return;
+	event_addr = addr ? addr : hapd->own_addr;
 
-	e = os_zalloc(sizeof(*e));
-	if (!e)
-		return;
-	os_memcpy(e->addr, addr, ETH_ALEN);
-	dl_list_add_tail(&hapd->hapd_extn.log_trigger_sent, &e->list);
+	if (addr) {
+		if (log_trigger_find(hapd, addr))
+			return;
+
+		e = os_zalloc(sizeof(*e));
+		if (!e)
+			return;
+		os_memcpy(e->addr, addr, ETH_ALEN);
+		dl_list_add_tail(&hapd->hapd_extn.log_trigger_sent, &e->list);
+	}
 
 	iface_name = hapd->ctrl_sock_iface[0] ? hapd->ctrl_sock_iface :
 		(hapd->conf ? hapd->conf->iface : "unknown");
 
 	wpa_msg(hapd->msg_ctx, MSG_INFO,
 		HOSTAPD_LOG_TRIGGER "addr=" MACSTR " iface=%s event=%s",
-		MAC2STR(addr), iface_name, event_type);
+		MAC2STR(event_addr), iface_name, event_type);
 
-	hapd_ssh_notify(addr, event_type, iface_name);
+	hapd_ssh_notify(event_addr, event_type, iface_name);
 }
 
 
