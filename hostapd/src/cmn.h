@@ -848,14 +848,10 @@ struct wpa_supplicant_extn {
  * struct wpa_config_extn - QCN extension configuration parameters.
  * @he_mcs_12_13_enabled: Indicates whether HE MCS 12/13 support is enabled.
  *                        (enabled by default)
- * @strict_passive_scan: When enabled, restricts scanning to passive-only
- *                       channels; disables active probing on all channels.
- *                       (disabled by default)
  */
 struct wpa_config_extn {
 	bool he_mcs_12_13_enabled;
 	int allow_3addr_mc;
-	bool strict_passive_scan;
 };
 
 int get_centre_freq_6g(int chan_idx, int chan_width, int *centre_freq);
@@ -2943,10 +2939,6 @@ int hostapd_set_he_mcs_12_13_cap_extn(struct hostapd_data *hapd);
  */
 int wpas_set_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq);
 
-struct wpa_scan_res *
-wpa_scan_ssid_hide_beacon_extn(struct wpa_supplicant *wpa_s,
-				     struct wpa_scan_res *scan_res_item);
-
 /**
  * wpa_config_alloc_empty_extn - Set the default value for config parameters.
  * @config: wpa_supplicant extensions configuration values
@@ -2957,7 +2949,6 @@ void wpa_config_alloc_empty_extn(struct wpa_config *config);
 #define EMA_MLO_BSS_MAX_LIMIT 8
 
 #define DEFAULT_HE_MCS_12_13_SUPPORT true
-#define DEFAULT_STRICT_PASSIVE_SCAN false
 
 /* Primary channel list APIs  */
 int hostapd_set_primary_chanlist(struct hostapd_data *hapd, const char *chan_str);

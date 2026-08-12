@@ -14,5 +14,4 @@ wpa_config_alloc_empty_extn(struct wpa_config *config)
 	struct wpa_config_extn *conf_extn = &config->conf_extn;
 
 	conf_extn->he_mcs_12_13_enabled = DEFAULT_HE_MCS_12_13_SUPPORT;
-	conf_extn->strict_passive_scan = DEFAULT_STRICT_PASSIVE_SCAN;
 }
