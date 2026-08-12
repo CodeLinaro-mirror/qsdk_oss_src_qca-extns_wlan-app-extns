@@ -1551,7 +1551,9 @@ hostapd_cbs_handle_single_channel_survey(struct hostapd_iface *iface,
 }
 
 static inline int
-acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
+acs_handle_channel_change_failed_extn(struct hostapd_iface *iface,
+				      struct hostapd_channel_data *ideal_chan,
+				      int err)
 {
 	return -EOPNOTSUPP;
 }
@@ -2615,7 +2617,9 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			       int err);
 void acs_init_extn(struct hostapd_iface *iface, uint8_t trigger);
 int
-acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err);
+acs_handle_channel_change_failed_extn(struct hostapd_iface *iface,
+				      struct hostapd_channel_data *ideal_chan,
+				      int err);
 bool acs_hwbl_candidate_ok(struct hostapd_iface *iface,
 			   struct hostapd_channel_data *chan,
 			   u32 bw, int bw320_offset, u16 punct_bitmap,
@@ -2654,7 +2658,9 @@ acs_init_extn(struct hostapd_iface *iface, uint8_t trigger)
 }
 
 static inline int
-acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
+acs_handle_channel_change_failed_extn(struct hostapd_iface *iface,
+				      struct hostapd_channel_data *ideal_chan,
+				      int err)
 {
 	return -EOPNOTSUPP;
 }

@@ -1479,7 +1479,9 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 }
 
 int
-acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
+acs_handle_channel_change_failed_extn(struct hostapd_iface *iface,
+				      struct hostapd_channel_data *ideal_chan,
+				      int err)
 {
 	if (iface->iface_extn.dynamic_acs_action == DYNAMIC_ACS_DISABLE)
 		return -1;
@@ -1489,8 +1491,15 @@ acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DYNAMIC_ACS_EVENT_FAILED);
 	/* Notify wpa_supplicant to resume scans on failure */
 	hostapd_ml_acs_check_and_notify(iface, 0);
-	hostapd_dcs_restore_extn(iface, "ACS failed");
 	iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+
+	if (!ideal_chan) {
+		wpa_printf(MSG_ERROR, "ACS: No ideal channel found, bringing down the VAP");
+		hostapd_disable_iface(iface);
+		return 0;
+	}
+
+	hostapd_dcs_restore_extn(iface, "ACS failed");
 
 	return 0;
 }
