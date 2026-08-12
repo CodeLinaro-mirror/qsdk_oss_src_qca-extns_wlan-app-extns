@@ -839,15 +839,18 @@ static int hostapd_acs_set_periodic_interval_extn(struct hostapd_iface *iface,
 {
 	int val = atoi(pos);
 
-	if (val < 60 || val > 86400) {
+	if (val != 0 && (val < 60 || val > 86400)) {
 		wpa_printf(MSG_ERROR,
-			   "%s: Invalid acs_periodic_interval %d (expected 60..86400)",
+			   "%s: Invalid acs_periodic_interval %d (expected 0 or 60..86400)",
 			   __func__, val);
 		return -1;
 	}
 
 	iface->conf->conf_extn.acs_periodic_interval = val;
-	hostapd_periodic_acs_start(iface);
+	if (val)
+		hostapd_periodic_acs_start(iface);
+	else
+		hostapd_periodic_acs_stop(iface);
 
 	return 0;
 }
