@@ -462,17 +462,9 @@ hostapd_oper_info_of_repurposed_bss_helper_extn(struct hostapd_data *hapd,
 			hapd->iconf->conf_extn.repurpose_he_width;
 
 	if (repurpose_width >= oper_width ||
-	    !repurpose_width) {
-		wpa_printf(MSG_DEBUG,
-			   "Repurpose: rep_bw %d, oper_bw %d, does not rederive bss info",
-			   repurpose_width, oper_width);
+	    !repurpose_width)
 		return;
-	}
 
-	wpa_printf(MSG_DEBUG,
-		   "Repurpose : rep_bw %d < oper_bw %d, rederive...",
-		   repurpose_width,
-		   oper_width);
 	while (oper_width > repurpose_width) {
 		if (*oper_chwidth == CONF_OPER_CHWIDTH_USE_HT) {
 			/* 20 MHz */
