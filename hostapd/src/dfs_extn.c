@@ -324,52 +324,61 @@ bool dfs_chan_skip_by_flags_extn(struct hostapd_iface *iface,
 				 struct hostapd_channel_data *chan,
 				 unsigned int flags)
 {
+	struct hostapd_hw_modes *mode;
+	int n_chans, n_chans_seg1;
+	int oper_chwidth, start_chan_idx, start_chan_idx1;
+	int first_chan_idx;
+	int i;
+
+	if (!iface || !iface->conf || !iface->current_mode)
+		return false;
+
+	mode = iface->current_mode;
+	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	n_chans = dfs_get_used_n_chans(iface, &n_chans_seg1, oper_chwidth);
+
 	/* Skip current operating channel and all its bonding sub-channels */
 	if (flags & DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH) {
-		struct hostapd_hw_modes *mode;
-		int start_chan_idx, start_chan_idx1;
-		int n_chans, n_chans1;
-		int cur_chan_width;
-		int i;
-
-		if (!iface || !iface->conf || !iface->current_mode)
-			goto skip_curr_ch_check;
-
-		mode = iface->current_mode;
-		cur_chan_width = hostapd_get_oper_chwidth(iface->conf);
-
 		start_chan_idx = dfs_get_start_chan_idx(iface, &start_chan_idx1,
-						       cur_chan_width,
+						       oper_chwidth,
 						       iface->conf->channel,
 						       false);
-		n_chans = dfs_get_used_n_chans(iface, &n_chans1, cur_chan_width);
-
-		if (start_chan_idx < 0)
-			goto skip_curr_ch_check;
-
-		for (i = 0; i < n_chans; i++) {
-			struct hostapd_channel_data *cur_chan;
-
-			if (start_chan_idx + i >= mode->num_channels)
-				break;
-			cur_chan = &mode->channels[start_chan_idx + i];
-			if (chan->chan == cur_chan->chan) {
-				wpa_printf(MSG_DEBUG,
-					   "DFS: skipping current operating channel %d (%d)",
-					   chan->freq, chan->chan);
-				return true;
+		if (start_chan_idx >= 0) {
+			for (i = 0; i < n_chans && start_chan_idx + i < mode->num_channels; i++) {
+				if (chan->chan == mode->channels[start_chan_idx + i].chan) {
+					wpa_printf(MSG_DEBUG,
+						   "DFS: skipping current operating channel %d (%d)",
+						   chan->freq, chan->chan);
+					return true;
+				}
 			}
 		}
 	}
-skip_curr_ch_check:
 
-	/* Skip DFS/radar channels */
-	if ((flags & DFS_RANDOM_CH_FLAG_NO_DFS_CH) &&
-	    (chan->flag & HOSTAPD_CHAN_RADAR)) {
-		wpa_printf(MSG_DEBUG,
-			   "DFS: skipping DFS channel %d (%d)",
-			   chan->freq, chan->chan);
-		return true;
+	/*
+	 * Skip DFS/radar channels.
+	 * Check every 20 MHz sub-channel in the candidate BW range.
+	 * A non-DFS primary channel (e.g. ch 36) can still span into DFS
+	 * sub-channels at wide BW (e.g. EHT 160 MHz), so reject the entire
+	 * range if any sub-channel carries HOSTAPD_CHAN_RADAR.
+	 */
+	if (flags & DFS_RANDOM_CH_FLAG_NO_DFS_CH) {
+		first_chan_idx = dfs_get_start_chan_idx(iface, &start_chan_idx1,
+						       oper_chwidth,
+						       chan->chan, false);
+		if (first_chan_idx >= 0) {
+			for (i = 0; i < n_chans && first_chan_idx + i < mode->num_channels; i++) {
+				struct hostapd_channel_data *sub_chan = &mode->channels[first_chan_idx + i];
+
+				if (sub_chan->flag & HOSTAPD_CHAN_RADAR) {
+					wpa_printf(MSG_DEBUG,
+						   "DFS: skipping channel range starting at %d (%d): sub-channel %d (%d) is DFS",
+						   chan->freq, chan->chan,
+						   sub_chan->freq, sub_chan->chan);
+					return true;
+				}
+			}
+		}
 	}
 
 	return false;

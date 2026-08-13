@@ -78,7 +78,7 @@ unsigned int dfs_get_ch_flags_extn(unsigned int cswopts);
  * dfs_chan_skip_by_flags_extn - Check whether a channel should be skipped
  * during random DFS channel selection
  * @iface: Pointer to hostapd_iface
- * @chan: Candidate channel to evaluate
+ * @chan: Candidate primary channel to evaluate
  * @flags: DFS_RANDOM_CH_FLAG_* bitmask from dfs_get_ch_flags_extn()
  *
  * Evaluates the two flag-driven skip conditions introduced by the enhanced
@@ -90,7 +90,11 @@ unsigned int dfs_get_ch_flags_extn(unsigned int cswopts);
  *     dfs_get_used_n_chans() and then iterating over
  *     mode->channels[start_chan_idx + i].
  *
- *   DFS_RANDOM_CH_FLAG_NO_DFS_CH: skip @chan if it is a DFS/radar channel.
+ *   DFS_RANDOM_CH_FLAG_NO_DFS_CH: skip the candidate channel range if ANY of
+ *     its sub-channels has HOSTAPD_CHAN_RADAR set.  The BW range is derived
+ *     internally from iface->conf (via dfs_get_used_n_chans()), so a non-DFS
+ *     primary channel (e.g. channel 36) that spans into DFS sub-channels at
+ *     wide bandwidth (e.g. EHT 160 MHz) is correctly rejected.
  *
  * Returns: true if @chan should be skipped, false otherwise.
  */
