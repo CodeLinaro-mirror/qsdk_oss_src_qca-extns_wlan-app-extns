@@ -2853,6 +2853,7 @@ void acs_request_scan_add_freqs_extn(struct hostapd_channel_data *chan,
 				     int **freq);
 void acs_modify_scan_params_extn(struct hostapd_iface *iface,
 				 struct wpa_driver_scan_params *params);
+void hostapd_acs_npca_retrigger(struct hostapd_iface *iface);
 #else
 static inline void
 acs_request_scan_add_freqs_extn(struct hostapd_channel_data *chan,
@@ -2861,6 +2862,8 @@ acs_request_scan_add_freqs_extn(struct hostapd_channel_data *chan,
 static inline void
 acs_modify_scan_params_extn(struct hostapd_iface *iface,
 			    struct wpa_driver_scan_params *params) {}
+static inline void
+hostapd_acs_npca_retrigger(struct hostapd_iface *iface) {}
 #endif /* CONFIG_ACS */
 #ifdef CONFIG_IEEE80211AC
 void hostapd_mu_cap_war_state_init_extn(struct hostapd_data *hapd);

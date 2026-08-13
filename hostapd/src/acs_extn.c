@@ -17,6 +17,7 @@
 #include "ap/ap_drv_ops.h"
 #include "ap/hw_features.h"
 #include "ap/acs.h"
+#include "ap/ieee802_11.h"
 #include "ap/dfs.h"
 #include "block_channel.h"
 #include "utils/eloop.h"
@@ -1994,3 +1995,56 @@ acs_hwbl_chan_ok_extn(struct hostapd_iface *iface,
 				     punct_bitmap,
 				     iface->conf->he_6ghz_reg_pwr_type);
 }
+
+#ifdef CONFIG_IEEE80211BN
+
+void hostapd_acs_npca_retrigger(struct hostapd_iface *iface)
+{
+	struct hostapd_data *hapd = iface->bss[0];
+	struct hostapd_uhr_npca_params new_npca;
+	u8 npca_channel = 0;
+	u16 npca_punct_bitmap = 0;
+
+	if (!iface->current_mode)
+		return;
+
+#ifdef CONFIG_QCN_APP_EXTN
+	if (iface->conf->conf_extn.qacs_enable) {
+		struct hostapd_channel_data *primary_chan;
+
+		primary_chan = hw_get_channel_chan(iface->current_mode,
+						  iface->conf->channel, NULL);
+		if (!primary_chan) {
+			wpa_printf(MSG_WARNING,
+				   "NPCA retrigger: ch%d not found in current_mode",
+				   iface->conf->channel);
+			return;
+		}
+		qacs_select_best_npca_chan(iface, iface->current_mode, primary_chan,
+					   hostapd_get_oper_chwidth(iface->conf),
+					   &npca_channel, &npca_punct_bitmap);
+	} else
+#endif /* CONFIG_QCN_APP_EXTN */
+	{
+		acs_npca_select_primary_chan(iface, &npca_channel,
+					    &npca_punct_bitmap);
+	}
+
+	new_npca = hapd->conf->uhr_params_update.npca;
+	new_npca.enable = true;
+
+	new_npca.params =
+		(new_npca.params & ~UHR_OPER_PARAMS_NPCA_PRIMARY_CHAN) |
+		((u32) npca_channel <<
+		 UHR_OPER_PARAMS_NPCA_PRIMARY_CHAN_SHIFT);
+
+	new_npca.disabled_subchan_bitmap = npca_punct_bitmap;
+
+	if (npca_punct_bitmap)
+		new_npca.params |= UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES;
+	else
+		new_npca.params &= ~UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES;
+	hostapd_trigger_npca_ecu(hapd, &new_npca);
+}
+
+#endif /* CONFIG_IEEE80211BN */
