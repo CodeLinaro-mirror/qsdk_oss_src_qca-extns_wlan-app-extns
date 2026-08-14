@@ -53,29 +53,9 @@ static void hostapd_handle_agile_capable_event_extn(struct hostapd_data *hapd,
 {
 	u8 radio_idx = data->event_data_extn.agile_capable.radio_idx;
 	u8 adfs_capable = data->event_data_extn.agile_capable.adfs_capable;
-	const char *phy_name = hostapd_drv_get_radio_name(hapd);
-	struct hostapd_iface *iface = NULL;
-	unsigned int i;
+	struct hostapd_iface *iface;
 
-	if (!phy_name)
-		return;
-
-	/* Find the iface on the same phy whose radio matches radio_idx */
-	for (i = 0; i < hapd->iface->interfaces->count; i++) {
-		struct hostapd_iface *h = hapd->iface->interfaces->iface[i];
-		const char *h_phy_name;
-
-		if (!h || !h->bss || !h->bss[0] || !h->current_hw_info)
-			continue;
-		h_phy_name = hostapd_drv_get_radio_name(h->bss[0]);
-		if (!h_phy_name || os_strcmp(h_phy_name, phy_name) != 0)
-			continue;
-		if (h->current_hw_info->hw_idx == radio_idx) {
-			iface = h;
-			break;
-		}
-	}
-
+	iface = hostapd_afc_find_iface(hapd, radio_idx);
 	if (!iface) {
 		wpa_printf(MSG_DEBUG,
 			   "DFS: No iface matched radio_idx=%u for AGILE_CAPABLE",

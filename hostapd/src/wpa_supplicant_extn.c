@@ -796,6 +796,11 @@ int wpa_supplicant_event_extn(struct wpa_supplicant *wpa_s,
 		wpas_event_hw_blocklist_notify_extn(
 			wpa_s, &data->event_data_extn.hw_blocklist_info);
 		break;
+	case EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY:
+	case EVENT_AFC_PAYLOAD_RESET:
+		wpa_printf(MSG_DEBUG, "Received AFC Event. Waiting for AFC regd");
+		wpa_s->wpas_extn.is_waiting_for_afc_regd = true;
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -811,6 +816,32 @@ void wpas_iface_init_extn(struct wpa_supplicant *wpa_s)
 	wpa_s->wpas_extn.check_hw_blocklist = true;
 }
 
+/*
+ * wpas_country_change_init_active_alpha2_extn - Prime active_alpha2 from
+ * the driver's current regulatory domain.
+ *
+ * Called once the driver is attached (wpas_init_driver() has succeeded).
+ * Without this, active_alpha2 starts as "" and the first
+ * EVENT_CHANNEL_LIST_CHANGED / REGDOM_TYPE_COUNTRY notification is always
+ * treated as a change in wpas_country_change_check_current_bss(), even when
+ * the STA is already connected under the same country that is being
+ * reported. Priming it here makes the first comparison meaningful.
+ */
+void wpas_country_change_init_active_alpha2_extn(struct wpa_supplicant *wpa_s)
+{
+	char alpha2[3] = { 0 };
+
+	if (!wpa_s || !wpa_s->driver || !wpa_s->drv_priv ||
+	    !wpa_s->driver->get_country)
+		return;
+
+	if (wpa_s->driver->get_country(wpa_s->drv_priv, alpha2) < 0)
+		return;
+
+	os_strlcpy(wpa_s->wpas_extn.active_alpha2, alpha2,
+		   sizeof(wpa_s->wpas_extn.active_alpha2));
+}
+
 void wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s)
 {
 	if (!wpa_s)
@@ -821,6 +852,7 @@ void wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s)
 	wpa_s->wpas_extn.hw_blocklist_info = NULL;
 	wpa_s->wpas_extn.num_hw_blocklist = 0;
 	wpa_s->wpas_extn.check_hw_blocklist = false;
+	wpa_s->wpas_extn.is_waiting_for_afc_regd = false;
 }
 
 static struct hostapd_multi_hw_info *
@@ -1469,4 +1501,56 @@ void wpa_rcsa_handle_radar(struct wpa_supplicant *wpa_s,
 			    opt_ie_len ? opt_ie : NULL,
 			    opt_ie_len);
 #endif
+}
+
+/*
+ * wpas_country_change_check_current_bss - Disconnect STA on country change.
+ *
+ * Called from wpa_supplicant_update_channel_list() after hw.modes has been
+ * refreshed with the new country's channel flags.  Disconnects immediately
+ * when the regulatory country has actually changed so the STA can reconnect
+ * under the new domain.  Beacon-hint and other soft regulatory events are
+ * ignored — only real country changes trigger a disconnect.
+ */
+void wpas_country_change_check_current_bss(struct wpa_supplicant *wpa_s,
+					   struct channel_list_changed *info)
+{
+	bool is_afc_regd = false;
+
+	if (!info)
+		return;
+
+	/* Only act on real COUNTRY events with an alpha2. */
+	if (info->type != REGDOM_TYPE_COUNTRY || !info->alpha2[0] ||
+	    info->initiator != REGDOM_SET_BY_DRIVER)
+		return;
+
+	if (wpa_s->wpas_extn.is_waiting_for_afc_regd) {
+		is_afc_regd = true;
+		wpa_s->wpas_extn.is_waiting_for_afc_regd = false;
+	}
+
+	/* Only disconnect if the alpha2 actually changed from last time.
+	 * The kernel can fire REGDOM_TYPE_COUNTRY multiple times for the
+	 * same country (e.g. wiphy-specific events after a global set). */
+	if (!os_strncmp(wpa_s->wpas_extn.active_alpha2, info->alpha2, 2) &&
+	    is_afc_regd)
+		return;
+
+	os_strlcpy(wpa_s->wpas_extn.active_alpha2, info->alpha2,
+		   sizeof(wpa_s->wpas_extn.active_alpha2));
+
+	/* Disconnect regardless of wpa_state: even mid-scan or mid-auth the
+	 * STA may be targeting a channel now invalid in the new country.
+	 * wpa_supplicant_deauthenticate() handles all states cleanly. */
+	if (wpa_s->wpa_state == WPA_INACTIVE || wpa_s->wpa_state == WPA_INTERFACE_DISABLED)
+		return;
+
+	wpa_msg(wpa_s, MSG_INFO,
+		"REGDOM: country changed to %s, disconnecting STA on %s",
+		info->alpha2, wpa_s->ifname);
+
+	wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_DEAUTH_LEAVING);
+
+	wpa_supplicant_req_scan(wpa_s, 0, 100000);
 }

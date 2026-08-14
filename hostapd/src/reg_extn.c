@@ -291,40 +291,17 @@ void hostapd_event_hw_blocklist_notify_extn(
 	struct hostapd_data *hapd,
 	const struct hostapd_hw_blocklist_info *hw_blocklist_info)
 {
-	struct hostapd_iface *iface = NULL;
-	int i;
+	struct hostapd_iface *iface;
 
 	if (!hapd || !hapd->iface || !hw_blocklist_info)
 		return;
 
-	/* Find the iface whose radio matches the payload's hw_idx.
-	 * First filter by phy_name (same as AFC pattern) to skip unrelated
-	 * phys, then match by current_hw_info->hw_idx within the same phy. */
-	const char *phy_name = hostapd_drv_get_radio_name(hapd);
-
-	if (!phy_name)
-		return;
-
-	for (i = 0; i < hapd->iface->interfaces->count; i++) {
-		struct hostapd_iface *h = hapd->iface->interfaces->iface[i];
-		const char *h_phy_name;
-
-		h_phy_name = hostapd_drv_get_radio_name(h->bss[0]);
-		if (!h_phy_name || os_strcmp(h_phy_name, phy_name) != 0)
-			continue;
-		if (!h->current_hw_info)
-			continue;
-		if (h->current_hw_info->hw_idx != hw_blocklist_info->hw_idx)
-			continue;
-		iface = h;
-		break;
-	}
-
+	iface = hostapd_afc_find_iface(hapd, hw_blocklist_info->hw_idx);
 	if (!iface) {
 		wpa_printf(MSG_ERROR,
-			   "HWBL: No iface matched phy=%s hw_idx=%u, store on the receiving iface by default",
-			   phy_name, hw_blocklist_info->hw_idx);
-		iface = hapd->iface;
+			   "HWBL: No iface matched hw_idx=%u",
+			   hw_blocklist_info->hw_idx);
+		return;
 	}
 
 	if (hw_blocklist_update_list_extn(
@@ -511,7 +488,13 @@ static bool hw_features_is_channel_in_hw_blocklist_extn(
 {
 	const struct hostapd_hw_blocklist_pwr_mode *pwr_mode;
 
-	if (!hw_blocklist_info || !freq || !center_freq || !bw)
+	if (!hw_blocklist_info || !freq || !bw)
+		return false;
+
+	if (!center_freq && bw == 20)
+		center_freq = freq;
+
+	if (!center_freq)
 		return false;
 
 	pwr_mode = hw_features_get_hw_blocklist_pwr_mode_extn(hw_blocklist_info,
