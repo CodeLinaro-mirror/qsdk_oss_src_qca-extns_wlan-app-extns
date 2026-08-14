@@ -74,6 +74,7 @@ struct wpabuf;
 struct wpa_config;
 struct freq_survey;
 struct wpa_ssid;
+struct channel_list_changed;
 
 #define UDBG_ENH_SERVER_IP_SIZE INET6_ADDRSTRLEN
 #define UDBG_ENH_APP_ID_SIZE 64u
@@ -860,6 +861,15 @@ struct hostapd_iface_extn {
 	struct hostapd_rcsa_ctx rcsa_ctx;
 
 	bool agile_capable;
+
+	/* Regulatory: interface waiting for regulatory domain update for AFC. */
+	bool is_waiting_for_afc_regd;
+	/* Regulatory: interface forced to NO_IR due to regulatory constraint.
+	 * Recovery attempted on the next REGDOM_SET_BY_DRIVER event. */
+	bool is_regdom_forced_down;
+	/* CAC was running when country change was detected.  The disable has
+	 * been done; enable is deferred until DFS_CAC_ABORTED is received. */
+	bool country_change_post_cac_abort;
 };
 
 struct hostapd_channel_data_extn {
@@ -899,6 +909,9 @@ enum hostapd_dcs_intf_type {
  * @hw_blocklist_info: HW blocklist channel info array.
  * @num_hw_blocklist: Number of HW blocklist entries.
  * @check_hw_blocklist: Flag indicating HW blocklist check is needed.
+ * @is_waiting_for_afc_regd: Regulatory: station waiting for regulatory domain update for AFC.
+ * @active_alpha2: Last active regulatory alpha2 seen via a REGDOM_TYPE_COUNTRY event.
+ *                 Used to detect actual country changes vs. repeated events.
  */
 struct wpa_supplicant_extn {
 	u16 he_mcs_12_13_radio_cap;
@@ -906,6 +919,10 @@ struct wpa_supplicant_extn {
 	struct hostapd_hw_blocklist_info *hw_blocklist_info;
 	unsigned int num_hw_blocklist;
 	bool check_hw_blocklist;
+	bool is_waiting_for_afc_regd;
+	/* Last active regulatory alpha2 seen via a REGDOM_TYPE_COUNTRY event.
+	 * Used to detect actual country changes vs. repeated events. */
+	char active_alpha2[3];
 };
 
 /**
@@ -1534,6 +1551,11 @@ wpas_query_hw_blocklist_extn(struct wpa_supplicant *wpa_s)
 {
 }
 
+static inline void
+wpas_country_change_init_active_alpha2_extn(struct wpa_supplicant *wpa_s)
+{
+}
+
 static inline bool
 wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
 				const struct wpa_bss *bss)
@@ -1801,6 +1823,12 @@ get_centre_freq(struct hostapd_channel_data *first_chan,
 	return -1;
 }
 
+static inline struct hostapd_iface *
+hostapd_afc_find_iface(struct hostapd_data *hapd, int hw_idx)
+{
+	return NULL;
+}
+
 static inline int
 intf_chan_range_available_6g(struct hostapd_hw_modes *mode,
 			     int first_chan_idx, int num_chans)
@@ -1999,6 +2027,35 @@ wpa_config_alloc_empty_extn(struct wpa_config *config)
 	return;
 }
 
+static inline bool hostapd_regdom_bringup_failed_extn(struct hostapd_iface *iface)
+{
+	return false;
+}
+
+
+static inline void hostapd_set_afc_regd_wait(struct hostapd_iface *orig_iface)
+{
+	return;
+}
+
+static inline int hostapd_handle_regchannel_update_extn(struct hostapd_iface *iface,
+							bool afc_regd)
+{
+	return 0;
+}
+
+
+static inline bool regdom_subchans_valid(struct hostapd_iface *iface)
+{
+	return false;
+}
+
+static inline
+void hostapd_country_change_post_cac_abort_extn(struct hostapd_iface *iface)
+{
+	return;
+}
+
 static inline enum chan_width
 hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
 				       int sec_channel_offset)
@@ -2111,6 +2168,8 @@ int
 hostapd_modify_supported_op_class_for_240mhz_extn(int freq,
 						  enum oper_chan_width ch_width,
 						  u8 *op_class);
+
+int hostapd_is_usable_chan(struct hostapd_iface *iface, int frequency, int primary);
 
 /**
  * hostapd_modify_buflen_for_qcn_ie_extn - Compute QCN Vendor IE byte count
@@ -2933,6 +2992,18 @@ int hostapd_validate_current_6ghz_hw_blocklist_extn(
 	struct hostapd_iface *iface,
 	u8 pwr_mode_id, const char *op_name);
 void wpas_query_hw_blocklist_extn(struct wpa_supplicant *wpa_s);
+#ifdef HOSTAPD
+struct hostapd_iface *hostapd_afc_find_iface(struct hostapd_data *hapd, int hw_idx);
+#else
+static inline struct hostapd_iface *
+hostapd_afc_find_iface(struct hostapd_data *hapd, int hw_idx)
+{
+	return NULL;
+}
+#endif /* HOSTAPD */
+void wpas_country_change_init_active_alpha2_extn(struct wpa_supplicant *wpa_s);
+void wpas_country_change_check_current_bss(struct wpa_supplicant *wpa_s,
+					   struct channel_list_changed *info);
 bool wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
 				     const struct wpa_bss *bss);
 int intf_chan_range_available_5g(struct hostapd_hw_modes *mode,
@@ -3150,6 +3221,75 @@ void wpa_config_alloc_empty_extn(struct wpa_config *config);
 #define DEFAULT_VHT_MCS_10_11_NQ2Q_PEER_SUPPORT false
 #define DEFAULT_HE_400NS_SGI_SUPPORT true
 #define DEFAULT_HE_2XLTF_160_80P80_SUPPORT true
+
+/*
+ * hostapd_regdom_bringup_failed_extn - Handle bring-up failure due to
+ * regulatory/country constraints.
+ *
+ * Return: true  — parked to NO_IR, caller should return 0 (not DISABLED).
+ *         false — not a regulatory failure; caller should set DISABLED.
+ */
+bool hostapd_regdom_bringup_failed_extn(struct hostapd_iface *iface);
+
+/*
+ * hostapd_set_afc_regd_wait - Mark all interfaces on the same radio as waiting
+ * for AFC regulatory domain update.
+ *
+ * Return: None.
+ */
+void hostapd_set_afc_regd_wait(struct hostapd_iface *orig_iface);
+
+/*
+ * hostapd_handle_regchannel_update_extn - Regulatory dispatch after HW
+ * infrastructure has been refreshed by the caller (hostapd_handle_regchannel_update).
+ *
+ * Handles all logic introduced by QSDK on top of the upstream baseline:
+ *   1. Force-disable iface if freq could not be resolved (forced-down recovery).
+ *   2. Sync country alpha2 from driver and detect a change.
+ *   3a. Country changed  → hostapd_country_change_handle() — returns 1 (handled).
+ *   3b. Was forced-down  → hostapd_regdom_restore_iface()  — returns 1 (handled).
+ *   3c. Same country, no recovery needed → returns 0 so caller runs NO_IR + AFC.
+ *
+ * Return: 1 if the event was fully handled (country change or regdom restore),
+ *         0 if same country and no recovery (caller proceeds with NO_IR + AFC),
+ *        <0 on error.
+ */
+int hostapd_handle_regchannel_update_extn(struct hostapd_iface *iface, bool afc_regd);
+
+/*
+ * regdom_subchans_valid - Check if all 20 MHz sub-channels of the current
+ * operating channel+BW are still valid in the new country.
+ *
+ * For non-6 GHz: hostapd_validate_non_6ghz_chan_bw() checks DISABLED, NO_IR,
+ * and DFS_UNAVAILABLE per 20 MHz sub-channel.
+ *
+ * For 6 GHz: two checks:
+ *
+ *  1. HOSTAPD_CHAN_DISABLED: the new country does not include this frequency
+ *     at all (e.g. India 5925-6425 MHz only, 6675 MHz = DISABLED).  No power
+ *     mode can make a DISABLED channel legal.  Reject immediately.
+ *
+ *  2. Power mode validity at the current configured BW via regdom_6ghz_pwr_mode_ok().
+ *     Even if the channel is not hard-DISABLED, it must be usable under at
+ *     least one power mode at the current BW.  This is checked once for the
+ *     primary sub-channel (k==0) since power mode applies to the whole
+ *     bonded channel, not per-20MHz slice.
+ *
+ * Return: true  — all sub-channels pass; current channel can be kept.
+ *         false — channel invalid in new country; waterfall must run.
+ */
+bool regdom_subchans_valid(struct hostapd_iface *iface);
+
+/*
+ * hostapd_country_change_post_cac_abort_extn - Continue the country change
+ * flow after receiving DFS_CAC_ABORTED for a CAC that was aborted explicitly
+ * by hostapd_country_change_handle() via hostapd_drv_abort_cac().
+ *
+ * At this point the CAC is stopped but the driver is still alive (interface
+ * not yet disabled).  Perform the full disable + enable sequence here so
+ * the new session starts cleanly.
+ */
+void hostapd_country_change_post_cac_abort_extn(struct hostapd_iface *iface);
 
 /* Primary channel list APIs  */
 int hostapd_set_primary_chanlist(struct hostapd_data *hapd, const char *chan_str);
