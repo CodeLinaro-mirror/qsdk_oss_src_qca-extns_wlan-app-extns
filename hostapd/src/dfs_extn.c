@@ -1022,7 +1022,7 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 		hostapd_handle_missing_nol_ie(iface, &nol_info);
 	}
 
-	if (iface->cac_started) {
+	if (iface->cac_started || iface->bootup_cac_in_progress) {
 		wpa_printf(MSG_DEBUG,
 			   "uplink_csa: CSA on iface:%s for link_id=%d, freq:%d aborting CAC before channel switch",
 			   hapd->conf->iface, link_id, freq);
