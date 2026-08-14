@@ -40,7 +40,8 @@ OBJS += qcn_extns/wpa_supplicant_extn.o
 OBJS += qcn_extns/wpa_config_extn.o
 endif
 
-ifdef CONFIG_UDBG_ENH
+ifeq ($(CONFIG_PACKAGE_udbg-enhanced),y)
+ifeq ($(CONFIG_UDBG_ENH),y)
 CFLAGS += -DCONFIG_UDBG_ENH
 ifndef UDBG_CLIENT_CORE_INC
 $(error UDBG_CLIENT_CORE_INC must be provided when CONFIG_UDBG_ENH is enabled)
@@ -51,6 +52,7 @@ endif
 CFLAGS += -I$(UDBG_CLIENT_CORE_INC)
 LIBS += $(UDBG_CLIENT_CORE_LIB)
 OBJS += qcn_extns/udbg_enh.o
+endif
 endif
 
 ifdef CONFIG_EXTERNAL_PLUGIN
