@@ -747,6 +747,16 @@ bool hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface)
 	return false;
 }
 
+void hostapd_update_bh_sta_connected_extn(struct hostapd_iface *iface,
+					  const char *wpa_state)
+{
+	if (!iface || !iface->interfaces || !wpa_state)
+		return;
+
+	iface->interfaces->interfaces_extn.bh_sta_connected =
+		os_strncmp(wpa_state, "COMPLETED", 9) == 0;
+}
+
 /**
  * create_hop_count_vendor_ie - Create a vendor IE with hop count
  * @hop_count: The hop count value to include (0-255)
