@@ -188,6 +188,10 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->cbs_params.waittime = 1000;
 	conf_extn->cbs_params.dwellsplit = 50;
 	conf_extn->cbs_params.totaldwell = 200;
+	conf_extn->cbs_params.cbs_scan_complete_ts.sec = 0;
+	conf_extn->cbs_params.cbs_scan_complete_ts.usec = 0;
+	conf_extn->cbs_params.acs_scan_complete_ts.sec = 0;
+	conf_extn->cbs_params.acs_scan_complete_ts.usec = 0;
 	conf_extn->cbs_params.retrigger_time =
 		HOSTAPD_CBS_RETRIGGER_TIME;
 
