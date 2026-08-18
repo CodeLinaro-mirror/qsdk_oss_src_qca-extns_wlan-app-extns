@@ -526,7 +526,7 @@ void hostapd_trigger_backhaul_sta_disconnect(void *eloop_data, void *user_data)
 bool hostapd_uplink_csa_bh_enabled(struct hostapd_iface *iface)
 {
 	if (dfs_is_uplink_csa_enabled(iface) &&
-	    hostapd_is_backhaul_sta_configured(iface))
+	    hostapd_is_bh_sta_link_connected_extn(iface))
 		return true;
 	else
 		return false;

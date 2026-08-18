@@ -18,4 +18,6 @@ int wpa_ctrl_set_wds_ie_extn(struct wpa_supplicant *wpa_s, int val);
 int wpa_ctrl_get_wds_ie_extn(struct wpa_supplicant *wpa_s,
 			     char *reply, int reply_size);
 int wpa_ctrl_set_allow_3addr_mc_extn(struct wpa_supplicant *wpa_s, int val);
+bool wpas_uplink_csa_link_available(struct wpa_supplicant *wpa_s,
+				    unsigned int freq);
 #endif /* WPA_SUPPLICANT_EXTN_H */
