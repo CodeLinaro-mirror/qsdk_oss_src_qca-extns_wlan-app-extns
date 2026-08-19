@@ -2004,6 +2004,68 @@ fail:
 }
 
 /**
+ * hostapd_drv_set_non_beacon_bss_extn - Notify driver that this BSS is
+ * non-beaconing.
+ *
+ * Sends QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION with:
+ *   QCA_WLAN_VENDOR_ATTR_CONFIG_NON_BEACON_BSS = u8(1)
+ *
+ * Must be called after vdev creation and before start_ap so ath12k sets
+ * arvif_extn.non_beacon_bss before the first beacon template is triggered.
+ */
+int hostapd_drv_set_non_beacon_bss_extn(struct hostapd_data *hapd)
+{
+	struct i802_bss *bss;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	struct nlattr *params;
+	int ret;
+
+	if (!hapd || !hapd->conf || !hapd->drv_priv)
+		return -EINVAL;
+
+	bss = hapd->drv_priv;
+	if (!bss->drv)
+		return -EINVAL;
+
+	drv = bss->drv;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_NON_BEACON_BSS, 1))
+		goto fail_nest;
+
+	nla_nest_end(msg, params);
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Set non_beacon_bss failed: %d (%s)",
+			   ret, strerror(-ret));
+	else
+		wpa_printf(MSG_INFO,
+			   "nl80211: non_beacon_bss set for %s",
+			   hapd->conf->iface);
+	return ret;
+
+fail_nest:
+	nla_nest_end(msg, params);
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
+/**
  * nl80211_set_allow_scan_on_dfs_chan_extn - Enable/disable scanning on DFS
  *	channels in the mac80211 kernel layer.
  *

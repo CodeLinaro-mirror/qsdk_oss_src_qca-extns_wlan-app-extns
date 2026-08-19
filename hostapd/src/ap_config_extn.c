@@ -252,6 +252,7 @@ hostapd_config_defaults_bss_extn(struct hostapd_bss_config *bss)
 	bss_extn->vht_mcs_10_11_nq2q_peer_supp = DEFAULT_VHT_MCS_10_11_NQ2Q_PEER_SUPPORT;
 	bss_extn->he_400ns_sgi_supp = DEFAULT_HE_400NS_SGI_SUPPORT;
 	bss_extn->he_2xltf_160_80p80_supp = DEFAULT_HE_2XLTF_160_80P80_SUPPORT;
+	bss_extn->non_beacon_bss = false;
 	bss_extn->cck_rx_5g_supp = false;
 }
 
@@ -644,6 +645,17 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->bss_extn.vap_submode = val;
+	} else if (os_strcmp(buf, "non_beacon_bss") == 0) {
+		bss->bss_extn.non_beacon_bss = !!atoi(pos);
+		/* Peer lifetime is managed externally for non-beaconing BSS
+		 * (via wlanconfig addlocalpeer). Disable hostapd's inactivity
+		 * timer so it does not kick mesh peers.
+		 */
+		if (bss->bss_extn.non_beacon_bss) {
+			bss->skip_inactivity_poll = 1;
+			bss->disassoc_low_ack = 0;
+			bss->ap_max_inactivity = 0;
+		}
 	} else if (os_strcmp(buf, "he_mcs_12_13_supp") == 0) {
 		val = atoi(pos);
 		if (val != 0 && val != 1) {
