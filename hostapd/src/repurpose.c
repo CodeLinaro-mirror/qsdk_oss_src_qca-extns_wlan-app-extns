@@ -240,28 +240,46 @@ hostapd_repurpose_mode_str_extn(
 int
 hostapd_validate_mbssid_group_repurpose_mode_extn(struct hostapd_data *hapd)
 {
-	struct hostapd_data *txbss;
+	struct hostapd_data *bss;
 
-	txbss = hostapd_mbssid_get_tx_bss(hapd);
-	if (!txbss || !txbss->conf) {
+	if (!hapd->conf || !hapd->iconf || !hapd->iface)
+		return -1;
+
+	if (hapd->iconf->mbssid == MBSSID_DISABLED)
+		return 0;
+
+	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED &&
+	    hapd->mbssid_group) {
+		dl_list_for_each(bss, &hapd->mbssid_group->bss_list,
+				 struct hostapd_data, mbssid_bss) {
+			if (bss && bss->conf && bss != hapd)
+				goto compare;
+		}
+	} else {
+		size_t i;
+
+		for (i = 0; i < hapd->iface->num_bss; i++) {
+			bss = hapd->iface->bss[i];
+			if (bss && bss->conf && bss != hapd)
+				goto compare;
+		}
+	}
+
+	return 0;
+
+compare:
+	if (hapd->conf->bss_extn.repurpose_mode !=
+	    bss->conf->bss_extn.repurpose_mode) {
 		wpa_printf(MSG_ERROR,
-			   "BSS %s of MBSSID group txbss or txbss->conf is NULL",
-			   hapd->conf->iface);
+			   "Repurpose mode mismatch between %s (%s) and %s (%s)",
+			   hapd->conf->iface,
+			   hostapd_repurpose_mode_str_extn(hapd->conf->bss_extn.repurpose_mode),
+			   bss->conf->iface,
+			   hostapd_repurpose_mode_str_extn(bss->conf->bss_extn.repurpose_mode));
 		return -1;
 	}
 
-	if (hapd == txbss)
-		return 0;
-
-	if (txbss->conf->bss_extn.repurpose_mode == hapd->conf->bss_extn.repurpose_mode)
-		return 0;
-
-	wpa_printf(MSG_ERROR,
-		   "Repurpose mode mismatch txbss: %s and non tx bss: %s txbss mode %s non tx bss mode %s",
-		   txbss->conf->iface, hapd->conf->iface,
-		   hostapd_repurpose_mode_str_extn(txbss->conf->bss_extn.repurpose_mode),
-		   hostapd_repurpose_mode_str_extn(hapd->conf->bss_extn.repurpose_mode));
-	return -1;
+	return 0;
 }
 
 struct hostapd_data *
