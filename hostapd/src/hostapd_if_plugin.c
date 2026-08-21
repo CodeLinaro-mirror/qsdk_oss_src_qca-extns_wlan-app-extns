@@ -2196,6 +2196,7 @@ static void dump_radio_info(const char *prefix,
 	wpa_printf(MSG_INFO, "%sfreq=%d MHz  channel=%u  band=%s",
 		   prefix, r->freq, r->channel,
 		   sta_info_band_str(r->band));
+	wpa_printf(MSG_INFO, "%srssi=%d dBm", prefix, r->rssi);
 	wpa_printf(MSG_INFO,
 		   "%scap_flags=0x%08x [%s%s%s%s%s%s%s%s%s%s]",
 		   prefix, r->cap_flags,
