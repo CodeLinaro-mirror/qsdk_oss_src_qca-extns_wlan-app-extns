@@ -25,6 +25,14 @@
 static void hostapd_dcs_reenable_timeout(void *eloop_ctx, void *timeout_ctx);
 static void hostapd_dcs_apply_enable_bitmap(struct hostapd_iface *iface,
 					    u16 enable_bitmap);
+#ifdef RDK_ONEWIFI
+static void hostapd_dcs_in_progress_timeout(void *eloop_ctx, void *timeout_ctx);
+
+/* Maximum time (seconds) dcs_in_progress may be held before auto-clear.
+ * Use 30s: covers 5 ACS scans * ~1s each + CSA time. Faster retry on
+ * firmware CSA completion delay. */
+#define DCS_IN_PROGRESS_TIMEOUT_SEC 30
+#endif
 
 static void hostapd_dcs_disable_fw(struct hostapd_iface *iface)
 {
@@ -67,6 +75,11 @@ static bool hostapd_dcs_set_in_progress(struct hostapd_iface *iface, u16 type)
 	wpa_printf(MSG_DEBUG,
 		   "DCS: dcs in progress set, firmware DCS disabled (type=0x%04x)",
 		   type);
+#ifdef RDK_ONEWIFI
+	eloop_cancel_timeout(hostapd_dcs_in_progress_timeout, iface, NULL);
+	eloop_register_timeout(DCS_IN_PROGRESS_TIMEOUT_SEC, 0,
+			       hostapd_dcs_in_progress_timeout, iface, NULL);
+#endif
 	return true;
 }
 
@@ -89,8 +102,41 @@ void hostapd_dcs_restore_extn(struct hostapd_iface *iface, const char *reason)
 		   enable_bitmap);
 	iface_extn->dcs_in_progress = false;
 	wpa_printf(MSG_ERROR, "DCS: dcs in progress cleared");
+#ifdef RDK_ONEWIFI
+	eloop_cancel_timeout(hostapd_dcs_in_progress_timeout, iface, NULL);
+	/* Clear csa_in_progress on all BSS so the next CSA attempt is not
+	 * blocked by a stale flag from a previous CSA that never completed
+	 * (e.g. NL80211_CMD_CH_SWITCH_NOTIFY was never received). */
+	for (int _i = 0; _i < iface->num_bss; _i++) {
+		if (iface->bss[_i] && iface->bss[_i]->csa_in_progress)
+			hostapd_cleanup_cs_params(iface->bss[_i]);
+	}
+	if (iface_extn->dcs_disabled_excessive_triggers) {
+		wpa_printf(MSG_ERROR,
+			   "DCS: restoring with rate-limit bitmap (0x%04x) instead of full bitmap (0x%04x)",
+			   iface_extn->dcs_excess_trigger_enable_bitmap,
+			   enable_bitmap);
+		hostapd_dcs_apply_enable_bitmap(iface,
+			iface_extn->dcs_excess_trigger_enable_bitmap);
+	} else {
+		hostapd_dcs_apply_enable_bitmap(iface, enable_bitmap);
+	}
+#else
 	hostapd_dcs_apply_enable_bitmap(iface, enable_bitmap);
+#endif
 }
+
+#ifdef RDK_ONEWIFI
+static void hostapd_dcs_in_progress_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_iface *iface = eloop_ctx;
+
+	wpa_printf(MSG_ERROR,
+		   "DCS: dcs_in_progress safety timeout fired (%d s) — force-clearing",
+		   DCS_IN_PROGRESS_TIMEOUT_SEC);
+	hostapd_dcs_restore_extn(iface, "safety timeout");
+}
+#endif
 
 static unsigned int hostapd_dcs_get_reenable_time_sec(struct hostapd_iface *iface)
 {
@@ -1249,6 +1295,10 @@ int hostapd_dcs_channel_change(struct csa_settings *settings,
 		   iface->conf->conf_extn.cur_chan_params.chan_width);
 
 	settings->cs_count = iface->conf->conf_extn.dcs_conf.dcs_csa_tbtt;
+#ifdef RDK_ONEWIFI
+	if (!settings->cs_count)
+		settings->cs_count = DCS_CSA_TBTT_DEFAULT;
+#endif
 
 	switch (new_chan_width) {
 	case CHAN_WIDTH_40:
@@ -1502,6 +1552,16 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 	if ((type == DCS_CW_INTF || type == DCS_WLAN_INTF) &&
 	    !(rand_chan_bitmap & type)) {
 		int acs_ret;
+#ifdef RDK_ONEWIFI
+		if (type == DCS_WLAN_INTF)
+			hostapd_dcs_rate_limit_update(link_hapd->iface, type);
+
+		/* If rate-limit just disabled WLAN interference handling,
+		 * do not start ACS */
+		if (type == DCS_WLAN_INTF &&
+		    iface_extn->dcs_disabled_excessive_triggers)
+			return;
+#endif
 
 		if (!hostapd_dcs_set_in_progress(iface, type))
 			return;
@@ -1516,8 +1576,10 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 						 "dynamic ACS start failed");
 			return;
 		}
+#ifndef RDK_ONEWIFI
 		if (type == DCS_WLAN_INTF)
 			hostapd_dcs_rate_limit_update(link_hapd->iface, type);
+#endif
 		return;
 	}
 
@@ -1596,6 +1658,12 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 		}
 	}
 
+#ifdef RDK_ONEWIFI
+	/* For MLO: set link_id so the driver sends NL80211_ATTR_MLO_LINK_ID
+	 * for the correct link. Use link_hapd->mld_link_id (set by rdk-wifi-hal
+	 * to radio->rdk_radio_index) rather than iface->bss[0]->mld_link_id. */
+	settings.freq_params.link_id = link_hapd->mld_link_id;
+#endif
 	ret = hostapd_dcs_channel_change(&settings, link_hapd->iface, new_chan_width, new_centre_freq);
 	if (ret) {
 		hostapd_dcs_restore_extn(iface, "CSA trigger failed");
@@ -1985,10 +2053,39 @@ void dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap)
 {
 	struct driver_dcs_config drv_dcs_conf;
 
+#ifdef RDK_ONEWIFI
+	struct hostapd_config_extn *conf_extn;
+#endif
 	os_memset(&drv_dcs_conf, 0, sizeof(drv_dcs_conf));
 	drv_dcs_conf.dcs_enable = enable_bitmap;
 	drv_dcs_conf.cmd_type = SET_DCS_CONFIG;
 
+#ifdef RDK_ONEWIFI
+	/* Send current threshold defaults to firmware on enable */
+	if (hapd && hapd->iconf) {
+		conf_extn = &hapd->iconf->conf_extn;
+		drv_dcs_conf.valid_mask =
+			DCS_VALID_INTR_DET_THR |
+			DCS_VALID_PHYERR_PENALTY |
+			DCS_VALID_PHYERR_THR |
+			DCS_VALID_RADARERR_THR |
+			DCS_VALID_TXERR_THR |
+			DCS_VALID_SAMPLE_SIZE |
+			DCS_VALID_COCH_THR |
+			DCS_VALID_USER_MAX_CU;
+		drv_dcs_conf.intr_detection_threshold =
+			conf_extn->dcs_conf.intr_detection_threshold;
+		drv_dcs_conf.phyerr_penalty = conf_extn->dcs_conf.phyerr_penalty;
+		drv_dcs_conf.phyerr_threshold = conf_extn->dcs_conf.phyerr_threshold;
+		drv_dcs_conf.radarerr_threshold =
+			conf_extn->dcs_conf.radarerr_threshold;
+		drv_dcs_conf.txerr_threshold = conf_extn->dcs_conf.txerr_threshold;
+		drv_dcs_conf.sample_size = conf_extn->dcs_conf.sample_size;
+		drv_dcs_conf.coch_intr_threshold =
+			conf_extn->dcs_conf.coch_intr_threshold;
+		drv_dcs_conf.user_max_cu = conf_extn->dcs_conf.user_max_cu;
+	}
+#endif
 	wpa_printf(MSG_DEBUG, "Setting DCS enable value: 0x%04x",
 		   drv_dcs_conf.dcs_enable);
 

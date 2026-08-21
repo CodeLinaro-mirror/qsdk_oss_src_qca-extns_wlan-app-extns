@@ -1378,10 +1378,21 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
 		return hostapd_abort_cac_for_channel_switch(iface, &settings);
 	}
 
+#ifdef RDK_ONEWIFI
+        /* If DFS_CHANNEL_SWITCH supported proceed with CSA */
+        if (!(iface->drv_flags2 & WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH))
+        {
+            /* Perform CAC and switch channel via fallback */
+            iface->is_ch_switch_dfs = true;
+            hostapd_switch_channel_fallback(iface, &settings.freq_params);
+            return 0;
+        }
+#else
 	/* Perform CAC and switch channel via fallback */
         iface->is_ch_switch_dfs = true;
         hostapd_switch_channel_fallback(iface, &settings.freq_params);
         return 0;
+#endif
     }
 
 	if (iface->cac_started || iface->bootup_cac_in_progress) {

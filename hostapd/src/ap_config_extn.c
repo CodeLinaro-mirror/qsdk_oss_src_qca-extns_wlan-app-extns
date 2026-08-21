@@ -166,6 +166,9 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->dcs_conf.enable_bitmap = 0;   /* DCS disabled */
 	conf_extn->dcs_conf.dcs_event_action = ALLOWED_DCS_EVENT_ACTION_MASK;
 	conf_extn->dcs_conf.dcs_event_notify = 0;
+#ifdef RDK_ONEWIFI
+	conf_extn->dcs_conf.dcs_csa_tbtt = DCS_CSA_TBTT_DEFAULT;
+#endif
 	/*
 	 * Enable random channel selection for AWGN by default; users can
 	 * explicitly disable random channel selection via hostapd.conf/CLI by
