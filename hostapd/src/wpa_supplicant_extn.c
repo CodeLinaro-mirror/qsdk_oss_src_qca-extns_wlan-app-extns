@@ -230,17 +230,53 @@ int wpa_drv_send_action_extn(struct wpa_supplicant *wpa_s, unsigned int freq,
 					  bssid, data, data_len, no_cck, link_id);
 }
 
-static bool wpas_uplink_csa_freq_band_match(unsigned int ref_freq,
+static s8 wpas_extn_get_hw_idx_by_freq(struct wpa_supplicant *wpa_s,
+					int partner_freq)
+{
+	struct hostapd_multi_hw_info *hw_info;
+	int i;
+
+	if (!wpa_s)
+		return -1;
+
+	for (i = 0; i < wpa_s->num_multi_hws; i++) {
+		hw_info = &wpa_s->multi_hw_info[i];
+		if (partner_freq >= hw_info->start_freq &&
+		    partner_freq <= hw_info->end_freq)
+			return i;
+	}
+
+	return -1;
+}
+
+static bool wpas_uplink_csa_freq_band_match(struct wpa_supplicant *wpa_s,
+					    unsigned int ref_freq,
 					    unsigned int link_freq)
 {
+	s8 target_hw_idx;
+	s8 link_hw_idx;
+
 	if (!ref_freq || !link_freq)
 		return false;
 
 	if (is_24ghz_freq(ref_freq))
 		return is_24ghz_freq(link_freq);
 
-	if (is_5ghz_freq(ref_freq))
-		return is_5ghz_freq(link_freq);
+	if (is_5ghz_freq(ref_freq)) {
+		if (!is_5ghz_freq(link_freq))
+			return false;
+
+		if (!wpa_s)
+			return true;
+
+		target_hw_idx = wpas_extn_get_hw_idx_by_freq(wpa_s, ref_freq);
+		link_hw_idx = wpas_extn_get_hw_idx_by_freq(wpa_s, link_freq);
+		wpa_printf(MSG_DEBUG,
+			   "uplink_csa: 5GHz hw_idx check ref_freq=%u link_freq=%u target_hw_idx=%d link_hw_idx=%d",
+			   ref_freq, link_freq, target_hw_idx, link_hw_idx);
+
+		return target_hw_idx == link_hw_idx;
+	}
 
 	if (is_6ghz_freq(ref_freq))
 		return is_6ghz_freq(link_freq);
@@ -261,7 +297,8 @@ static int wpas_uplink_csa_get_tx_link(struct wpa_supplicant *wpa_s,
 		return -1;
 
 	if (!wpa_s->valid_links) {
-		if (wpas_uplink_csa_freq_band_match(new_freq, wpa_s->assoc_freq)) {
+		if (wpas_uplink_csa_freq_band_match(wpa_s, new_freq,
+						    wpa_s->assoc_freq)) {
 			*tx_freq = wpa_s->assoc_freq;
 			return 0;
 		}
@@ -272,7 +309,8 @@ static int wpas_uplink_csa_get_tx_link(struct wpa_supplicant *wpa_s,
 	for_each_link(wpa_s->valid_links, i) {
 		if (wpa_s->links[i].disabled || !wpa_s->links[i].freq)
 			continue;
-		if (!wpas_uplink_csa_freq_band_match(new_freq, wpa_s->links[i].freq))
+		if (!wpas_uplink_csa_freq_band_match(wpa_s, new_freq,
+						     wpa_s->links[i].freq))
 			continue;
 		*tx_freq = wpa_s->links[i].freq;
 		*tx_link_id = i;
@@ -280,6 +318,48 @@ static int wpas_uplink_csa_get_tx_link(struct wpa_supplicant *wpa_s,
 	}
 
 	return -1;
+}
+
+bool wpas_uplink_csa_link_available(struct wpa_supplicant *wpa_s,
+				    unsigned int freq)
+{
+	int i;
+
+	if (!wpa_s || !freq)
+		return false;
+
+	if (wpa_s->valid_links) {
+		for_each_link(wpa_s->valid_links, i) {
+			if (wpa_s->links[i].disabled || !wpa_s->links[i].bss)
+				continue;
+			wpa_printf(MSG_DEBUG,
+				   "uplink_csa: validating link=%d link_freq=%u target_freq=%u bss=%p",
+				   i, wpa_s->links[i].freq, freq, wpa_s->links[i].bss);
+
+			if (wpas_uplink_csa_freq_band_match(wpa_s, freq,
+							    wpa_s->links[i].freq)) {
+				wpa_printf(MSG_DEBUG,
+					   "uplink_csa: link=%d available for target_freq=%u",
+					   i, freq);
+				return true;
+			}
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "uplink_csa: no MLO link available for target_freq=%u",
+			   freq);
+		return false;
+	}
+
+	if (!wpa_s->current_bss)
+		return false;
+
+	wpa_printf(MSG_DEBUG,
+		   "uplink_csa: validating current_bss freq=%u target_freq=%u",
+		   wpa_s->current_bss->freq, freq);
+
+	return wpas_uplink_csa_freq_band_match(wpa_s, freq,
+					       wpa_s->current_bss->freq);
 }
 
 static void wpas_uplink_csa_update_wb_ie_cfs(u8 primary_chan, u8 new_ch_width,
@@ -458,17 +538,31 @@ int wpa_drv_send_uplink_csa(struct wpa_supplicant *wpa_s, int freq,
 	if (cac_abort && wpa_s->valid_links) {
 		unsigned int pending_ch_switch_freq = 0;
 		u16 link_id_bitmap = 0;
+		s8 target_hw_idx = wpas_extn_get_hw_idx_by_freq(wpa_s, freq);
 		int link_5g = -1;
 		int i;
 		bool has_non_5g_partner = false;
 
 		for_each_link(wpa_s->valid_links, i) {
+			s8 link_hw_idx;
+
 			if (wpa_s->links[i].disabled || !wpa_s->links[i].freq)
 				continue;
-			if (is_5ghz_freq(wpa_s->links[i].freq))
-				link_5g = i;
-			else
+			if (is_5ghz_freq(wpa_s->links[i].freq)) {
+				link_hw_idx = wpas_extn_get_hw_idx_by_freq(wpa_s,
+									   wpa_s->links[i].freq);
+				wpa_printf(MSG_DEBUG,
+					   "uplink_csa: cac_abort hw_idx check target_hw_idx=%d link=%d link_hw_idx=%d",
+					   target_hw_idx, i, link_hw_idx);
+				if (target_hw_idx == link_hw_idx) {
+					wpa_printf(MSG_DEBUG,
+						   "uplink_csa: cac_abort selected 5GHz link=%d freq=%u",
+						   i, wpa_s->links[i].freq);
+					link_5g = i;
+				}
+			} else {
 				has_non_5g_partner = true;
+			}
 		}
 
 		if (has_non_5g_partner && link_5g >= 0) {

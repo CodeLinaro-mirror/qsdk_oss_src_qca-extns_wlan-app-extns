@@ -265,6 +265,13 @@ uc_value_t *uc_wpas_notify_uplink_csa_extn(uc_vm_t *vm, size_t nargs)
 		   __func__, freq, chan, cs_count, new_ch_width, ch_seg_0,
 		   ch_seg_1, cac_abort);
 
+	if (!wpas_uplink_csa_link_available(wpa_s, freq)) {
+		wpa_printf(MSG_WARNING,
+			   "%s: BH link is not available for freq=%u, skipping uplink CSA",
+			   __func__, freq);
+		return ucv_boolean_new(0);
+	}
+
 	nol_channel = ucv_object_get(info, "nol_channel", NULL);
 	if (nol_channel && ucv_type(nol_channel) == UC_OBJECT) {
 		dfs_nol_ie_info nol_info;

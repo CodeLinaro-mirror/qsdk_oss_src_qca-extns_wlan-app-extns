@@ -1780,6 +1780,12 @@ hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface)
 	return false;
 }
 
+static inline bool
+hostapd_is_bh_sta_link_connected_extn(struct hostapd_iface *iface)
+{
+	return false;
+}
+
 static inline void
 hostapd_update_bh_sta_connected_extn(struct hostapd_iface *iface,
 				     const char *wpa_state)
@@ -2449,6 +2455,7 @@ void hostapd_update_nf(struct hostapd_iface *iface,
 void hostapd_ml_acs_check_and_notify(struct hostapd_iface *iface, bool status);
 void wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx);
 bool hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface);
+bool hostapd_is_bh_sta_link_connected_extn(struct hostapd_iface *iface);
 void hostapd_update_bh_sta_connected_extn(struct hostapd_iface *iface,
 					  const char *wpa_state);
 bool check_40mhz_2g4_bss_snr_below_threshold_extn(

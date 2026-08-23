@@ -747,6 +747,16 @@ bool hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface)
 	return false;
 }
 
+bool hostapd_is_bh_sta_link_connected_extn(struct hostapd_iface *iface)
+{
+	if (!iface)
+		return false;
+	wpa_printf(MSG_DEBUG, "sta_wpa_state = %s",
+		   iface->iface_extn.sta_wpa_state);
+
+	return !os_strncmp(iface->iface_extn.sta_wpa_state, "COMPLETED", 9);
+}
+
 void hostapd_update_bh_sta_connected_extn(struct hostapd_iface *iface,
 					  const char *wpa_state)
 {
