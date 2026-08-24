@@ -692,6 +692,7 @@ void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 		l->center_freq2_idx = neigh_bss->center_freq2_idx;
 		l->width = neigh_bss->max_cw;
 		l->punc_bitmap = neigh_bss->punc_bitmap;
+		os_get_reltime(&neigh_bss->last_update);
 		wpa_printf(MSG_DEBUG, "%s: link_id=%u freq=%d cf1=%d cf2=%d width=%d punc=%d",
 			   __func__, link_id, l->freq, l->center_freq1_idx, l->center_freq2_idx,
 			   l->width, l->punc_bitmap);
@@ -1289,6 +1290,31 @@ bool wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s,
 		return false;
 	}
 	return wpas_check_link_nol_extn(wpa_s, bss->freq, bw, cf1, cf2);
+}
+
+/**
+ * wpas_link_uses_nol_channel_extn - Check if an arbitrary link freq/width is in NOL
+ * @wpa_s: wpa_supplicant context
+ * @freq: Link primary frequency in MHz
+ * @width: Channel width enum
+ * @cf1: Center frequency 1 in MHz
+ * @cf2: Center frequency 2 in MHz (0 if not applicable)
+ * Returns: true if the link uses any NOL channel, false otherwise
+ *
+ * Same NOL logic as wpas_bss_uses_nol_channel_extn(), but for MLO partner
+ * links (bss->mld_links[]) that are not represented as a standalone
+ * struct wpa_bss.
+ */
+bool wpas_link_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, int freq,
+				     enum chan_width width, int cf1, int cf2)
+{
+	int bw;
+
+	if (!is_5ghz_freq(freq))
+		return false;
+
+	bw = channel_width_to_int(width);
+	return wpas_check_link_nol_extn(wpa_s, freq, bw, cf1, cf2);
 }
 
 #include "wds_ie.h"

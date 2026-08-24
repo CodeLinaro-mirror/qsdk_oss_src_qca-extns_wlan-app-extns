@@ -1799,10 +1799,18 @@ int nl80211_set_he_mcs_12_13_peer_cap_extn(void *priv, u8 radio_idx,
 					   u16 peer_cap)
 {
 	struct i802_bss *bss = priv;
-	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct wpa_driver_nl80211_data *drv = NULL;
 	struct nl_msg *msg;
 	struct nlattr *params;
 	int ret;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: set_he_mcs_12_13_peer_cap with no driver handle");
+		return -1;
+	}
+
+	drv = bss->drv;
 
 	wpa_printf(MSG_DEBUG,
 		   "nl80211: Set HE_MCS_12_13 peer capability = 0x%04x for radio_idx: %d",
@@ -1855,11 +1863,19 @@ fail:
 int nl80211_set_allow_scan_on_dfs_chan_extn(void *priv, bool enable)
 {
 	struct i802_bss *bss = priv;
-	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct wpa_driver_nl80211_data *drv = NULL;
 	u8 val = enable ? 1 : 0;
 	struct nlattr *params;
 	struct nl_msg *msg;
 	int ret;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: allow_scan_on_dfs_chan with no driver handle");
+		return -1;
+	}
+
+	drv = bss->drv;
 
 	wpa_printf(MSG_DEBUG,
 		   "nl80211: Set allow_scan_on_dfs_chan = %d", val);
@@ -2033,11 +2049,19 @@ fail:
 int nl80211_get_he_mcs_12_13_extn(void *priv, u8 radio_idx, u16 *radio_cap)
 {
 	struct i802_bss *bss = priv;
-	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct wpa_driver_nl80211_data *drv = NULL;
 	struct nl_msg *msg;
 	struct nlattr *params;
 	u16 cap = 0;
 	int ret;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: get_he_mcs_12_13 with no driver handle");
+		return -1;
+	}
+
+	drv = bss->drv;
 
 	wpa_printf(MSG_DEBUG,
 		   "nl80211: Get the HE_MCS_12_13 hardware capability for radio_idx: %d",

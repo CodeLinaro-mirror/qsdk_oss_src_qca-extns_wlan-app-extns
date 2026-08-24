@@ -10,6 +10,10 @@
 
 struct hostapd_iface;
 
+#define DYNAMIC_ACS_EVENT_STARTED "DYNAMIC-ACS-EVENT-STARTED "
+#define DYNAMIC_ACS_EVENT_COMPLETED "DYNAMIC-ACS-EVENT-COMPLETED "
+#define DYNAMIC_ACS_EVENT_FAILED "DYNAMIC-ACS-EVENT-FAILED "
+
 void acs_fill_timestamp(struct hostapd_iface *iface,
 			int trigger_type, bool is_trigger_time);
 

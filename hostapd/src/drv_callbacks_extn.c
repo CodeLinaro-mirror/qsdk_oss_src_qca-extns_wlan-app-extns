@@ -212,21 +212,3 @@ bool hostapd_handle_csa_target_unavailable_extn(struct hostapd_data *hapd,
 	return true;
 }
 
-int wpa_supplicant_event_extn(struct wpa_supplicant *wpa_s,
-			      enum wpa_event_type event,
-			      union wpa_event_data *data)
-{
-	if (!wpa_s || !data)
-		return -EINVAL;
-
-	switch (event) {
-	case EVENT_HW_BLOCKED_CHANS_NOTIFY:
-		wpas_event_hw_blocklist_notify_extn(
-			wpa_s, &data->event_data_extn.hw_blocklist_info);
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	return 0;
-}

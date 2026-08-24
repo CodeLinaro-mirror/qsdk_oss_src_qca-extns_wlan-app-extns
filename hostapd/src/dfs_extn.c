@@ -324,52 +324,61 @@ bool dfs_chan_skip_by_flags_extn(struct hostapd_iface *iface,
 				 struct hostapd_channel_data *chan,
 				 unsigned int flags)
 {
+	struct hostapd_hw_modes *mode;
+	int n_chans, n_chans_seg1;
+	int oper_chwidth, start_chan_idx, start_chan_idx1;
+	int first_chan_idx;
+	int i;
+
+	if (!iface || !iface->conf || !iface->current_mode)
+		return false;
+
+	mode = iface->current_mode;
+	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	n_chans = dfs_get_used_n_chans(iface, &n_chans_seg1, oper_chwidth);
+
 	/* Skip current operating channel and all its bonding sub-channels */
 	if (flags & DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH) {
-		struct hostapd_hw_modes *mode;
-		int start_chan_idx, start_chan_idx1;
-		int n_chans, n_chans1;
-		int cur_chan_width;
-		int i;
-
-		if (!iface || !iface->conf || !iface->current_mode)
-			goto skip_curr_ch_check;
-
-		mode = iface->current_mode;
-		cur_chan_width = hostapd_get_oper_chwidth(iface->conf);
-
 		start_chan_idx = dfs_get_start_chan_idx(iface, &start_chan_idx1,
-						       cur_chan_width,
+						       oper_chwidth,
 						       iface->conf->channel,
 						       false);
-		n_chans = dfs_get_used_n_chans(iface, &n_chans1, cur_chan_width);
-
-		if (start_chan_idx < 0)
-			goto skip_curr_ch_check;
-
-		for (i = 0; i < n_chans; i++) {
-			struct hostapd_channel_data *cur_chan;
-
-			if (start_chan_idx + i >= mode->num_channels)
-				break;
-			cur_chan = &mode->channels[start_chan_idx + i];
-			if (chan->chan == cur_chan->chan) {
-				wpa_printf(MSG_DEBUG,
-					   "DFS: skipping current operating channel %d (%d)",
-					   chan->freq, chan->chan);
-				return true;
+		if (start_chan_idx >= 0) {
+			for (i = 0; i < n_chans && start_chan_idx + i < mode->num_channels; i++) {
+				if (chan->chan == mode->channels[start_chan_idx + i].chan) {
+					wpa_printf(MSG_DEBUG,
+						   "DFS: skipping current operating channel %d (%d)",
+						   chan->freq, chan->chan);
+					return true;
+				}
 			}
 		}
 	}
-skip_curr_ch_check:
 
-	/* Skip DFS/radar channels */
-	if ((flags & DFS_RANDOM_CH_FLAG_NO_DFS_CH) &&
-	    (chan->flag & HOSTAPD_CHAN_RADAR)) {
-		wpa_printf(MSG_DEBUG,
-			   "DFS: skipping DFS channel %d (%d)",
-			   chan->freq, chan->chan);
-		return true;
+	/*
+	 * Skip DFS/radar channels.
+	 * Check every 20 MHz sub-channel in the candidate BW range.
+	 * A non-DFS primary channel (e.g. ch 36) can still span into DFS
+	 * sub-channels at wide BW (e.g. EHT 160 MHz), so reject the entire
+	 * range if any sub-channel carries HOSTAPD_CHAN_RADAR.
+	 */
+	if (flags & DFS_RANDOM_CH_FLAG_NO_DFS_CH) {
+		first_chan_idx = dfs_get_start_chan_idx(iface, &start_chan_idx1,
+						       oper_chwidth,
+						       chan->chan, false);
+		if (first_chan_idx >= 0) {
+			for (i = 0; i < n_chans && first_chan_idx + i < mode->num_channels; i++) {
+				struct hostapd_channel_data *sub_chan = &mode->channels[first_chan_idx + i];
+
+				if (sub_chan->flag & HOSTAPD_CHAN_RADAR) {
+					wpa_printf(MSG_DEBUG,
+						   "DFS: skipping channel range starting at %d (%d): sub-channel %d (%d) is DFS",
+						   chan->freq, chan->chan,
+						   sub_chan->freq, sub_chan->chan);
+					return true;
+				}
+			}
+		}
 	}
 
 	return false;
@@ -447,31 +456,52 @@ int dfs_nol_ie_chan_width_to_bw_mhz(enum oper_chan_width chan_width,
 	}
 }
 
-static int dfs_nol_ie_bw_mhz_to_chan_width(u32 bandwidth_mhz,
-					   int *chan_width)
+int dfs_nol_ie_get_subchan_count(enum oper_chan_width chan_width,
+				 int freq, int cf1,
+				 int *n_subchans)
 {
-	if (!chan_width)
+	int bandwidth_mhz;
+
+	if (!n_subchans)
 		return -1;
 
-	switch (bandwidth_mhz) {
-	case DFS_NOL_IE_BW_20_MHZ:
-		*chan_width = CHAN_WIDTH_20;
+	if (chan_width == CONF_OPER_CHWIDTH_320MHZ && is_5ghz_freq(freq)) {
+		/*
+		 * UD 5 GHz "320 MHz" operation is the 240 MHz special case and
+		 * spans only 12 contiguous 20 MHz subchannels.
+		 */
+		*n_subchans = 12;
 		return 0;
-	case DFS_NOL_IE_BW_40_MHZ:
-		*chan_width = CHAN_WIDTH_40;
-		return 0;
-	case DFS_NOL_IE_BW_80_MHZ:
-		*chan_width = CHAN_WIDTH_80;
-		return 0;
-	case DFS_NOL_IE_BW_160_MHZ:
-		*chan_width = CHAN_WIDTH_160;
-		return 0;
-	case DFS_NOL_IE_BW_320_MHZ:
-		*chan_width = CHAN_WIDTH_320;
-		return 0;
-	default:
-		return -1;
 	}
+
+	if (dfs_nol_ie_chan_width_to_bw_mhz(chan_width, freq, cf1,
+					    &bandwidth_mhz))
+		return -1;
+
+	*n_subchans = bandwidth_mhz / MIN_DFS_SUBCHAN_BW;
+	return 0;
+}
+
+static int dfs_nol_ie_get_base_freq(int freq, int cf1,
+				    enum oper_chan_width chan_width,
+				    int *base_freq)
+{
+	int bandwidth_mhz = 0;
+
+	if (!base_freq)
+		return -1;
+
+	if (dfs_nol_ie_chan_width_to_bw_mhz(chan_width, freq, cf1,
+					    &bandwidth_mhz))
+		return -1;
+
+	/*
+	 * cf1 is the operating center frequency in MHz. Convert it to the
+	 * first 20 MHz subchannel center so radar bitmap bit positions map to
+	 * the actual operating subchannels instead of the primary channel.
+	 */
+	*base_freq = cf1 - (bandwidth_mhz / 2) + (MIN_DFS_SUBCHAN_BW / 2);
+	return 0;
 }
 
 int dfs_is_uplink_csa_enabled(struct hostapd_iface *iface)
@@ -624,6 +654,70 @@ int hostapd_send_uplink_csa_extn(struct hostapd_iface *iface,
 				  oper_centr_freq_seg1_idx,
 				  iface->iface_extn.nol_info_valid ? &iface->iface_extn.nol_info : NULL);
 	return 0;
+}
+
+/**
+ * hostapd_handle_missing_nol_ie - Derive full-band NOL info when IE is absent
+ * @iface: hostapd interface context
+ * @nol_info: output NOL entry to populate
+ *
+ * When uplink CSA or RCSA is received without an explicit NOL IE, treat it as
+ * full-band radar for the current operating channel and populate @nol_info
+ * with the corresponding primary frequency, operating bandwidth, and complete
+ * subchannel bitmap.
+ */
+static void
+hostapd_handle_missing_nol_ie(struct hostapd_iface *iface,
+			      dfs_nol_ie_info *nol_info)
+{
+	struct hostapd_hw_modes *mode;
+	enum oper_chan_width oper_chwidth;
+	int center_freq1 = 0;
+	int bandwidth_mhz = 0;
+	int n_subchans = 0;
+	int start_chan_idx = 0;
+	int seg1_start = 0;
+
+	if (!iface || !nol_info || hostapd_is_backhaul_sta_configured(iface))
+		return;
+
+	mode = iface->current_mode;
+	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	center_freq1 = iface->freq;
+	if (oper_chwidth == CONF_OPER_CHWIDTH_USE_HT &&
+	    iface->conf->secondary_channel)
+		center_freq1 += iface->conf->secondary_channel * 10;
+
+	if (!mode ||
+	    dfs_nol_ie_chan_width_to_bw_mhz(oper_chwidth, iface->freq,
+					    center_freq1, &bandwidth_mhz) ||
+	    dfs_nol_ie_get_subchan_count(oper_chwidth, iface->freq,
+					 center_freq1, &n_subchans) ||
+	    n_subchans <= 0 || n_subchans > DFS_MAX_20M_SUB_CH) {
+		wpa_printf(MSG_WARNING,
+			   "uplink_csa: Failed to derive full-BW NOL fallback");
+		return;
+	}
+
+	start_chan_idx = dfs_get_start_chan_idx(iface, &seg1_start, oper_chwidth,
+						iface->conf->channel, false);
+	if (start_chan_idx < 0 || start_chan_idx >= mode->num_channels) {
+		wpa_printf(MSG_WARNING,
+			   "uplink_csa: Failed to derive start channel for full-BW NOL");
+		return;
+	}
+
+	nol_info->freq = mode->channels[start_chan_idx].freq;
+	nol_info->bandwidth = bandwidth_mhz;
+	nol_info->subchan_bitmap = DFS_NOL_IE_BITMAP_MASK(n_subchans);
+
+	if (dfs_process_nol_ie_bitmap(iface, nol_info) == 0) {
+		wpa_printf(MSG_INFO,
+			   "uplink_csa: Missing NOL IE treated as full-BW radar");
+	} else {
+		wpa_printf(MSG_WARNING,
+			   "uplink_csa: Failed to update full-BW NOL");
+	}
 }
 
 /*
@@ -925,9 +1019,10 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 	} else {
 		wpa_printf(MSG_INFO,
 			   "uplink_csa: No NOL IE found in received uplink CSA");
+		hostapd_handle_missing_nol_ie(iface, &nol_info);
 	}
 
-	if (iface->cac_started) {
+	if (iface->cac_started || iface->bootup_cac_in_progress) {
 		wpa_printf(MSG_DEBUG,
 			   "uplink_csa: CSA on iface:%s for link_id=%d, freq:%d aborting CAC before channel switch",
 			   hapd->conf->iface, link_id, freq);
@@ -1020,6 +1115,7 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 			      u16 radar_bitmap,
 			      dfs_nol_ie_info *nol_info)
 {
+	int base_freq = 0;
 	int bandwidth_mhz;
 	int n_subchans;
 	u16 bitmap_mask;
@@ -1029,7 +1125,7 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 	int contiguous_count;
 	u16 contiguous_bitmap;
 
-	if (!iface || !nol_info) {
+	if (!nol_info) {
 		wpa_printf(MSG_ERROR, "DFS NOL IE: Invalid parameters");
 		return -1;
 	}
@@ -1042,10 +1138,16 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 		return -1;
 	}
 
-	n_subchans = bandwidth_mhz / MIN_DFS_SUBCHAN_BW;
-	if (n_subchans <= 0 || n_subchans > DFS_MAX_20M_SUB_CH) {
+	if (dfs_nol_ie_get_subchan_count(chan_width, freq, cf1, &n_subchans) ||
+	    n_subchans <= 0 || n_subchans > DFS_MAX_20M_SUB_CH) {
 		wpa_printf(MSG_ERROR, "DFS NOL IE: Invalid subchannel count %d",
 			   n_subchans);
+		return -1;
+	}
+
+	if (dfs_nol_ie_get_base_freq(freq, cf1, chan_width, &base_freq)) {
+		wpa_printf(MSG_ERROR,
+			   "DFS NOL IE: Failed to derive base frequency");
 		return -1;
 	}
 
@@ -1087,7 +1189,7 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 	 * radar_bitmap),
 	 * the NOL IE bitmap should be 0b0011 (bits 0-1 set).
 	 */
-	contiguous_bitmap = (1U << contiguous_count) - 1;
+	contiguous_bitmap = (u16) ((1U << contiguous_count) - 1);
 
 	/*
 	 * RCSA design for NOL IE
@@ -1101,7 +1203,7 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 	 *   - Affected: 5520 (bit1), 5540 (bit2)
 	 *   - NOL IE: freq=5520, bandwidth=20, bitmap=0b0011
 	 */
-	nol_info->freq = freq + (start_subchan_idx * MIN_DFS_SUBCHAN_BW);
+	nol_info->freq = base_freq + (start_subchan_idx * MIN_DFS_SUBCHAN_BW);
 	nol_info->bandwidth = MIN_DFS_SUBCHAN_BW;
 	nol_info->subchan_bitmap = contiguous_bitmap;
 
@@ -1110,8 +1212,8 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 		   cf1, bandwidth_mhz, radar_bitmap);
 
 	wpa_printf(MSG_DEBUG,
-		   "DFS NOL IE: Calculated - primary_freq=%d n_subchans=%d",
-		   freq, n_subchans);
+		   "DFS NOL IE: Calculated - base_freq=%d primary_freq=%d n_subchans=%d",
+		   base_freq, freq, n_subchans);
 
 	wpa_printf(MSG_DEBUG,
 		   "DFS NOL IE: Affected subchannels - start_idx=%d end_idx=%d count=%d",
@@ -1362,7 +1464,6 @@ int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
 	u32 base_freq;
 	u16 bm;
 	int bw_mhz;
-	int chan_width_enum;
 	int bit;
 	int ret = 0;
  
@@ -1380,11 +1481,6 @@ int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
 	}
 
 	bw_mhz = (int)nol_info->bandwidth;
-	if (dfs_nol_ie_bw_mhz_to_chan_width(bw_mhz, &chan_width_enum)) {
-		wpa_printf(MSG_ERROR,
-			   "DFS NOL IE: Unsupported bandwidth %d MHz", bw_mhz);
-		return -1;
-	}
 
 	base_freq = nol_info->freq;
 	wpa_printf(MSG_INFO,
@@ -1394,7 +1490,7 @@ int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
 	/*
 	 * Each bit k in bm represents a 20 MHz subchannel:
 	 *   freq_k = base_freq + k * MIN_DFS_SUBCHAN_BW
-	 * Only DFS_MAX_20M_SUB_CH (8) bits are valid.
+	 * The NOL bitmap is carried as u16, so process the full 16-bit range.
 	 */
 	for (bit = 0; bit < DFS_MAX_20M_SUB_CH; bit++) {
 		u32 chan_freq;
@@ -1407,8 +1503,13 @@ int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
 			   "DFS NOL IE: Marking %u MHz as NOL (base=%u bit=%d)",
 			   chan_freq, base_freq, bit);
 
+		/*
+		 * This loop processes one 20 MHz subchannel at a time, so DFS
+		 * state must be updated using a 20 MHz chandef even when the
+		 * original operating bandwidth was wider.
+		 */
 		if (!set_dfs_state(iface, chan_freq, 1, 0,
-				   chan_width_enum, chan_freq, 0,
+				   CHAN_WIDTH_20, chan_freq, 0,
 				   HOSTAPD_CHAN_DFS_UNAVAILABLE,
 				   DFS_NOL_IE_SINGLE_SUBCHAN_BITMAP)) {
 			wpa_printf(MSG_WARNING,
@@ -1552,6 +1653,7 @@ void hostapd_bootup_cac_complete_extn(struct hostapd_iface *iface)
 {
 	iface->bootup_cac_in_progress = 0;
 	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
 
 #ifdef CONFIG_MESH
 	if (iface->mconf)
@@ -1583,6 +1685,90 @@ bool hostapd_bss_rnr_eligible_extn(struct hostapd_data *bss)
 }
 
 /**
+ * dfs_range_has_nol_extn - Check whether a channel range includes NOL
+ * @mode: Hardware mode containing the channel table
+ * @start_idx: Start index in @mode channel table
+ * @n_chans: Number of 20 MHz channels to check
+ *
+ * Check whether any channel in the specified range is marked
+ * DFS_UNAVAILABLE. A DFS_UNAVAILABLE channel is in NOL/NOP and must not be
+ * used for CAC or AP bring-up until NOP expires.
+ *
+ * Return: true if any channel in the range is in NOL, false otherwise.
+ */
+static bool dfs_range_has_nol_extn(struct hostapd_hw_modes *mode,
+				   int start_idx, int n_chans)
+{
+	int i;
+
+	if (!mode || start_idx < 0 || n_chans <= 0)
+		return false;
+
+	for (i = 0; i < n_chans && start_idx + i < mode->num_channels; i++) {
+		struct hostapd_channel_data *channel;
+
+		channel = &mode->channels[start_idx + i];
+		if ((channel->flag & HOSTAPD_CHAN_DFS_MASK) ==
+		    HOSTAPD_CHAN_DFS_UNAVAILABLE)
+			return true;
+	}
+
+	return false;
+}
+
+/**
+ * bootup_cac_current_channel_has_nol_extn - Check current channel for NOL
+ * @iface: Pointer to hostapd interface data
+ *
+ * Check whether the currently configured operating channel, including all
+ * active 20 MHz subchannels and the secondary segment for 80+80 MHz, contains
+ * any channel marked DFS_UNAVAILABLE. A DFS_UNAVAILABLE channel is in NOL/NOP
+ * and must not be used for CAC or AP bring-up until NOP expires.
+ *
+ * Return: true if the current channel configuration contains a DFS unavailable
+ * channel, false otherwise.
+ */
+static bool bootup_cac_current_channel_has_nol_extn(struct hostapd_iface *iface)
+{
+	struct hostapd_hw_modes *mode;
+	int start_chan_idx, start_chan_idx1;
+	int n_chans, n_chans1;
+	int chan_width;
+
+	if (!iface || !iface->conf || !iface->current_mode)
+		return false;
+
+	mode = iface->current_mode;
+	chan_width = hostapd_get_oper_chwidth(iface->conf);
+
+	start_chan_idx = dfs_get_start_chan_idx(iface, &start_chan_idx1,
+						chan_width,
+						iface->conf->channel, false);
+	if (start_chan_idx < 0)
+		return false;
+
+	n_chans = dfs_get_used_n_chans(iface, &n_chans1, chan_width);
+
+	return dfs_range_has_nol_extn(mode, start_chan_idx, n_chans) ||
+	       dfs_range_has_nol_extn(mode, start_chan_idx1, n_chans1);
+}
+
+/**
+ * hostapd_bootup_cac_enabled_extn - Check whether driver-managed boot-up CAC is enabled
+ *
+ * Returns true when the driver advertises
+ * WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC and interface teardown during
+ * CAC is not requested through disable_iface_during_cac configuration.
+ *
+ * Return: true if driver-managed boot-up CAC is enabled, false otherwise.
+ */
+bool hostapd_bootup_cac_enabled_extn(struct hostapd_iface *iface)
+{
+	return (iface->drv_flags2 & WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC) &&
+	       !iface->conf->conf_extn.disable_iface_during_cac;
+}
+
+/**
  * hostapd_bootup_cac_start_extn - Start boot-up CAC if the driver and config allow it.
  *
  * When the driver advertises WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC and
@@ -1600,10 +1786,47 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 	if (!is_5ghz_freq(iface->freq))
 		return false;
 
-	if (!((iface->drv_flags2 & WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC) &&
-	      !iface->conf->conf_extn.disable_iface_during_cac &&
-	      hostapd_is_cac_required(iface)))
+	if (!hostapd_bootup_cac_enabled_extn(iface))
 		return false;
+
+	if (!hostapd_is_cac_required(iface))
+		return true;
+
+	if (bootup_cac_current_channel_has_nol_extn(iface)) {
+		struct hostapd_channel_data *channel;
+		int secondary_channel;
+		u8 oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx;
+		u8 oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+		int channel_type = DFS_ANY_CHANNEL_EXTN;
+
+		wpa_printf(MSG_DEBUG,
+			   "Boot-up CAC: configured channel %d MHz is in NOL, trying bandwidth downgrade",
+			   iface->freq);
+
+		channel = dfs_downgrade_bandwidth_helper(iface, &secondary_channel,
+							 &oper_centr_freq_seg0_idx,
+							 &oper_centr_freq_seg1_idx,
+							 &oper_chwidth,
+							 &channel_type);
+		if (channel) {
+			wpa_printf(MSG_DEBUG,
+				   "Boot-up CAC: NOL fallback channel %d MHz (chan=%d width=%d)",
+				   channel->freq, channel->chan, oper_chwidth);
+			iface->freq = channel->freq;
+			iface->conf->channel = channel->chan;
+			iface->conf->secondary_channel = secondary_channel;
+			hostapd_set_oper_chwidth(iface->conf, oper_chwidth);
+			hostapd_set_oper_centr_freq_seg0_idx(iface->conf,
+							     oper_centr_freq_seg0_idx);
+			hostapd_set_oper_centr_freq_seg1_idx(iface->conf,
+							     oper_centr_freq_seg1_idx);
+		} else {
+			wpa_printf(MSG_DEBUG,
+				   "Boot-up CAC: no fallback channel found for NOL channel %d MHz",
+				   iface->freq);
+			return false;
+		}
+	}
 
 	if (hostapd_set_dfs_cac_time(iface))
 		return false;
@@ -1618,6 +1841,7 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 
 	wpa_printf(MSG_DEBUG, "DFS start CAC on %d MHz%s", iface->freq,
 		   dfs_use_radar_background(iface) ? " (background)" : "");
+
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_START
 		"freq=%d chan=%d sec_chan=%d, width=%d, seg0=%d, seg1=%d, cac_time=%ds bitmap:0x%04x",
 		iface->freq,

@@ -1,4 +1,5 @@
 CFLAGS += -DCONFIG_QCN_EXTN
+CFLAGS += -DCONFIG_QCN_LOG_EXTN
 
 ifdef CONFIG_QCA_LAB_TEST_FEATURES
 CFLAGS += -DCONFIG_QCA_LAB_TEST_FEATURES
@@ -24,16 +25,35 @@ OBJS += \
 	qcn_extns/repurpose.o \
 	qcn_extns/dfs_extn.o \
 	qcn_extns/ucode_extn.o \
-	qcn_extns/wpa_supplicant_extn.o \
 	qcn_extns/mucapwar.o \
 	qcn_extns/dcs.o \
 	qcn_extns/afc.o \
 	qcn_extns/hostapd_extn.o \
+	qcn_extns/hostapd_log_extn.o \
 	qcn_extns/qcn_ie_extn.o \
 	qcn_extns/ttlm_extn.o \
-	qcn_extns/wpa_config_extn.o \
 	qcn_extns/dfs_rcsa_extn.o \
 	qcn_extns/wds_ie.o
+
+ifdef CONFIG_QCA_WPA_SUPPLICANT_BUILD
+OBJS += qcn_extns/wpa_supplicant_extn.o
+OBJS += qcn_extns/wpa_config_extn.o
+endif
+
+ifeq ($(CONFIG_PACKAGE_udbg-enhanced),y)
+ifeq ($(CONFIG_UDBG_ENH),y)
+CFLAGS += -DCONFIG_UDBG_ENH
+ifndef UDBG_CLIENT_CORE_INC
+$(error UDBG_CLIENT_CORE_INC must be provided when CONFIG_UDBG_ENH is enabled)
+endif
+ifndef UDBG_CLIENT_CORE_LIB
+$(error UDBG_CLIENT_CORE_LIB must be provided when CONFIG_UDBG_ENH is enabled)
+endif
+CFLAGS += -I$(UDBG_CLIENT_CORE_INC)
+LIBS += $(UDBG_CLIENT_CORE_LIB)
+OBJS += qcn_extns/udbg_enh.o
+endif
+endif
 
 ifdef CONFIG_EXTERNAL_PLUGIN
 CFLAGS += -DHOSTAPD_EXTERNAL_PLUGIN

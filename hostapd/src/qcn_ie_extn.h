@@ -47,4 +47,9 @@
 #define QCN_HE_MCS_12_13_EXTRACT_NSS(c, s)	(((c) >> (s)) & QCN_HE_MCS_12_13_MASK)
 
 #define OUI_QCOM				0x00037f
+
+u8 *qcn_ie_begin(u8 *pos, u8 **len_ptr);
+void qcn_ie_end(u8 *len_ptr, const u8 *end);
+u8 *qcn_eid_add_he_mcs_12_13_attr(u16 self_cap, bool is_enabled, u8 *pos);
+
 #endif /* QCN_IE_EXTN_H */

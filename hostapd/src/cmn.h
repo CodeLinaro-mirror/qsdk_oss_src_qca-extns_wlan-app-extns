@@ -73,6 +73,9 @@ struct wpa_config;
 struct freq_survey;
 struct wpa_ssid;
 
+#define UDBG_ENH_SERVER_IP_SIZE INET6_ADDRSTRLEN
+#define UDBG_ENH_APP_ID_SIZE 64u
+
 struct ieee80211_240mhz_vendor_oper_extn {
 	u8 ccfs1;
 	u8 ccfs0;
@@ -409,6 +412,13 @@ struct hostapd_data_extn {
 	bool mu_cap_war_override;
 	struct dl_list mu_cap_war_sta_list;
 #endif /* CONFIG_IEEE80211AC */
+	/* Dedup list: STAs for which a trigger event was already sent. */
+	struct dl_list log_trigger_sent;
+};
+
+struct hapd_interfaces_extn {
+	/* Common BH STA connection state for dependent repeater AP bring-up. */
+	bool bh_sta_connected;
 };
 
 /* NOL IE vendor element encoding/decoding constants */
@@ -577,6 +587,15 @@ struct hostapd_config_extn {
 
 	/* CBS (Continuous Background Scan) params */
 	struct cbs_params_extn cbs_params;
+
+	/* UDBG client config loaded from hostapd.conf */
+	bool udbg_enh_enable;
+	char udbg_enh_server_ip[UDBG_ENH_SERVER_IP_SIZE];
+	int udbg_enh_server_port;
+	char udbg_enh_app_id[UDBG_ENH_APP_ID_SIZE];
+	size_t udbg_enh_records;
+	size_t udbg_enh_ring_max_bytes;
+	uint32_t udbg_enh_service_delay_ms;
 };
 
 /**
@@ -834,14 +853,10 @@ struct wpa_supplicant_extn {
  * struct wpa_config_extn - QCN extension configuration parameters.
  * @he_mcs_12_13_enabled: Indicates whether HE MCS 12/13 support is enabled.
  *                        (enabled by default)
- * @strict_passive_scan: When enabled, restricts scanning to passive-only
- *                       channels; disables active probing on all channels.
- *                       (disabled by default)
  */
 struct wpa_config_extn {
 	bool he_mcs_12_13_enabled;
 	int allow_3addr_mc;
-	bool strict_passive_scan;
 };
 
 int get_centre_freq_6g(int chan_idx, int chan_width, int *centre_freq);
@@ -1537,7 +1552,9 @@ hostapd_cbs_handle_single_channel_survey(struct hostapd_iface *iface,
 }
 
 static inline int
-acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
+acs_handle_channel_change_failed_extn(struct hostapd_iface *iface,
+				      struct hostapd_channel_data *ideal_chan,
+				      int err)
 {
 	return -EOPNOTSUPP;
 }
@@ -1764,6 +1781,12 @@ hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface)
 }
 
 static inline void
+hostapd_update_bh_sta_connected_extn(struct hostapd_iface *iface,
+				     const char *wpa_state)
+{
+}
+
+static inline void
 dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap)
 {
 }
@@ -1852,6 +1875,13 @@ wpas_set_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq)
 
 static inline bool
 wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, struct wpa_bss *bss)
+{
+	return false;
+}
+
+static inline bool
+wpas_link_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, int freq,
+					enum chan_width width, int cf1, int cf2)
 {
 	return false;
 }
@@ -2419,6 +2449,8 @@ void hostapd_update_nf(struct hostapd_iface *iface,
 void hostapd_ml_acs_check_and_notify(struct hostapd_iface *iface, bool status);
 void wpa_supplicant_start_sta_scan(void *eloop_ctx, void *timeout_ctx);
 bool hostapd_is_bh_sta_connecting_or_connected_extn(struct hostapd_iface *iface);
+void hostapd_update_bh_sta_connected_extn(struct hostapd_iface *iface,
+					  const char *wpa_state);
 bool check_40mhz_2g4_bss_snr_below_threshold_extn(
 	const struct wpa_scan_res *bss,
 	const struct check_40mhz_2g4_extn_args *extn_args);
@@ -2513,6 +2545,19 @@ static inline void acs_rank_channels(struct hostapd_hw_modes *mode)
 {
 }
 
+#ifdef CONFIG_IEEE80211BN
+static inline int
+qacs_select_best_npca_chan(struct hostapd_iface *iface,
+		struct hostapd_hw_modes *mode,
+		struct hostapd_channel_data *ideal_chan,
+		enum oper_chan_width chwidth,
+		u8 *npca_primary_channel,
+		u16 *npca_punct_bitmap)
+{
+	return -EOPNOTSUPP;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 #else
 void acs_update_total_interference_factor_extn(struct hostapd_iface *iface,
                       struct hostapd_hw_modes *mode, u32 bw, int bw320_offset,
@@ -2527,6 +2572,16 @@ int acs_process_hostapd_scan_data_per_freq(struct hostapd_iface *iface,
 					       int freq_filter);
 void qacs_reset_scan_stats(struct hostapd_iface *iface,
 			   struct hostapd_hw_modes *mode);
+
+#ifdef CONFIG_IEEE80211BN
+int qacs_select_best_npca_chan(struct hostapd_iface *iface,
+		struct hostapd_hw_modes *mode,
+		struct hostapd_channel_data *ideal_chan,
+		enum oper_chan_width chwidth,
+		u8 *npca_primary_channel,
+		u16 *npca_punct_bitmap);
+#endif /* CONFIG_IEEE80211BN */
+
 #endif /*CONFIG_QCN_APP_EXTN */
 
 int hostapd_set_nontx_optional_vendor_elem_size_extn(struct hostapd_data *hapd,
@@ -2571,7 +2626,9 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 			       int err);
 void acs_init_extn(struct hostapd_iface *iface, uint8_t trigger);
 int
-acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err);
+acs_handle_channel_change_failed_extn(struct hostapd_iface *iface,
+				      struct hostapd_channel_data *ideal_chan,
+				      int err);
 bool acs_hwbl_candidate_ok(struct hostapd_iface *iface,
 			   struct hostapd_channel_data *chan,
 			   u32 bw, int bw320_offset, u16 punct_bitmap,
@@ -2610,7 +2667,9 @@ acs_init_extn(struct hostapd_iface *iface, uint8_t trigger)
 }
 
 static inline int
-acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
+acs_handle_channel_change_failed_extn(struct hostapd_iface *iface,
+				      struct hostapd_channel_data *ideal_chan,
+				      int err)
 {
 	return -EOPNOTSUPP;
 }
@@ -2893,10 +2952,6 @@ int hostapd_set_he_mcs_12_13_cap_extn(struct hostapd_data *hapd);
  */
 int wpas_set_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq);
 
-struct wpa_scan_res *
-wpa_scan_ssid_hide_beacon_extn(struct wpa_supplicant *wpa_s,
-				     struct wpa_scan_res *scan_res_item);
-
 /**
  * wpa_config_alloc_empty_extn - Set the default value for config parameters.
  * @config: wpa_supplicant extensions configuration values
@@ -2907,7 +2962,6 @@ void wpa_config_alloc_empty_extn(struct wpa_config *config);
 #define EMA_MLO_BSS_MAX_LIMIT 8
 
 #define DEFAULT_HE_MCS_12_13_SUPPORT true
-#define DEFAULT_STRICT_PASSIVE_SCAN false
 
 /* Primary channel list APIs  */
 int hostapd_set_primary_chanlist(struct hostapd_data *hapd, const char *chan_str);
@@ -2923,6 +2977,8 @@ enum chan_width
 hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
 				       int sec_channel_offset);
 bool wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, struct wpa_bss *bss);
+bool wpas_link_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, int freq,
+				     enum chan_width width, int cf1, int cf2);
 void wpas_dfs_radar_detected_sta_mode(struct wpa_supplicant *wpa_s,
 				      struct dfs_event *radar);
 void wpas_dfs_nop_finished_sta_mode(struct wpa_supplicant *wpa_s,

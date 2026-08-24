@@ -21,7 +21,7 @@ typedef struct dfs_nol_ie_info_extn dfs_nol_ie_info;
 #define IEEE80211_CSA_IE_TOTAL_LEN 5
 
 /* NOL IE constants - aligned with RCSA design */
-#define DFS_MAX_20M_SUB_CH 8
+#define DFS_MAX_20M_SUB_CH 16
 #define DFS_NOL_IE_TIMEOUT_MS 1800000  /* 30 minutes */
 #define MIN_DFS_SUBCHAN_BW 20          /* 20 MHz minimum subchannel */
 
@@ -54,6 +54,7 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface);
 bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface);
 void hostapd_bootup_cac_complete_extn(struct hostapd_iface *iface);
 bool hostapd_bss_rnr_eligible_extn(struct hostapd_data *bss);
+bool hostapd_bootup_cac_enabled_extn(struct hostapd_iface *iface);
 bool hostapd_is_backhaul_sta_configured(struct hostapd_iface *iface);
 void hostapd_trigger_backhaul_sta_disconnect(void *eloop_data, void *user_data);
 void hostapd_rcsa_trigger_channal_change(void *eloop_data, void *user_data);
@@ -77,7 +78,7 @@ unsigned int dfs_get_ch_flags_extn(unsigned int cswopts);
  * dfs_chan_skip_by_flags_extn - Check whether a channel should be skipped
  * during random DFS channel selection
  * @iface: Pointer to hostapd_iface
- * @chan: Candidate channel to evaluate
+ * @chan: Candidate primary channel to evaluate
  * @flags: DFS_RANDOM_CH_FLAG_* bitmask from dfs_get_ch_flags_extn()
  *
  * Evaluates the two flag-driven skip conditions introduced by the enhanced
@@ -89,7 +90,11 @@ unsigned int dfs_get_ch_flags_extn(unsigned int cswopts);
  *     dfs_get_used_n_chans() and then iterating over
  *     mode->channels[start_chan_idx + i].
  *
- *   DFS_RANDOM_CH_FLAG_NO_DFS_CH: skip @chan if it is a DFS/radar channel.
+ *   DFS_RANDOM_CH_FLAG_NO_DFS_CH: skip the candidate channel range if ANY of
+ *     its sub-channels has HOSTAPD_CHAN_RADAR set.  The BW range is derived
+ *     internally from iface->conf (via dfs_get_used_n_chans()), so a non-DFS
+ *     primary channel (e.g. channel 36) that spans into DFS sub-channels at
+ *     wide bandwidth (e.g. EHT 160 MHz) is correctly rejected.
  *
  * Returns: true if @chan should be skipped, false otherwise.
  */
@@ -100,5 +105,32 @@ bool dfs_chan_skip_by_flags_extn(struct hostapd_iface *iface,
 int dfs_nol_ie_chan_width_to_bw_mhz(enum oper_chan_width chan_width,
 				    int freq, int cf1,
 				    int *bandwidth_mhz);
+bool optional_ml_info_ie_access(u8 *buf, size_t buf_len,
+				s8 *link_id, bool set);
+
+
+/*
+ * RCSA Vendor Specific Action frame:
+ * category(1) + Atheros OUI(3) + CSA IE [+ optional QCA NOL IE].
+ */
+#define RCSA_VENDOR_ACTION_HDR_LEN 4
+#define RCSA_CSA_IE_HDR_LEN 2
+#define RCSA_NOL_IE_INFO_LEN 4
+#define RCSA_NOL_IE_TOTAL_LEN (RCSA_CSA_IE_HDR_LEN + RCSA_NOL_IE_INFO_LEN)
+#define RCSA_MIN_FRAME_LEN \
+	(RCSA_VENDOR_ACTION_HDR_LEN + RCSA_CSA_IE_HDR_LEN + \
+	 IEEE80211_CSA_IE_MIN_LEN)
+#define RCSA_MIN_DFS_SUBCHAN_BW 20
+#define RCSA_MAX_20M_SUB_CH 8
+
+#define HOSTAPD_RCSA_TX_COUNT 5
+#define HOSTAPD_RCSA_SWITCH_MODE 1
+#define HAPD_DFS_WAIT_FOR_RCSA_FROM_ROOT_DUR_US(bcn_intval) (HOSTAPD_RCSA_TX_COUNT * (bcn_intval) * 2)
+#define HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_US 1000
+#define HOSTAPD_RCSA_INTVAL_US (100 * 1000)
+
+int dfs_nol_ie_get_subchan_count(enum oper_chan_width chan_width,
+				 int freq, int cf1,
+				 int *n_subchans);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* DFS_EXTN_H */

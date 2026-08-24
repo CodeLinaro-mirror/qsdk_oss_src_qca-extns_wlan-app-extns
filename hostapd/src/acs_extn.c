@@ -21,6 +21,7 @@
 #include "block_channel.h"
 #include "utils/eloop.h"
 #include "cmn.h"
+#include "acs_extn.h"
 
 int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
 				 struct hostapd_channel_data *chan,
@@ -586,34 +587,35 @@ static void acs_fill_algo_type(struct hostapd_iface *iface)
 
 int hostapd_trigger_dynamic_acs(struct hostapd_data *hapd, enum dynamic_acs_action_extn acs_action)
 {
-        struct hostapd_iface *iface = hapd->iface;
-        int status;
+	struct hostapd_iface *iface = hapd->iface;
+	int status;
 
-        if (!hapd->iface->current_mode)
-            return -1;
+	if (!hapd->iface->current_mode)
+		return -1;
 
 
-        if (iface->iface_extn.dynamic_acs_action) {
-                wpa_printf(MSG_ERROR, "Dynamic ACS is already in progress");
-                return -1;
-        }
+	if (iface->iface_extn.dynamic_acs_action) {
+		wpa_printf(MSG_ERROR, "Dynamic ACS is already in progress");
+		return -1;
+	}
 
-        iface->iface_extn.dynamic_acs_action = acs_action;
-        qacs_reset_scan_stats(iface, hapd->iface->current_mode);
+	iface->iface_extn.dynamic_acs_action = acs_action;
+	wpa_msg(hapd->msg_ctx, MSG_INFO, DYNAMIC_ACS_EVENT_STARTED);
+	qacs_reset_scan_stats(iface, hapd->iface->current_mode);
 	/* Notify wpa_supplicant to abort scans before starting ACS */
 	if (!hostapd_is_bh_sta_connecting_or_connected_extn(iface))
 		hostapd_ucode_notify_acs_start(iface);
 
-        status = acs_init(iface);
-        if (status != HOSTAPD_CHAN_ACS) {
-                wpa_printf(MSG_ERROR, "Could not start ACS, error: %d", status);
-                iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+	status = acs_init(iface);
+	if (status != HOSTAPD_CHAN_ACS) {
+		wpa_printf(MSG_ERROR, "Could not start ACS, error: %d", status);
+		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
 		/* Notify wpa_supplicant to resume scans on failure */
 		hostapd_ml_acs_check_and_notify(iface, 0);
-                return -1;
-        }
+		return -1;
+	}
 
-        return 0;
+	return 0;
 }
 
 static void hostapd_periodic_acs_timeout(void *eloop_ctx, void *timeout_ctx)
@@ -837,15 +839,18 @@ static int hostapd_acs_set_periodic_interval_extn(struct hostapd_iface *iface,
 {
 	int val = atoi(pos);
 
-	if (val < 60 || val > 86400) {
+	if (val != 0 && (val < 60 || val > 86400)) {
 		wpa_printf(MSG_ERROR,
-			   "%s: Invalid acs_periodic_interval %d (expected 60..86400)",
+			   "%s: Invalid acs_periodic_interval %d (expected 0 or 60..86400)",
 			   __func__, val);
 		return -1;
 	}
 
 	iface->conf->conf_extn.acs_periodic_interval = val;
-	hostapd_periodic_acs_start(iface);
+	if (val)
+		hostapd_periodic_acs_start(iface);
+	else
+		hostapd_periodic_acs_stop(iface);
 
 	return 0;
 }
@@ -1250,7 +1255,7 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
 	u8 chan_no;
 
 	os_memset(&settings, 0, sizeof(settings));
-	settings.cs_count = 5;
+	settings.cs_count = 10;
 
 	settings.freq_params.sec_channel_offset = iface->conf->secondary_channel;
 	settings.freq_params.freq = chan->freq;
@@ -1268,6 +1273,7 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
 	settings.freq_params.vht_enabled = iface->conf->ieee80211ac;
 	settings.freq_params.he_enabled = iface->conf->ieee80211ax;
 	settings.freq_params.eht_enabled= iface->conf->ieee80211be;
+	settings.freq_params.uhr_enabled = iface->conf->ieee80211bn;
 	settings.freq_params.punct_bitmap = chan->punct_bitmap;
 	settings.power_mode = -1;
 
@@ -1349,7 +1355,7 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
 				   settings.freq_params.sec_channel_offset,
 				   settings.freq_params.bandwidth);
 			return -1;
-	}
+		}
 
 
 	if (iface->conf->disable_csa_dfs == 1) {
@@ -1367,17 +1373,20 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
                    settings.freq_params.bandwidth,
                    settings.freq_params.center_freq1);
 
-        /* Perform CAC and switch channel via fallback */
+	if(iface->cac_started || iface->bootup_cac_in_progress) {
+		wpa_printf(MSG_DEBUG, "ACS: CAC in progress and ACS invoked - Aborting CAC");
+		return hostapd_abort_cac_for_channel_switch(iface, &settings);
+	}
+
+	/* Perform CAC and switch channel via fallback */
         iface->is_ch_switch_dfs = true;
         hostapd_switch_channel_fallback(iface, &settings.freq_params);
         return 0;
     }
 
-    if (iface->cac_started) {
-        wpa_printf(MSG_DEBUG,
-                   "ACS: CAC in progress - switching channel without CSA");
-        return hostapd_force_channel_switch(iface, &settings);
-    }
+	if (iface->cac_started || iface->bootup_cac_in_progress) {
+		return hostapd_abort_cac_for_channel_switch(iface, &settings);
+	}
 
     if (iface->conf->disable_csa_dfs == 1) {
         wpa_printf(MSG_DEBUG, "ACS: cancel radar handling timer for %s",
@@ -1419,6 +1428,11 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 	int cs_err;
 
 	acs_fill_timestamp(iface, NORMAL_SCAN_TRIGGER, false);
+
+	if (!chan || err)
+		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DYNAMIC_ACS_EVENT_FAILED);
+	else
+		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DYNAMIC_ACS_EVENT_COMPLETED);
 
 	if (iface->iface_extn.dynamic_acs_action == NO_CHANNEL_CHANGE) {
 		iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
@@ -1468,17 +1482,27 @@ acs_handle_channel_change_extn(struct hostapd_iface *iface,
 }
 
 int
-acs_handle_channel_change_failed_extn(struct hostapd_iface *iface, int err)
+acs_handle_channel_change_failed_extn(struct hostapd_iface *iface,
+				      struct hostapd_channel_data *ideal_chan,
+				      int err)
 {
 	if (iface->iface_extn.dynamic_acs_action == DYNAMIC_ACS_DISABLE)
 		return -1;
 
 	wpa_printf(MSG_ERROR, "ACS failed with error: %d, channel change is not possible",
 		   err);
+	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DYNAMIC_ACS_EVENT_FAILED);
 	/* Notify wpa_supplicant to resume scans on failure */
 	hostapd_ml_acs_check_and_notify(iface, 0);
-	hostapd_dcs_restore_extn(iface, "ACS failed");
 	iface->iface_extn.dynamic_acs_action = DYNAMIC_ACS_DISABLE;
+
+	if (!ideal_chan) {
+		wpa_printf(MSG_ERROR, "ACS: No ideal channel found, bringing down the VAP");
+		hostapd_disable_iface(iface);
+		return 0;
+	}
+
+	hostapd_dcs_restore_extn(iface, "ACS failed");
 
 	return 0;
 }
