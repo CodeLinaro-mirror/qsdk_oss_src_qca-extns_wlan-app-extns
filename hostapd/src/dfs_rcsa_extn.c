@@ -588,8 +588,8 @@ static bool hostapd_store_rcsa_nol_info(struct hostapd_iface *iface,
  *
  * On success, updates iface->iface_extn.nol_info and sets
  * iface->iface_extn.nol_info_valid to true. Existing NOL state is cleared
- * before parsing to avoid using stale data. Missing NOL IE on root AP is
- * treated as full-bandwidth radar.
+ * before parsing to avoid using stale data. Missing NOL IE on the local
+ * receiver is treated as full-bandwidth radar.
  *
  * Return: true when a valid NOL IE is parsed, false otherwise.
  */
@@ -646,7 +646,7 @@ static bool hostapd_parse_rcsa_nol_ie(struct hostapd_iface *iface,
 		rem_len -= ie_len;
 	}
 
-	if (hostapd_is_backhaul_sta_configured(iface) || !iface->current_mode)
+	if (!iface->current_mode)
 		return false;
 
 	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
