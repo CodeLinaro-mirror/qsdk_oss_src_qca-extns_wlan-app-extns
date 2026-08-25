@@ -479,10 +479,6 @@ hostapd_oper_info_of_repurposed_bss_helper_extn(struct hostapd_data *hapd,
 					*oper_chwidth,
 					secondary_channel);
 	}
-	wpa_printf(MSG_DEBUG,
-		   "Repurpose: updated oper_chwidth = %d seg0 = %d seg1 = %d",
-		   *oper_chwidth, *seg0, *seg1);
-
 }
 
 
