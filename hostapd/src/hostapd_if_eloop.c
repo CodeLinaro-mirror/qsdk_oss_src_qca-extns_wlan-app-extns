@@ -868,6 +868,8 @@ int hostapd_if_eloop_init(enum hostapd_if_eloop_type type)
 	struct sockaddr_un addr;
 
 	if (type == HOSTAPD_IF_ELOOP_DIRECT_CALL) {
+		wpa_printf(MSG_DEBUG,
+			"hostapd_if: Direct-call mode selected, skipping eloop socket setup");
 		hostapd_if_eloop_server_sock = -1;
 		hostapd_if_eloop_sock = -1;
 		return 0;
