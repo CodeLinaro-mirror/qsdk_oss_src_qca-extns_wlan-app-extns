@@ -36,6 +36,20 @@
 #define QCN_ATTRIB_HE_MCS_12_13_SUPP		0x09
 #define QCN_HE_MCS_12_13_SUPP_ATTRIB_LEN	2
 
+/* VHT MCS 10/11 (1024-QAM) support attribute */
+#define QCN_ATTRIB_VHT_MCS10_11_SUPP		0x02
+#define QCN_VHT_MCS10_11_SUPP_ATTRIB_LEN	1
+
+/* HE 400ns SGI (0.4us Guard Interval) support attribute.
+ * 3-byte payload: byte[0]=1xLTF+0.4us, byte[1]=2xLTF+0.4us, byte[2]=4xLTF(rsvd=0)
+ */
+#define QCN_ATTRIB_HE_400NS_SGI_SUPP		0x03
+#define QCN_HE_400NS_SGI_SUPP_ATTRIB_LEN	3
+
+/* HE 2xLTF in 160/80+80 MHz support attribute. 1-byte payload. */
+#define QCN_ATTRIB_HE_2XLTF_160_80P80_SUPP	0x04
+#define QCN_HE_2XLTF_160_80P80_SUPP_ATTRIB_LEN	1
+
 /*
  * Wire format in QCN IE (2-byte payload):
  *   byte[0] = (self_cap >> QCN_HE_MCS_12_13_L80_SHIFT) & QCN_HE_MCS_12_13_MASK
@@ -51,5 +65,8 @@
 u8 *qcn_ie_begin(u8 *pos, u8 **len_ptr);
 void qcn_ie_end(u8 *len_ptr, const u8 *end);
 u8 *qcn_eid_add_he_mcs_12_13_attr(u16 self_cap, bool is_enabled, u8 *pos);
+u8 *qcn_eid_add_vht_mcs10_11_attr(bool is_enabled, u8 *pos);
+u8 *qcn_eid_add_he_400ns_sgi_attr(bool is_enabled, u8 *pos);
+u8 *qcn_eid_add_he_2xltf_160_attr(bool is_enabled, u8 *pos);
 
 #endif /* QCN_IE_EXTN_H */

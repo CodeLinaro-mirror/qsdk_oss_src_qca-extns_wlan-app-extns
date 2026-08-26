@@ -238,6 +238,10 @@ hostapd_config_defaults_bss_extn(struct hostapd_bss_config *bss)
 	memset(&bss_extn->pure11ax_bss, 0, sizeof(bss_extn->pure11ax_bss));
 	/* WDS vendor IE: disabled by default */
 	bss_extn->wds_ie = 0;
+	bss_extn->vht_mcs_10_11_supp = DEFAULT_VHT_MCS_10_11_SUPPORT;
+	bss_extn->vht_mcs_10_11_nq2q_peer_supp = DEFAULT_VHT_MCS_10_11_NQ2Q_PEER_SUPPORT;
+	bss_extn->he_400ns_sgi_supp = DEFAULT_HE_400NS_SGI_SUPPORT;
+	bss_extn->he_2xltf_160_80p80_supp = DEFAULT_HE_2XLTF_160_80P80_SUPPORT;
 }
 
 int

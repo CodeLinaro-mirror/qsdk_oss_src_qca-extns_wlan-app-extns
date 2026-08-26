@@ -278,6 +278,13 @@ struct driver_dcs_sim {
 
 struct  hostapd_sta_add_params_extn {
 	struct ieee80211_240mhz_params_extn params_240mhz;
+	/* Per-SS bitmap of negotiated VHT MCS 10/11 support for this peer.
+	 * Populated from QCN IE parsing during association.
+	 * Bit N set means NSS (N+1) supports MCS 10 and 11.
+	 */
+	u8 higher_vhtmcs_supp;
+	/* QCA-internal HE capability bitmap negotiated via QCN IE attrs 0x03/0x04. */
+	u32 he_cap_info_internal;
 };
 
 struct sta_info_extn {
@@ -302,6 +309,18 @@ struct sta_info_extn {
 	 * to drive hostapd_set_wds_sta() enable/disable calls.
 	 */
 	bool wds_ie_peer;
+	/* Per-SS bitmap of negotiated VHT MCS 10/11 support for this peer.
+	 * Populated from the QCN IE VHT MCS10/11 attribute (0x02) during
+	 * association.  Bit N set means NSS (N+1) supports MCS 10 and 11.
+	 * Zero if the peer did not advertise MCS10/11 via QCN IE.
+	 */
+	u8 higher_vhtmcs_supp;
+	/* QCA-internal HE capability bitmap negotiated via QCN IE attrs 0x03/0x04.
+	 * bit 0: RX 1xLTF + 0.4us GI
+	 * bit 1: RX 2xLTF + 0.4us GI
+	 * bit 2: 2xLTF in 160/80+80 MHz
+	 */
+	u32 he_cap_info_internal;
 };
 
 /**
@@ -369,6 +388,18 @@ struct ieee802_11_elems_extn {
 
 	/* HE MCS 12/13 (4K-QAM) peer capability from QCN IE */
 	u16 he_mcs_12_13_peer_cap;
+
+	/* VHT MCS 10/11 (1024-QAM) peer support from QCN IE (attr 0x02).
+	 * Non-zero when the peer advertised support; zero otherwise.
+	 */
+	u8 vht_mcs10_11_peer_cap;
+	/* HE 400ns SGI peer support from QCN IE attr 0x03.
+	 * bit 0: peer supports RX 1xLTF + 0.4us GI
+	 * bit 1: peer supports RX 2xLTF + 0.4us GI
+	 */
+	u8 he_400ns_sgi_peer_cap;
+	/* HE 2xLTF in 160/80+80 MHz peer support from QCN IE attr 0x04. */
+	u8 he_2xltf_160_80p80_peer_cap;
 
 	/*
 	 * wds_ie / wds_ie_len - WDS vendor IE from received frames
@@ -684,6 +715,22 @@ struct hostapd_bss_config_extn {
 	 * the BSS shall not allow association from any IEEE 802.11b STA.
 	 */
 	bool pureg_bss;
+	/* Enable VHT MCS 10/11 (1024-QAM) support via QCN IE negotiation.
+	 * true = enabled (default), false = disabled.
+	 */
+	bool vht_mcs_10_11_supp;
+	/* Enable VHT MCS 10/11 for non-QCA peers that did not advertise
+	 * support via QCN IE.  false = disabled (default), true = enabled.
+	 */
+	bool vht_mcs_10_11_nq2q_peer_supp;
+	/* Enable HE 400ns SGI (0.4us GI) support via QCN IE negotiation.
+	 * true = enabled (default when HW supports it), false = disabled.
+	 */
+	bool he_400ns_sgi_supp;
+	/* Enable HE 2xLTF in 160/80+80 MHz support via QCN IE negotiation.
+	 * true = enabled (default when HW supports it), false = disabled.
+	 */
+	bool he_2xltf_160_80p80_supp;
 	/*
 	 * When set to true, the BSS operates in pure IEEE 802.11n mode.
 	 *
@@ -855,10 +902,18 @@ struct wpa_supplicant_extn {
  * struct wpa_config_extn - QCN extension configuration parameters.
  * @he_mcs_12_13_enabled: Indicates whether HE MCS 12/13 support is enabled.
  *                        (enabled by default)
+ * @vht_mcs_10_11_supp: Enable VHT MCS 10/11 (1024-QAM) support via QCN IE
+ *                      true = enabled (default), false = disabled
+ * @he_400ns_sgi_supp: Enable 400ns SGI in HE mode using QCN IE
+ * @he_2xltf_160_80p80_supp: Enable 2x LTF in HE mode using QCN IE for
+ *                           160/80+80 BW
  */
 struct wpa_config_extn {
 	bool he_mcs_12_13_enabled;
 	int allow_3addr_mc;
+	bool vht_mcs_10_11_supp;
+	bool he_400ns_sgi_supp;
+	bool he_2xltf_160_80p80_supp;
 };
 
 int get_centre_freq_6g(int chan_idx, int chan_width, int *centre_freq);
@@ -1030,6 +1085,26 @@ hostapd_drv_set_peer_he_mcs_12_13_cap_extn(struct hostapd_data *hapd,
 	return;
 }
 
+static inline void
+hostapd_drv_set_vht_mcs_10_11_supp_extn(struct hostapd_data *hapd,
+					struct sta_info *sta,
+					struct ieee802_11_elems_extn *elems_extn)
+{
+}
+
+static inline void
+hostapd_drv_set_he_400ns_sig_2xltf_160_supp_extn(struct hostapd_data *hapd,
+						 struct sta_info *sta,
+						 struct ieee802_11_elems_extn
+						 *elems_extn)
+{
+}
+
+static inline void
+hostapd_set_sta_vht_mcs10_11_and_he_cap_internal_extn(struct hostapd_data *hapd,
+						      struct sta_info *sta)
+{
+}
 
 static inline void
 wpas_drv_set_peer_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq,
@@ -2175,6 +2250,45 @@ hostapd_copy_sta_eht_240mhz_cap_extn(struct hostapd_data *hapd,
 void hostapd_drv_set_peer_he_mcs_12_13_cap_extn(struct hostapd_data *hapd,
 						struct ieee802_11_elems_extn
 						*elems_extn);
+/**
+ * hostapd_drv_set_vht_mcs_10_11_supp_extn - Stores VHT mcs 10/11 flags
+ * @hapd: hostapd BSS data
+ * @sta: station info structure
+ * @elems_extn: extended elements populated by the common parser
+ *
+ * Reads VHT MCS 10/11 support flags from BSS and store in STA information.
+ *
+ * Returns: none
+ */
+void hostapd_drv_set_vht_mcs_10_11_supp_extn(struct hostapd_data *hapd,
+					     struct sta_info *sta,
+					     struct ieee802_11_elems_extn *elems_extn);
+
+/**
+ * hostapd_drv_set_he_400ns_sig_2xltf_160_supp_extn - Stores HE 400ns SIG and 2x LTF
+ * for 160 MHz and 80p80 MHz flags
+ * @hapd: hostapd BSS data
+ * @sta: station info structure
+ * @elems_extn: extended elements populated by the common parser
+ *
+ * Reads HE 400ns SIG and 2x LTF for 160 MHz and 80p80 MHz flags from BSS and stores
+ * in STA information.
+ *
+ * Returns: none
+ */
+void hostapd_drv_set_he_400ns_sig_2xltf_160_supp_extn(struct hostapd_data *hapd,
+						      struct sta_info *sta,
+						      struct ieee802_11_elems_extn
+						      *elems_extn);
+
+/**
+ * hostapd_set_sta_vht_mcs10_11_and_he_cap_internal_extn - Notify driver of peer
+ * VHT MCS10/11 and HE 400ns SGI/2x LTF for 160 MHz
+ * @hapd: hostapd BSS data
+ * @sta: station info structure
+ */
+void hostapd_set_sta_vht_mcs10_11_and_he_cap_internal_extn(struct hostapd_data *hapd,
+							   struct sta_info *sta);
 
 /**
  * wpas_drv_set_peer_he_mcs_12_13_cap_extn - Send AP HE MCS 12/13 cap from
@@ -2189,6 +2303,15 @@ void hostapd_drv_set_peer_he_mcs_12_13_cap_extn(struct hostapd_data *hapd,
  */
 void wpas_drv_set_peer_he_mcs_12_13_cap_extn(struct wpa_supplicant *wpa_s, int freq,
 					     const u8 *ies, size_t ies_len);
+
+/**
+ * wpas_drv_set_peer_vht_mcs10_11_and_he_cap_internal_extn - STA mode:
+ * parse AP QCN IE from assoc response and notify driver of negotiated
+ * VHT MCS 10/11 and HE 400ns SGI / 2xLTF 160/80+80 peer capabilities.
+ */
+void wpas_drv_set_peer_vht_mcs10_11_and_he_cap_internal_extn(
+		struct wpa_supplicant *wpa_s,
+		const u8 *ies, size_t ies_len);
 
 void wpa_bss_check_5g_320mhz_vendor_ie_extn(struct wpa_supplicant *wpa_s,
 					    struct wpa_bss *bss);
@@ -2347,6 +2470,22 @@ int nl80211_get_he_mcs_12_13_extn(void *priv, u8 radio_idx, u16 *radio_cap);
  * Returns: 0 on success, negative on failure.
  */
 int nl80211_set_he_mcs_12_13_peer_cap_extn(void *priv, u8 radio_idx, u16 peer_cap);
+/**
+ * nl80211_set_vht_mcs10_11_and_he_cap_internal_extn - Send negotiated
+ * VHT MCS 10/11 peer support and HE cap internal bitmap to the driver
+ * via QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION (attrs 35/154/155).
+ *
+ * @priv:            driver private handle
+ * @peer_addr:       peer MAC address
+ * @vht_mcs10_11:    1 if VHT MCS10/11 supported, 0 otherwise
+ * @he_cap_internal: HE capability bitmap (0 = omit attribute)
+ *
+ * Returns: 0 on success, negative errno on failure.
+ */
+int nl80211_set_vht_mcs10_11_and_he_cap_internal_extn(void *priv,
+						      const u8 *peer_addr,
+						      u8 vht_mcs10_11,
+						      u32 he_cap_internal);
 int nl80211_set_allow_scan_on_dfs_chan_extn(void *priv, bool enable);
 int wpas_ctrl_iface_set_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 			     const char *value, bool *is_extn_cmd);
@@ -2988,6 +3127,10 @@ void wpa_config_alloc_empty_extn(struct wpa_config *config);
 #define EMA_MLO_BSS_MAX_LIMIT 8
 
 #define DEFAULT_HE_MCS_12_13_SUPPORT true
+#define DEFAULT_VHT_MCS_10_11_SUPPORT true
+#define DEFAULT_VHT_MCS_10_11_NQ2Q_PEER_SUPPORT false
+#define DEFAULT_HE_400NS_SGI_SUPPORT true
+#define DEFAULT_HE_2XLTF_160_80P80_SUPPORT true
 
 /* Primary channel list APIs  */
 int hostapd_set_primary_chanlist(struct hostapd_data *hapd, const char *chan_str);

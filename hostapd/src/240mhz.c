@@ -561,6 +561,12 @@ void hostapd_copy_sta_add_params_extn(struct hostapd_sta_add_params_extn
 		sta_extn->params_240mhz.eht_240mhz_capab;
 	params_extn->params_240mhz.eht_240mhz_capab_len =
 		sta_extn->params_240mhz.eht_240mhz_capab_len;
+
+	/* Propagate VHT MCS10/11 negotiation result to the driver.
+	 * higher_vhtmcs_supp is stored in sta_info_extn (same struct as sta_extn).
+	 */
+	params_extn->higher_vhtmcs_supp = sta_extn->higher_vhtmcs_supp;
+	params_extn->he_cap_info_internal = sta_extn->he_cap_info_internal;
 }
 
 bool hostapd_dfs_get_valid_punc_bitmap_extn(int chan_freq,

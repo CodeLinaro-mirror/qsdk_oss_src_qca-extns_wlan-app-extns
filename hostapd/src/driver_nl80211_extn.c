@@ -1851,6 +1851,93 @@ fail:
 }
 
 /**
+ * nl80211_set_vht_mcs10_11_and_he_cap_internal_extn - Notify driver of
+ * negotiated VHT MCS 10/11 and HE 400ns SGI / 2xLTF 160/80+80 peer caps.
+ *
+ * Sends QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION carrying:
+ *   PEER_MAC (attr 35)                     — 6-byte peer address
+ *   VHT_MCS_10_11_PEER_SUPP (attr 154)     — u8: 1 supported / 0 not
+ *   HE_CAP_INFO_INTERNAL (attr 155)        — u32 bitmap (optional, if non-zero)
+ *
+ * Called from both hostapd (AP mode) and wpa_supplicant (STA mode) after
+ * association to inform ath12k so it can encode them in the WMI peer_assoc
+ * command.  Replaces the manual wpabuf NLA construction in qcn_ie_extn.c.
+ *
+ * @priv:            driver private handle
+ * @peer_addr:       peer MAC address (6 bytes)
+ * @vht_mcs10_11:    1 if VHT MCS10/11 (1024-QAM) is supported, 0 otherwise
+ * @he_cap_internal: HE capability bitmap (bits 0-1: 400ns SGI, bit 2: 2xLTF
+ *                   160/80+80); pass 0 to omit the attribute
+ *
+ * Returns 0 on success, negative errno on failure.
+ */
+int nl80211_set_vht_mcs10_11_and_he_cap_internal_extn(void *priv,
+						      const u8 *peer_addr,
+						      u8 vht_mcs10_11,
+						      u32 he_cap_internal)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	struct nlattr *params;
+	int ret;
+
+	if (!bss || !bss->drv || !peer_addr)
+		return -EINVAL;
+
+	drv = bss->drv;
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Set VHT MCS10/11 peer_supp=%u he_cap_internal=0x%08x for " MACSTR,
+		   vht_mcs10_11, he_cap_internal, MAC2STR(peer_addr));
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	/* In STA mode the driver identifies the single peer via the VIF —
+	 * do not send PEER_MAC.  In AP mode send it so the driver can look
+	 * up the correct per-station entry among multiple peers.
+	 */
+	if (drv->nlmode != NL80211_IFTYPE_STATION) {
+		if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC,
+			    ETH_ALEN, peer_addr))
+			goto fail_nest;
+	}
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_VHT_MCS_10_11_PEER_SUPP,
+		       vht_mcs10_11))
+		goto fail_nest;
+
+	if (he_cap_internal &&
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_HE_CAP_INFO_INTERNAL,
+			he_cap_internal))
+		goto fail_nest;
+
+	nla_nest_end(msg, params);
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Set VHT MCS10/11 / HE cap internal failed: %d (%s)",
+			   ret, strerror(-ret));
+	return ret;
+
+fail_nest:
+	nla_nest_end(msg, params);
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
+/**
  * nl80211_set_allow_scan_on_dfs_chan_extn - Enable/disable scanning on DFS
  *	channels in the mac80211 kernel layer.
  *
