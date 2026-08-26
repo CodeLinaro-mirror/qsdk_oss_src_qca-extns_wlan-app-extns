@@ -148,6 +148,8 @@ struct hostapd_if_eapol_tx_msg {
 	uint16_t data_len;
 	uint8_t *data;
 	bool with_header;
+	struct __hostapd_if_pmk pmk;
+	uint16_t auth_transaction;
 };
 
 struct hostapd_if_send_frame_msg {
@@ -306,7 +308,8 @@ void __hostapd_if_set_authorized(char *ifname, uint8_t *sta_mac, int authorized)
 void __hostapd_if_eapol_key_tx(char *ifname, uint8_t *sta_mac, uint8_t link_id,
                               uint8_t *frame, uint16_t frame_len);
 void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id, uint8_t type,
-			   uint8_t *data, uint16_t data_len, bool with_header);
+			   uint8_t *data, uint16_t data_len, bool with_header,
+			   struct __hostapd_if_pmk pmk, uint16_t auth_transaction);
 void __hostapd_if_send_frame(char *ifname, int link_id,
 			     uint8_t *frame, uint16_t frame_len);
 void __hostapd_if_remote_auth_response(char *ifname, uint8_t *sta_mac,
@@ -575,7 +578,8 @@ static int hostapd_if_trigger_eapol_m3(char *ifname, uint8_t *sta_mac)
 
 static void hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 				uint8_t type, uint8_t *data, uint16_t data_len,
-				bool with_header)
+				bool with_header, struct __hostapd_if_pmk pmk,
+				uint16_t auth_transaction)
 {
 	int __validate_ret =
 		hostapd_if_eapol_tx_validate_inputs(ifname, sta_mac, link_id,
@@ -595,12 +599,14 @@ static void hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 	payload.msg.eapol_tx.data_len = data_len;
 	payload.msg.eapol_tx.data = data;
 	payload.msg.eapol_tx.with_header = with_header;
+	payload.msg.eapol_tx.pmk = pmk;
+	payload.msg.eapol_tx.auth_transaction = auth_transaction;
 
 	if (hostapd_if_eloop_sock >= 0)
 		send(hostapd_if_eloop_sock, &payload, sizeof(payload), 0);
 	else
 		__hostapd_if_eapol_tx(ifname, sta_mac, link_id, type, data,
-				      data_len, with_header);
+				      data_len, with_header, pmk, auth_transaction);
 }
 
 static int hostapd_if_start_sa_query(char *ifname, uint8_t *sta_mac, int link_id)
@@ -830,7 +836,9 @@ static void hostapd_if_eloop_socket_read(int sock, void *eloop_ctx,
 
 		__hostapd_if_eapol_tx(msg->ifname, msg->sta_mac,
 				      msg->link_id, msg->type,
-				      msg->data, msg->data_len, msg->with_header);
+				      msg->data, msg->data_len, msg->with_header,
+				      msg->pmk, msg->auth_transaction);
+		break;
 	}
 	case HOSTAPD_IF_ASYNC_SEND_FRAME: {
 		struct hostapd_if_send_frame_msg *msg = &payload->msg.send_frame;
