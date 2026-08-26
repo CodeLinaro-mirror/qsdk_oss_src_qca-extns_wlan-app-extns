@@ -11,6 +11,8 @@
 #include "hostapd_cli_extn.h"
 #include "utils/os.h"
 
+extern struct wpa_ctrl *ctrl_conn;
+
 /* Add your cli handling for extensions here */
 int hostapd_cli_cmd_set_esp_extn(struct wpa_ctrl *ctrl, int argc,
 				 char *argv[])
@@ -771,3 +773,41 @@ int hostapd_cli_cmd_get_mapc_peer_params_extn(struct wpa_ctrl *ctrl,
 
 	return wpa_ctrl_command(ctrl, cmd);
 }
+
+int _wpa_ctrl_command_large(struct wpa_ctrl *ctrl, const char *cmd, int print)
+{
+	char *buf;
+	size_t len;
+	int ret;
+
+	if (!ctrl_conn) {
+		printf("Not connected to hostapd - command dropped.\n");
+		return -1;
+	}
+	if (hostapd_cli_recovery_in_progress()) {
+		printf("'%s' command dropped: ath12k recovery in progress.\n", cmd);
+		return -1;
+	}
+
+	buf = os_malloc(MAX_REPLY_EXTN_BUF);
+	if (!buf)
+		return -1;
+	len = MAX_REPLY_EXTN_BUF - 1;
+	ret = wpa_ctrl_request(ctrl, cmd, strlen(cmd), buf, &len, hostapd_cli_msg_cb);
+	if (ret == -2) {
+		printf("'%s' command timed out.\n", cmd);
+		os_free(buf);
+		return -2;
+	} else if (ret < 0) {
+		printf("'%s' command failed.\n", cmd);
+		os_free(buf);
+		return -1;
+	}
+	if (print) {
+		buf[len] = '\0';
+		printf("%s", buf);
+	}
+	os_free(buf);
+	return 0;
+}
+
