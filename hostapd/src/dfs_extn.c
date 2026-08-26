@@ -685,7 +685,7 @@ hostapd_handle_missing_nol_ie(struct hostapd_iface *iface,
 	int start_chan_idx = 0;
 	int seg1_start = 0;
 
-	if (!iface || !nol_info || hostapd_is_backhaul_sta_configured(iface))
+	if (!iface || !nol_info)
 		return;
 
 	mode = iface->current_mode;
