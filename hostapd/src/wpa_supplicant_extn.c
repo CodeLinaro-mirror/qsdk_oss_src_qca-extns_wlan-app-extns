@@ -1065,6 +1065,33 @@ bool wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
 	return true;
 }
 
+static size_t wpas_qcn_buflen_add_vht_mcs10_11_attr(struct wpa_supplicant *wpa_s)
+{
+	if (!wpa_s || !wpa_s->conf || !wpa_s->conf->conf_extn.vht_mcs_10_11_supp ||
+	    !(wpa_s->hw_capab & BIT(CAPAB_VHT)))
+		return 0;
+
+	return QCN_ATTRIB_HDR_LEN + QCN_VHT_MCS10_11_SUPP_ATTRIB_LEN;
+}
+
+static size_t wpas_qcn_buflen_add_he_400ns_sgi_attr(struct wpa_supplicant *wpa_s)
+{
+	if (!wpa_s || !wpa_s->conf || !wpa_s->conf->conf_extn.he_400ns_sgi_supp ||
+	    !(wpa_s->hw_capab & BIT(CAPAB_HE)))
+		return 0;
+
+	return QCN_ATTRIB_HDR_LEN + QCN_HE_400NS_SGI_SUPP_ATTRIB_LEN;
+}
+
+static size_t wpas_qcn_buflen_add_he_2xltf_160_attr(struct wpa_supplicant *wpa_s)
+{
+	if (!wpa_s || !wpa_s->conf || !wpa_s->conf->conf_extn.he_2xltf_160_80p80_supp ||
+	    !(wpa_s->hw_capab & BIT(CAPAB_HE)))
+		return 0;
+
+	return QCN_ATTRIB_HDR_LEN + QCN_HE_2XLTF_160_80P80_SUPP_ATTRIB_LEN;
+}
+
 static size_t wpas_qcn_buflen_add_he_mcs_12_13_attr(struct wpa_supplicant *wpa_s)
 {
 	if (!wpa_s->conf->conf_extn.he_mcs_12_13_enabled ||
@@ -1079,6 +1106,9 @@ size_t wpas_modify_buflen_for_qcn_ie_extn(struct wpa_supplicant *wpa_s)
 	size_t attr_len = 0;
 
 	attr_len += wpas_qcn_buflen_add_he_mcs_12_13_attr(wpa_s);
+	attr_len += wpas_qcn_buflen_add_vht_mcs10_11_attr(wpa_s);
+	attr_len += wpas_qcn_buflen_add_he_400ns_sgi_attr(wpa_s);
+	attr_len += wpas_qcn_buflen_add_he_2xltf_160_attr(wpa_s);
 	if (attr_len)
 		attr_len += QCN_IE_HDR_LEN;
 
@@ -1087,18 +1117,28 @@ size_t wpas_modify_buflen_for_qcn_ie_extn(struct wpa_supplicant *wpa_s)
 
 u8 * wpas_eid_qcn_vendor_ie_extn(struct wpa_supplicant *wpa_s, u8 *eid)
 {
-	struct wpa_supplicant_extn *wpas_extn = &wpa_s->wpas_extn;
+	struct wpa_supplicant_extn *wpas_extn;
 	u8 *len_ptr = NULL;
 	u8 *pos = eid;
 
 	if (!eid)
 		return eid;
 
+	if (!wpa_s || !wpa_s->conf)
+		return eid;
+
+	wpas_extn = &wpa_s->wpas_extn;
 	pos = qcn_ie_begin(pos, &len_ptr);
 	pos = qcn_eid_add_he_mcs_12_13_attr(wpas_extn->he_mcs_12_13_radio_cap,
 					   wpa_s->conf->conf_extn.he_mcs_12_13_enabled &&
 					   !!(wpa_s->hw_capab & BIT(CAPAB_HE)),
 					   pos);
+	pos = qcn_eid_add_vht_mcs10_11_attr(wpa_s->conf->conf_extn.vht_mcs_10_11_supp &&
+					    !!(wpa_s->hw_capab & BIT(CAPAB_VHT)), pos);
+	pos = qcn_eid_add_he_400ns_sgi_attr(wpa_s->conf->conf_extn.he_400ns_sgi_supp &&
+					    !!(wpa_s->hw_capab & BIT(CAPAB_HE)), pos);
+	pos = qcn_eid_add_he_2xltf_160_attr(wpa_s->conf->conf_extn.he_2xltf_160_80p80_supp &&
+					    !!(wpa_s->hw_capab & BIT(CAPAB_HE)), pos);
 
 	if (pos == eid + QCN_IE_HDR_LEN)
 		return eid;
