@@ -126,6 +126,15 @@ int wpas_ctrl_iface_set_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 	if (os_strcasecmp(cmd, "he_mcs_12_13_supp") == 0) {
 		val = !!atoi(value);
 		ret = wpas_he_mcs_12_13_supp(wpa_s, val);
+	} else if (os_strcasecmp(cmd, "vht_mcs_10_11_supp") == 0) {
+		wpa_s->conf->conf_extn.vht_mcs_10_11_supp = !!atoi(value);
+		ret = 0;
+	} else if (os_strcasecmp(cmd, "he_400ns_sgi_supp") == 0) {
+		wpa_s->conf->conf_extn.he_400ns_sgi_supp = !!atoi(value);
+		ret = 0;
+	} else if (os_strcasecmp(cmd, "he_2xltf_160_80p80_supp") == 0) {
+		wpa_s->conf->conf_extn.he_2xltf_160_80p80_supp = !!atoi(value);
+		ret = 0;
 	} else if (os_strcasecmp(cmd, "wds_ie") == 0) {
 		enable = atoi(value);
 		wpa_printf(MSG_ERROR, "ENABLE %d", enable);
@@ -154,6 +163,21 @@ int wpas_ctrl_iface_get_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 				  wpa_s->conf->conf_extn.he_mcs_12_13_enabled);
 		if (os_snprintf_error(buflen, ret))
 			return -1;
+	} else if (os_strcasecmp(cmd, "vht_mcs_10_11_supp") == 0) {
+		ret = os_snprintf(buf, buflen, "vht_mcs_10_11_supp = %u\n",
+				  wpa_s->conf->conf_extn.vht_mcs_10_11_supp);
+		if (os_snprintf_error(buflen, ret))
+			return -1;
+	} else if (os_strcasecmp(cmd, "he_400ns_sgi_supp") == 0) {
+		ret = os_snprintf(buf, buflen, "he_400ns_sgi_supp = %u\n",
+				  wpa_s->conf->conf_extn.he_400ns_sgi_supp);
+		if (os_snprintf_error(buflen, ret))
+			return -1;
+	} else if (os_strcasecmp(cmd, "he_2xltf_160_80p80_supp") == 0) {
+		ret = os_snprintf(buf, buflen, "he_2xltf_160_80p80_supp = %u\n",
+				  wpa_s->conf->conf_extn.he_2xltf_160_80p80_supp);
+		if (os_snprintf_error(buflen, ret))
+			return -1;
 	} else if (os_strcmp(cmd, "wds_ie") == 0) {
 		ret = wpa_ctrl_get_wds_ie_extn(wpa_s, buf, buflen);
 	} else if (os_strcasecmp(cmd, "allow_3addr_mc") == 0) {
@@ -164,4 +188,63 @@ int wpas_ctrl_iface_get_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 	}
 
 	return ret;
+}
+
+/**
+ * wpas_drv_set_peer_vht_mcs10_11_and_he_cap_internal_extn - STA mode: notify
+ * driver of negotiated VHT MCS 10/11 and HE 400ns SGI / 2xLTF 160/80+80
+ * peer capabilities extracted from the AP's assoc response QCN IE.
+ *
+ * Parses the assoc response IEs, extracts QCN IE attributes 0x02/0x03/0x04,
+ * computes he_cap_internal bitmap, and calls
+ * nl80211_set_vht_mcs10_11_and_he_cap_internal_extn() to inform the driver.
+ * Called alongside wpas_drv_set_peer_he_mcs_12_13_cap_extn() in events.c.
+ *
+ * @wpa_s:    wpa_supplicant instance
+ * @ies:      assoc response IEs buffer
+ * @ies_len:  assoc response IEs length
+ */
+void wpas_drv_set_peer_vht_mcs10_11_and_he_cap_internal_extn(
+		struct wpa_supplicant *wpa_s,
+		const u8 *ies, size_t ies_len)
+{
+	struct ieee802_11_elems elems;
+	u8 vht_supp = 0;
+	u32 he_cap_internal = 0;
+	const u8 *bssid;
+
+	if (!ies || !ies_len || !wpa_s || !wpa_s->conf)
+		return;
+
+	if (!wpa_s->conf->conf_extn.vht_mcs_10_11_supp &&
+	    !wpa_s->conf->conf_extn.he_400ns_sgi_supp &&
+	    !wpa_s->conf->conf_extn.he_2xltf_160_80p80_supp)
+		return;
+
+	if (ieee802_11_parse_elems(ies, ies_len, &elems, 0) == ParseFailed)
+		return;
+
+	if (wpa_s->conf->conf_extn.vht_mcs_10_11_supp &&
+	    elems.elems_extn.vht_mcs10_11_peer_cap)
+		vht_supp = 1;
+
+	if (wpa_s->conf->conf_extn.he_400ns_sgi_supp)
+		he_cap_internal |= elems.elems_extn.he_400ns_sgi_peer_cap & 0x3;
+
+	if (wpa_s->conf->conf_extn.he_2xltf_160_80p80_supp &&
+	    elems.elems_extn.he_2xltf_160_80p80_peer_cap)
+		he_cap_internal |= BIT(2);
+
+	if (!vht_supp && !he_cap_internal)
+		return;
+
+	bssid = wpa_s->bssid;
+	wpa_printf(MSG_DEBUG,
+		   "QCN: STA assoc VHT MCS10/11 supp=%u he_cap_internal=0x%08x for "
+		   MACSTR, vht_supp, he_cap_internal, MAC2STR(bssid));
+
+	nl80211_set_vht_mcs10_11_and_he_cap_internal_extn(wpa_s->drv_priv,
+							  bssid,
+							  vht_supp,
+							  he_cap_internal);
 }
