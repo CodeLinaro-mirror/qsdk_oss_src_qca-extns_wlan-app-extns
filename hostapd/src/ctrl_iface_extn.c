@@ -23,6 +23,7 @@
 #include "cbs.h"
 #include "ap/ieee802_11.h"
 #include "ap/sta_info.h"
+#include "mapc_extn.h"
 
 #define DEF_VLP_NON_PRIOR_PENALTY	30
 #define DEF_OBSS_INTERVAL		300
@@ -2365,6 +2366,19 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strcmp(buf, "GET_PURE11AX") == 0) {
 		reply_len_extn = hostapd_ctrl_iface_get_pure11ax_extn(hapd, reply,
 								      reply_size);
+	} else if (os_strncmp(buf, "GET_MAPC_PEER_PARAMS ", 21) == 0) {
+		u8 peer_addr[ETH_ALEN];
+
+		if (hwaddr_aton(buf + 21, peer_addr)) {
+			reply_len_extn = os_snprintf(reply, reply_size,
+						     "FAIL: invalid MAC address\n");
+		} else {
+			reply_len_extn = mapc_get_peer_params(hapd, peer_addr,
+							      reply, reply_size);
+			if (reply_len_extn < 0)
+				reply_len_extn = os_snprintf(reply, reply_size,
+							     "FAIL\n");
+		}
 	} else {
 		return -1;
 	}

@@ -750,3 +750,24 @@ int hostapd_cli_cmd_get_pure11ax(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "GET_PURE11AX");
 }
+
+int hostapd_cli_cmd_get_mapc_peer_params_extn(struct wpa_ctrl *ctrl,
+					      int argc, char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid 'get_mapc_peer_params' command - usage:\n"
+		       "  get_mapc_peer_params <bssid>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "GET_MAPC_PEER_PARAMS %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command error (GET_MAPC_PEER_PARAMS argument too long)\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}

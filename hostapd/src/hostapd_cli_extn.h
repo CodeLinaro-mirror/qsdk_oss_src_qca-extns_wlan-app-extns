@@ -55,6 +55,9 @@ int hostapd_cli_cmd_set_autorecovery_after_nol_vapdown(struct wpa_ctrl *ctrl,
 						       int argc, char *argv[]);
 int hostapd_cli_cmd_ignorecac_extn(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 
+int hostapd_cli_cmd_get_mapc_peer_params_extn(struct wpa_ctrl *ctrl, int argc,
+					      char *argv[]);
+
 #ifdef CONFIG_QCN_EXTN
 int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
 		    int min_args, int argc, char *argv[]);
@@ -239,7 +242,9 @@ int hostapd_cli_cmd_get_pure11ax(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 	{ "set_pure11ax", hostapd_cli_cmd_set_pure11ax, NULL, \
 		"<value 0|1> :Enable/disable pure11ax mode" }, \
 	{ "get_pure11ax", hostapd_cli_cmd_get_pure11ax, NULL, \
-		"Get pure11ax mode config" },
+		"Get pure11ax mode config" }, \
+	{ "get_mapc_peer_params", hostapd_cli_cmd_get_mapc_peer_params_extn, NULL, \
+		"<bssid> = retrieve cached MAPC params for the named peer" }, \
 
 #define HOSTAPD_CLI_CMD_FIELDS_EXTN \
 	"he_mcs_12_13_supp",
