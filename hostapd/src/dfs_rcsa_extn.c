@@ -545,7 +545,6 @@ static void hostapd_rcsa_notify_radar(struct hostapd_data *hapd)
 		return;
 	}
 
-
 	if (hapd->iface->conf->use_ru_puncture_dfs &&
 	    nol_info->bandwidth < DFS_NOL_IE_BW_80_MHZ) {
 		wpa_printf(MSG_DEBUG,
@@ -553,7 +552,7 @@ static void hostapd_rcsa_notify_radar(struct hostapd_data *hapd)
 		return;
 	}
 
-	if (dfs_process_nol_ie_bitmap(iface, nol_info))
+	if (dfs_process_nol_ie_bitmap_rcsa(hapd, nol_info))
 		wpa_printf(MSG_WARNING,
 			   "RCSA: failed to process parsed NOL IE freq=%u bw=%u bitmap=0x%04x",
 			   nol_info->freq, nol_info->bandwidth,
@@ -741,11 +740,15 @@ int hostapd_send_rcsa_extn(struct hostapd_iface *iface,
 	if (!iface)
 		return -EINVAL;
 
-	if (!hostapd_rcsa_tx_bh_enabled(iface))
+	if (!hostapd_rcsa_tx_bh_enabled(iface)) {
+		wpa_printf(MSG_INFO,
+			   "BLOCKED — bh_enabled=NO sta_wpa_state=\"%.32s\" — RCSA will NOT be sent",
+			   iface->iface_extn.sta_wpa_state);
 		return -EINVAL;
+	}
 
 	if (hostapd_csa_in_progress(iface)) {
-		wpa_printf(MSG_DEBUG,
+		wpa_printf(MSG_INFO,
 			   "rcsa: defer TX because channel switch is already in progress");
 		return 0;
 	}
@@ -898,25 +901,7 @@ bool hostapd_rcsa_rx_hdl(struct hostapd_data *hapd,
 	if (!iface)
 		return 0;
 
-	if (iface->iface_extn.nol_info_valid) {
-		wpa_printf(MSG_DEBUG,
-			   "RCSA: applying parsed NOL IE on local receiver");
-		hostapd_rcsa_notify_radar(target_hapd);
-
-		if (!hostapd_is_backhaul_sta_configured(iface) &&
-		    !hostapd_csa_in_progress(iface)) {
-			wpa_printf(MSG_DEBUG,
-				   "RCSA: root triggering DFS channel switch from parsed NOL IE");
-			hostapd_dfs_start_channel_switch(iface);
-		}
-	}
-
-	if (iface->iface_extn.nol_info_valid) {
-		wpa_printf(MSG_DEBUG, "RCSA: clearing parsed NOL IE valid flag");
-		iface->iface_extn.nol_info_valid = false;
-	}
-
-	if (!hostapd_rcsa_rx_bh_enabled(iface))
+	if (!IS_CSH_PROCESS_RCSA_ENABLED(iface->conf->conf_extn.cswopts))
 		return 1;
 
 	if (hostapd_csa_in_progress(iface)) {
@@ -930,7 +915,17 @@ bool hostapd_rcsa_rx_hdl(struct hostapd_data *hapd,
 		return 1;
 	}
 
-	wpa_printf(MSG_DEBUG, "rcsa: proceeding with Tx");
+	if (iface->iface_extn.nol_info_valid) {
+		wpa_printf(MSG_DEBUG,
+			   "RCSA: applying parsed NOL IE on local receiver");
+		hostapd_rcsa_notify_radar(target_hapd);
+		iface->iface_extn.nol_info_valid = false;
+	}
+
+	if (!hostapd_rcsa_rx_bh_enabled(iface))
+		return 1;
+
+	wpa_printf(MSG_INFO, "rcsa: proceeding with RCSA Tx");
 
 	/* strip off ml-info iE */
 	if (mlinfo_present &&  (opt_ie_len >= 5))
