@@ -1393,6 +1393,178 @@ int dfs_decode_nol_ie(const u8 *ie, size_t ie_len,
 }
 
 /**
+ * dfs_build_notify_freq_params - Build hostapd_freq_params for radar notification
+ * @hapd: BSS data
+ * @freq_params: Output frequency parameters
+ * @start_freq: Output base frequency of first 20 MHz subchannel
+ * @n_subchans: Output number of 20 MHz subchannels in operating bandwidth
+ *
+ * Returns: 0 on success, -1 on failure
+ */
+static int
+dfs_build_notify_freq_params(struct hostapd_data *hapd,
+			     struct hostapd_freq_params *freq_params,
+			     int *start_freq, int *n_subchans)
+{
+	struct hostapd_iface *iface;
+	struct hostapd_config *iconf;
+	struct hostapd_hw_modes *mode;
+	enum oper_chan_width oper_chwidth;
+
+	if (!hapd || !hapd->iface || !hapd->iconf || !freq_params ||
+	    !start_freq || !n_subchans)
+		return -1;
+
+	iface = hapd->iface;
+	iconf = hapd->iconf;
+	mode = iface->current_mode;
+	if (!mode)
+		return -1;
+	oper_chwidth = hostapd_get_oper_chwidth(iconf);
+
+	if (hostapd_set_freq_params(freq_params, iconf->hw_mode, iface->freq,
+				    iconf->channel, iconf->enable_edmg,
+				    iconf->edmg_channel, iconf->ieee80211n,
+				    iconf->ieee80211ac, iconf->ieee80211ax,
+				    iconf->ieee80211be, iconf->ieee80211bn,
+				    iconf->secondary_channel,
+				    oper_chwidth,
+				    hostapd_get_oper_centr_freq_seg0_idx(iconf),
+				    hostapd_get_oper_centr_freq_seg1_idx(iconf),
+				    mode->vht_capab,
+				    &mode->he_capab[IEEE80211_MODE_AP],
+				    &mode->eht_capab[IEEE80211_MODE_AP],
+				    &mode->uhr_capab[IEEE80211_MODE_AP],
+				    hostapd_get_punct_bitmap(hapd),
+				    iconf->he_6ghz_reg_pwr_type,
+#ifdef CONFIG_IEEE80211BN
+				    hostapd_hw_get_freq(hapd,
+							iconf->npca_primary_channel),
+				    iconf->npca_punct_bitmap,
+#else
+				    0, 0,
+#endif /* CONFIG_IEEE80211BN */
+				    iconf->bandwidth_device,
+				    iconf->center_freq_device))
+		return -1;
+
+	freq_params->link_id = -1;
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		freq_params->link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+
+	if (dfs_nol_ie_get_subchan_count(oper_chwidth, iface->freq,
+					 freq_params->center_freq1,
+					 n_subchans))
+		return -1;
+	if (*n_subchans <= 0 || *n_subchans > DFS_MAX_20M_SUB_CH)
+		return -1;
+
+	if (dfs_nol_ie_get_base_freq(iface->freq, freq_params->center_freq1,
+				     oper_chwidth, start_freq))
+		return -1;
+
+	return 0;
+}
+
+/**
+ * dfs_map_nol_bitmap_to_oper_bitmap - Map NOL bitmap to operating channel bitmap
+ * @nol_start_freq: Base frequency of the NOL IE (first 20 MHz subchannel)
+ * @nol_bitmap: NOL IE subchannel bitmap (bit k = nol_start_freq + k*20 MHz)
+ * @oper_start_freq: Base frequency of the operating channel
+ * @oper_n_subchans: Number of 20 MHz subchannels in operating channel
+ * @oper_bitmap: Output operating channel bitmap
+ *
+ * Returns: 0 on success, -1 if any NOL frequency falls outside operating channel
+ */
+static int
+dfs_map_nol_bitmap_to_oper_bitmap(u32 nol_start_freq, u16 nol_bitmap,
+				  int oper_start_freq, int oper_n_subchans,
+				  u16 *oper_bitmap)
+{
+	u16 bitmap = 0;
+	int bit;
+
+	if (!oper_bitmap)
+		return -1;
+
+	for (bit = 0; bit < DFS_MAX_20M_SUB_CH; bit++) {
+		int oper_bit;
+		u32 chan_freq;
+
+		if (!(nol_bitmap & BIT(bit)))
+			continue;
+
+		chan_freq = nol_start_freq + bit * MIN_DFS_SUBCHAN_BW;
+		if (chan_freq < (u32) oper_start_freq)
+			return -1;
+
+		oper_bit = (chan_freq - oper_start_freq) / MIN_DFS_SUBCHAN_BW;
+		if (oper_bit >= oper_n_subchans ||
+		    oper_start_freq + oper_bit * MIN_DFS_SUBCHAN_BW !=
+		    (int) chan_freq)
+			return -1;
+
+		bitmap |= BIT(oper_bit);
+	}
+
+	if (!bitmap)
+		return -1;
+
+	*oper_bitmap = bitmap;
+	return 0;
+}
+
+/**
+ * dfs_notify_nol_bitmap_to_driver - Send bitmap-based NL80211_NOTIFY_RADAR
+ * @hapd: BSS data
+ * @nol_info: Parsed NOL IE entry (freq, bandwidth, subchan_bitmap)
+ * @notify_bitmap: Bitmap of successfully marked subchannels to notify
+ *
+ * Derives the current operating chandef, maps the NOL bitmap into the
+ * operating channel bitmap, and sends a single NL80211_CMD_NOTIFY_RADAR.
+ *
+ * Returns: 0 on success, -1 on failure
+ */
+static int dfs_notify_nol_bitmap_to_driver(struct hostapd_data *hapd,
+					   const dfs_nol_ie_info *nol_info,
+					   u16 notify_bitmap)
+{
+	struct hostapd_freq_params freq_params;
+	u16 oper_bitmap;
+	int oper_start_freq;
+	int oper_n_subchans;
+
+	if (!hapd || !hapd->iface || !hapd->drv_priv || !nol_info ||
+	    !notify_bitmap)
+		return -1;
+
+	if (dfs_build_notify_freq_params(hapd, &freq_params, &oper_start_freq,
+					 &oper_n_subchans)) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS NOL IE: Failed to derive notify freq params");
+		return -1;
+	}
+
+	if (dfs_map_nol_bitmap_to_oper_bitmap(nol_info->freq, notify_bitmap,
+					      oper_start_freq,
+					      oper_n_subchans, &oper_bitmap)) {
+		wpa_printf(MSG_WARNING,
+			   "DFS NOL IE: Failed to map parsed bitmap=0x%04x base_freq=%u to operating bitmap",
+			   notify_bitmap, nol_info->freq);
+		return -1;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "DFS NOL IE: Notifying driver with operating bitmap=0x%04x base_freq=%d bw=%d cf1=%d",
+		   oper_bitmap, oper_start_freq, freq_params.bandwidth,
+		   freq_params.center_freq1);
+
+	return hostapd_drv_notify_radar(hapd, &freq_params, oper_bitmap);
+}
+
+/**
  * dfs_notify_radar_to_driver - Notify cfg80211 driver about radar detection
  *
  * Sends NL80211_CMD_NOTIFY_RADAR to the cfg80211 driver to mark a channel
@@ -1454,19 +1626,20 @@ static int dfs_notify_radar_to_driver(struct hostapd_data *hapd,
 }
 
 /**
- * dfs_process_nol_ie_bitmap - Mark channels from a single NOL IE entry as unavailable
+ * dfs_mark_rcsa_nol_bitmap_unavailable - Mark RCSA NOL IE subchannels as DFS unavailable
+ * @iface: hostapd interface whose channel table is updated
+ * @nol_info: decoded NOL IE entry (freq, bandwidth, subchan_bitmap)
+ * @notify_bitmap: output bitmap of successfully marked subchannels
  *
- * Iterates over each set bit in nol_info->subchan_bitmap.  Bit k represents
- * the 20 MHz subchannel at (nol_info->freq + k * 20 MHz).  Each subchannel
+ * Iterates over each set bit in nol_info->subchan_bitmap. Bit k represents
+ * the 20 MHz subchannel at (nol_info->freq + k * 20 MHz). Each subchannel
  * is individually marked DFS_UNAVAILABLE via set_dfs_state().
  *
- * @iface:    hostapd interface whose channel table is updated
- * @nol_info: the single decoded NOL entry (must not be NULL)
- *
- * Returns 0 if all set_dfs_state() calls succeed, -1 if any fail.
+ * Returns: 0 if all subchannels are marked successfully, -1 on any failure
  */
-int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
-			      const dfs_nol_ie_info *nol_info)
+static int dfs_mark_rcsa_nol_bitmap_unavailable(struct hostapd_iface *iface,
+					      const dfs_nol_ie_info *nol_info,
+					      u16 *notify_bitmap)
 {
 	u32 base_freq;
 	u16 bm;
@@ -1515,6 +1688,108 @@ int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
 		 * state must be updated using a 20 MHz chandef even when the
 		 * original operating bandwidth was wider.
 		 */
+		if (!set_dfs_state(iface, chan_freq, 1, 0,
+				   CHAN_WIDTH_20, chan_freq, 0,
+				   HOSTAPD_CHAN_DFS_UNAVAILABLE,
+				   DFS_NOL_IE_SINGLE_SUBCHAN_BITMAP)) {
+			wpa_printf(MSG_WARNING,
+				   "DFS NOL IE: Failed to mark %u MHz as unavailable",
+				   chan_freq);
+			ret = -1;
+		} else {
+			if (notify_bitmap)
+				*notify_bitmap |= BIT(bit);
+			wpa_printf(MSG_INFO,
+				   "DFS NOL IE: Marked %u MHz as NOL", chan_freq);
+		}
+	}
+
+	return ret;
+}
+
+/**
+ * dfs_process_nol_ie_bitmap_rcsa - Process NOL IE bitmap for RCSA path
+ * @hapd: BSS data
+ * @nol_info: Parsed NOL IE entry (freq, bandwidth, subchan_bitmap)
+ *
+ * Marks the parsed 20 MHz subchannels unavailable in hostapd DFS state
+ * and sends a single bitmap-based NL80211_CMD_NOTIFY_RADAR to the driver.
+ * Used by the RCSA path only. Uplink CSA uses dfs_process_nol_ie_bitmap().
+ *
+ * Returns: 0 on success, -1 on failure
+ */
+int dfs_process_nol_ie_bitmap_rcsa(struct hostapd_data *hapd,
+				    const dfs_nol_ie_info *nol_info)
+{
+	u16 notify_bitmap = 0;
+	int ret;
+
+	if (!hapd || !hapd->iface || !nol_info)
+		return -1;
+
+	ret = dfs_mark_rcsa_nol_bitmap_unavailable(hapd->iface, nol_info,
+						 &notify_bitmap);
+
+	if (!notify_bitmap)
+		return ret;
+
+	if (dfs_notify_nol_bitmap_to_driver(hapd, nol_info, notify_bitmap))
+		wpa_printf(MSG_WARNING,
+			   "DFS NOL IE: Failed to sync parsed NOL to driver base_freq=%u bitmap=0x%04x",
+			   nol_info->freq, notify_bitmap);
+
+	return ret;
+}
+
+/**
+ * dfs_process_nol_ie_bitmap - Mark channels from NOL IE as unavailable (uplink CSA)
+ *
+ * Iterates over each set bit in nol_info->subchan_bitmap. Each 20 MHz
+ * subchannel is individually marked DFS_UNAVAILABLE and notified to the
+ * driver via a per-channel NL80211_NOTIFY_RADAR call.
+ * Used by uplink CSA path only. RCSA uses dfs_process_nol_ie_bitmap_rcsa().
+ *
+ * Returns 0 if all set_dfs_state() calls succeed, -1 if any fail.
+ */
+int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
+			      const dfs_nol_ie_info *nol_info)
+{
+	u32 base_freq;
+	u16 bm;
+	int bw_mhz;
+	int bit;
+	int ret = 0;
+
+	if (!iface || !nol_info) {
+		wpa_printf(MSG_ERROR, "DFS NOL IE: NULL parameter in process");
+		return -1;
+	}
+
+	bm = nol_info->subchan_bitmap;
+	if (!bm) {
+		wpa_printf(MSG_WARNING,
+			   "DFS NOL IE: Empty bitmap for freq %u, nothing to mark",
+			   nol_info->freq);
+		return -1;
+	}
+
+	bw_mhz = (int)nol_info->bandwidth;
+	base_freq = nol_info->freq;
+	wpa_printf(MSG_INFO,
+		   "DFS NOL IE: Processing entry base_freq=%u bw=%d bitmap=0x%04x",
+		   base_freq, bw_mhz, bm);
+
+	for (bit = 0; bit < DFS_MAX_20M_SUB_CH; bit++) {
+		u32 chan_freq;
+
+		if (!(bm & BIT(bit)))
+			continue;
+		chan_freq = base_freq + (u32)(bit * MIN_DFS_SUBCHAN_BW);
+
+		wpa_printf(MSG_DEBUG,
+			   "DFS NOL IE: Marking %u MHz as NOL (base=%u bit=%d)",
+			   chan_freq, base_freq, bit);
+
 		if (!set_dfs_state(iface, chan_freq, 1, 0,
 				   CHAN_WIDTH_20, chan_freq, 0,
 				   HOSTAPD_CHAN_DFS_UNAVAILABLE,
