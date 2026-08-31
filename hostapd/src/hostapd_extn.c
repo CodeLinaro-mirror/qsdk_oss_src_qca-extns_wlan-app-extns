@@ -487,7 +487,7 @@ int hostapd_regdom_restore_iface(struct hostapd_iface *iface)
 	}
 
 	if (iface->state == HAPD_IFACE_NO_IR) {
-		pending_reenable = hostapd_check_reenable_bss(iface);
+		pending_reenable = hostapd_check_reenable_bss(iface, REENABLE_NONE);
 
 		ret = hostapd_no_ir_channel_list_updated(iface);
 		if (ret)
@@ -498,11 +498,12 @@ int hostapd_regdom_restore_iface(struct hostapd_iface *iface)
 			return 0;
 		}
 
-		if (pending_reenable && hostapd_check_reenable_bss(iface)) {
-			hostapd_enable_pending_bss(iface);
+		if (pending_reenable &&
+		    hostapd_check_reenable_bss(iface, REENABLE_NONE)) {
+			hostapd_enable_pending_bss(iface, REENABLE_NONE, false);
 
 			if (iface->state == HAPD_IFACE_ENABLED ||
-			    !hostapd_check_reenable_bss(iface))
+			    !hostapd_check_reenable_bss(iface, REENABLE_NONE))
 				iface->is_regdom_forced_down = false;
 		}
 
