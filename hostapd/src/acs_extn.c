@@ -34,10 +34,10 @@ int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
 			hostapd_get_chan_width_from_oper_chan_width(iface->conf));
 	switch (oper_bw) {
 	case CONF_OPER_CHWIDTH_USE_HT:
-		if (iface->conf->secondary_channel &&
+		if (chan->extn.secondary_channel &&
 		    chan->freq >= 2400 && chan->freq < 2500)
 			center = chan->chan +
-				2 * iface->conf->secondary_channel;
+				2 * chan->extn.secondary_channel;
 		else if (bw == 40)
 			center = acs_get_bw_center_chan(chan->freq, ACS_BW40);
 		else
@@ -50,7 +50,7 @@ int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
 		center = acs_get_bw_center_chan(chan->freq, ACS_BW160);
 		break;
 	case CONF_OPER_CHWIDTH_320MHZ:
-		switch (hostapd_get_bw320_offset(iface->conf)) {
+		switch (chan->extn.eht_bw320_offset) {
 		case 0:
 			if (acs_usable_bw_chan(chan, ACS_BW320_1))
 				center = acs_get_bw_center_chan(chan->freq, ACS_BW320_1);
@@ -97,16 +97,21 @@ hostapd_get_center_chanfreq1_from_channel(struct hostapd_iface *iface,
 		goto fail;
 
 	hw_mode = ieee80211_freq_to_channel_ext(chan->freq,
-						iface->conf->secondary_channel,
+						chan->extn.secondary_channel,
 						oper_bw,
 						&op_class, &channel);
 	if (hw_mode == NUM_HOSTAPD_MODES) {
 		wpa_printf(MSG_ERROR, "Failed to get channel for freq: %d, sec_channel_offset: %d, bw: %d",
-			   chan->freq, iface->conf->secondary_channel, oper_bw);
+			   chan->freq, chan->extn.secondary_channel, oper_bw);
 		goto fail;
 	}
 
 	center_freq = ieee80211_chan_to_freq(NULL, op_class, center_chan);
+
+	/* Calculate center freq for 5G 240MHz, as it doesnot have a valid op_class */
+	if (center_freq <= 0 && is_5ghz_freq(chan->freq)
+	    && oper_bw == CONF_OPER_CHWIDTH_320MHZ)
+		center_freq = 5000 + center_chan * 5;
 
 fail:
 	wpa_printf(MSG_DEBUG, "%s: ACS: center_chan1: %d, center_freq1: %d, oper_bw %d",
@@ -1274,7 +1279,7 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
 	os_memset(&settings, 0, sizeof(settings));
 	settings.cs_count = 10;
 
-	settings.freq_params.sec_channel_offset = iface->conf->secondary_channel;
+	settings.freq_params.sec_channel_offset = chan->extn.secondary_channel;
 	settings.freq_params.freq = chan->freq;
 	settings.freq_params.channel = chan->chan;
 	settings.freq_params.bandwidth = channel_width_to_int(
