@@ -285,11 +285,10 @@ void handle_assoc_cb_wds_ie_extn(struct hostapd_data *hapd,
 
 	sta_extn = &sta->sta_extn;
 
-	/* Mutual capability check: both AP and STA must advertise WDS */
-	if (!hapd->conf->bss_extn.wds_ie || !sta_extn->wds_ie_peer)
-		return;
-
-	/* Determine AID based on MLD AP configuration */
+	/*
+	 * Determine AID once — needed for both the teardown and enable paths.
+	 * For MLD the wds_mld_uid is used; for non-MLD, sta->aid.
+	 */
 	if (hapd->conf->mld_ap) {
 		if (hostapd_get_wds_mld_sta_uid(hapd, sta) < 0) {
 			wpa_printf(MSG_DEBUG, "WDS IE: No room for uid "
@@ -307,6 +306,26 @@ void handle_assoc_cb_wds_ie_extn(struct hostapd_data *hapd,
 		aid = sta->aid;
 #endif /* CONFIG_QCN_EXTN */
 
+	/*
+	 * Stale AP_VLAN teardown: the STA had an active WDS_IE interface from
+	 * a previous association but has returned without advertising WDS_IE.
+	 * Tear it down now (deferred from disassoc, mirroring normal WDS) so
+	 * the STA is accepted as a plain 3-address client with no stale VLAN.
+	 */
+	if (sta_extn->wds_ie_active && !sta_extn->wds_ie_peer) {
+		wpa_printf(MSG_INFO,
+			   "WDS IE: %s - tearing down stale WDS interface for "
+			   MACSTR " (reassociated without WDS_IE, aid=%d)",
+			   hapd->conf->iface, MAC2STR(sta->addr), aid);
+		hostapd_set_wds_sta(hapd, NULL, sta->addr, aid, 0);
+		sta_extn->wds_ie_active = false;
+		return;
+	}
+
+	/* Mutual capability check: both AP and STA must advertise WDS */
+	if (!hapd->conf->bss_extn.wds_ie || !sta_extn->wds_ie_peer)
+		return;
+
 	wpa_printf(MSG_INFO,
 		   "WDS IE: %s - enabling WDS mode for " MACSTR
 		   " (mutual WDS IE advertisement confirmed, aid=%d)",
@@ -323,6 +342,7 @@ void handle_assoc_cb_wds_ie_extn(struct hostapd_data *hapd,
 			   "for " MACSTR " (ret=%d)",
 			   hapd->conf->iface, MAC2STR(sta->addr), ret);
 	} else {
+		sta_extn->wds_ie_active = true;
 		wpa_printf(MSG_INFO,
 			   "WDS IE: %s - WDS mode enabled for " MACSTR
 			   " wds_ifname=%s",
@@ -353,7 +373,7 @@ void ap_free_sta_wds_ie_extn(struct hostapd_data *hapd, struct sta_info *sta)
 
 	sta_extn = &sta->sta_extn;
 
-	if (!hapd->conf->bss_extn.wds_ie || !sta_extn->wds_ie_peer)
+	if (!hapd->conf->bss_extn.wds_ie || !sta_extn->wds_ie_active)
 		return;
 
 	/*
@@ -394,5 +414,6 @@ void ap_free_sta_wds_ie_extn(struct hostapd_data *hapd, struct sta_info *sta)
 		   hapd->conf->iface, MAC2STR(sta->addr));
 
 	hostapd_set_wds_sta(hapd, NULL, sta->addr, aid, 0);
+	sta_extn->wds_ie_active = false;
 	sta_extn->wds_ie_peer = false;
 }
