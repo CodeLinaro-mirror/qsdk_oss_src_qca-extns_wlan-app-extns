@@ -1742,3 +1742,18 @@ void wpas_country_change_check_current_bss(struct wpa_supplicant *wpa_s,
 
 	wpa_supplicant_req_scan(wpa_s, 0, 100000);
 }
+int wpa_drv_mark_diagnostic_sta_vap(struct wpa_supplicant *wpa_s, int enable)
+{
+	wpa_printf(MSG_DEBUG,
+		   "DEBUG_DIAG_STA: wpa_drv_mark_diagnostic_sta_vap called ifname=%s enable=%d driver_op=%p\n",
+		   wpa_s->ifname, enable, wpa_s->driver->mark_diagnostic_sta_vap);
+
+	if (!wpa_s->driver->mark_diagnostic_sta_vap)
+		return -1;
+
+	wpa_printf(MSG_DEBUG, "DEBUG_DIAG_STA: sta diagnostic_sta_vap ifname %s enable %d\n",
+		   wpa_s->ifname, enable);
+	return wpa_s->driver->mark_diagnostic_sta_vap(wpa_s->drv_priv,
+			OUI_QCA, QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+			wpa_s->ifname, enable, true);
+}

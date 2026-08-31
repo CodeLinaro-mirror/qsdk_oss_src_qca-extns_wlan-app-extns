@@ -22,4 +22,5 @@ int wpa_ctrl_get_wds_ie_extn(struct wpa_supplicant *wpa_s,
 int wpa_ctrl_set_allow_3addr_mc_extn(struct wpa_supplicant *wpa_s, int val);
 bool wpas_uplink_csa_link_available(struct wpa_supplicant *wpa_s,
 				    unsigned int freq);
+int wpa_drv_mark_diagnostic_sta_vap(struct wpa_supplicant *wpa_s, int enable);
 #endif /* WPA_SUPPLICANT_EXTN_H */
