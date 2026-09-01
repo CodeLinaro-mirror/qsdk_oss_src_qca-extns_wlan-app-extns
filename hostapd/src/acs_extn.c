@@ -684,9 +684,26 @@ void hostapd_periodic_acs_stop(struct hostapd_iface *iface)
 
 bool acs_scan_event_expected_extn(struct hostapd_iface *iface)
 {
-	return ((iface->state == HAPD_IFACE_ACS) ||
-		(iface->iface_extn.dynamic_acs_action &&
-		 iface->state == HAPD_IFACE_ENABLED));
+	bool expected;
+
+	expected = ((iface->state == HAPD_IFACE_ACS) ||
+		    (iface->iface_extn.dynamic_acs_action &&
+		     iface->state == HAPD_IFACE_ENABLED));
+
+	if (expected) {
+#if !defined(WPA_TRACE_BFD) || !defined(CONFIG_TESTING_OPTIONS)
+		os_get_reltime(&iface->conf->conf_extn.cbs_params.acs_scan_complete_ts);
+		wpa_printf(MSG_DEBUG,
+			   "Scan complete ts is recorded for ACS: %ld.%06ld (source=acs_scan_event_expected_extn)",
+			   iface->conf->conf_extn.cbs_params.acs_scan_complete_ts.sec,
+			   iface->conf->conf_extn.cbs_params.acs_scan_complete_ts.usec);
+#else
+		wpa_printf(MSG_DEBUG,
+			   "Skipping ACS scan complete timestamp update in testing build");
+#endif
+	}
+
+	return expected;
 }
 
 static int hostapd_acs_run_extn(struct hostapd_data *hapd, const char *pos,
