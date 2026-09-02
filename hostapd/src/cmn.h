@@ -3452,5 +3452,12 @@ int wpas_set_dfs_state(struct wpa_supplicant *wpa_s, int freq,
 		       int ht_enabled, int chan_offset, int chan_width,
 		       int cf1, int cf2, u32 state, u16 radar_bitmap);
 
+int nl80211_wnm_tim_bcast_set(void *priv, const u8 *peer,
+			      u8 interval, u8 offset,
+			      u8 high_rate, u8 low_rate,
+			      int enable);
+
+int nl80211_wnm_tim_bcast_ap_enable(void *priv, int enable);
+
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */

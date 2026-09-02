@@ -2624,3 +2624,111 @@ fail:
 	return -ENOBUFS;
 }
 #endif /* CONFIG_IEEE80211BN */
+
+
+int nl80211_wnm_tim_bcast_set(void *priv, const u8 *peer,
+			      u8 interval, u8 offset,
+			      u8 high_rate, u8 low_rate,
+			      int enable)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	struct nlattr *params;
+	int ret;
+
+	if (!bss || !peer)
+		return -EINVAL;
+
+	drv = bss->drv;
+	if (!drv)
+		return -ENODEV;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_WNM_TIM_BCAST))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_PEER_MAC,
+		    ETH_ALEN, peer) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_INTERVAL,
+		       interval) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_OFFSET,
+		       offset) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_HIGH_RATE,
+		       high_rate) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_LOW_RATE,
+		       low_rate) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_ENABLE,
+		       (u8) enable))
+		goto fail;
+
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_resp(drv, msg, NULL, NULL);
+	if (ret)
+		wpa_printf(MSG_DEBUG,
+			   "WNM: TIM Broadcast vendor cmd failed for " MACSTR
+			   ": %d", MAC2STR(peer), ret);
+	return ret;
+
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
+int nl80211_wnm_tim_bcast_ap_enable(void *priv, int enable)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	struct nlattr *params;
+	int ret;
+
+	if (!bss)
+		return -EINVAL;
+
+	drv = bss->drv;
+	if (!drv)
+		return -ENODEV;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_WNM_TIM_BCAST))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	/* No PEER_MAC — AP-level enable/disable */
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_ENABLE,
+		       (u8) enable))
+		goto fail;
+
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_resp(drv, msg, NULL, NULL);
+	if (ret)
+		wpa_printf(MSG_DEBUG,
+			   "WNM: TIM Broadcast AP %s vendor cmd failed: %d",
+			   enable ? "enable" : "disable", ret);
+	return ret;
+
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
