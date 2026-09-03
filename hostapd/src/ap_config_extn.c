@@ -148,6 +148,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->qacs_conf.min_dwell = 50;        /* msec */
 	conf_extn->qacs_conf.max_dwell = 250;       /* msec */
 	conf_extn->qacs_conf.dwelltime = 200;   /* msec */
+	conf_extn->qacs_conf.dcs_channel_penalty = 0;
         conf_extn->qacs_conf.dbg_module_bitmap = 0x00; /* bitmap of QACS debug modules id */
 	conf_extn->qacs_conf.dbg_level = 0; /* QACS debug level */
 	conf_extn->block_chan_list.n_chan = 0;
@@ -377,6 +378,16 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			conf_extn->qacs_conf.min_dwell = 50;
 	} else if (os_strcmp(buf, "acsmax_dwell") == 0) {
 		conf_extn->qacs_conf.max_dwell = atoi(pos);
+	} else if (os_strcmp(buf, "dcs_channel_penalty") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 100) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid dcs_channel_penalty %d (expected 0..100)",
+				   line, val);
+			return -1;
+		}
+		conf_extn->qacs_conf.dcs_channel_penalty = val;
 	} else if (os_strcmp(buf, "dwelltime") == 0) {
 		int dt = atoi(pos);
 		/* Enforce dwelltime bounds: must be between min_dwell and max_dwell */

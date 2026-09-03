@@ -21,11 +21,22 @@ void acs_fill_timestamp(struct hostapd_iface *iface,
 int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
 				 struct hostapd_channel_data *chan,
 				 enum oper_chan_width oper_bw);
+int hostapd_set_channel_penalty_extn(struct hostapd_iface *iface,
+				     int freq,
+				     int penalty_percent);
 #else
 static inline int
 hostapd_get_center_chan_extn(struct hostapd_iface *iface,
 			     struct hostapd_channel_data *chan,
 			     enum oper_chan_width oper_bw)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int
+hostapd_set_channel_penalty_extn(struct hostapd_iface *iface,
+				 int freq,
+				 int penalty_percent)
 {
 	return -EOPNOTSUPP;
 }
