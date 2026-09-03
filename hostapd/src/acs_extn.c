@@ -81,6 +81,66 @@ int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
 	return center;
 }
 
+static struct hostapd_channel_data *
+hostapd_get_chan_from_freq_extn(struct hostapd_iface *iface, int freq)
+{
+	if (!iface || !iface->current_mode || freq <= 0)
+		return NULL;
+
+	return get_chan_data_by_freq(iface->current_mode, freq);
+}
+
+int hostapd_set_channel_penalty_extn(struct hostapd_iface *iface,
+				     int freq,
+				     int penalty_percent)
+{
+	struct hostapd_channel_data *chan;
+
+	if (penalty_percent < 0 || penalty_percent > 100) {
+		wpa_printf(MSG_ERROR, "%s: Invalid penalty %d (expected 0..100)",
+			   __func__, penalty_percent);
+		return -1;
+	}
+
+	chan = hostapd_get_chan_from_freq_extn(iface, freq);
+	if (!chan) {
+		wpa_printf(MSG_ERROR, "%s: Channel data not found for freq %d",
+			   __func__, freq);
+		return -1;
+	}
+
+	chan->extn.acs_channel_penalty = (u8) penalty_percent;
+
+	wpa_printf(MSG_DEBUG,
+		   "%s: Set penalty %u%% for channel %d (freq=%d)",
+		   __func__, (u8) penalty_percent, chan->chan, chan->freq);
+	return 0;
+}
+
+int hostapd_get_dcs_channel_penalty_extn(struct hostapd_iface *iface,
+					 struct hostapd_channel_data *chan)
+{
+	int penalty_percent;
+
+	if (!chan) {
+		wpa_printf(MSG_ERROR, "%s: Channel not found", __func__);
+		return 0;
+	}
+
+	penalty_percent = chan->extn.acs_channel_penalty;
+
+	if (penalty_percent < 0 || penalty_percent > 100) {
+		wpa_printf(MSG_ERROR, "%s: Invalid penalty %d (expected 0..100)",
+			   __func__, penalty_percent);
+		if (penalty_percent > 100)
+			chan->extn.acs_channel_penalty = 100;
+		else if(penalty_percent < 0)
+			chan->extn.acs_channel_penalty = 0;
+	}
+
+	return chan->extn.acs_channel_penalty;
+}
+
 static void
 hostapd_get_center_chanfreq1_from_channel(struct hostapd_iface *iface,
 					   struct hostapd_channel_data *chan,
@@ -146,6 +206,8 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs get_dfs_exclude      : get DFS channel exclusion state\n"
 		"  acs dwelltime <ms>       : set dwell time in milliseconds\n"
 		"  acs get_dwell            : get dwell time in milliseconds\n"
+		"  acs dcs_channel_penalty <0-100> : set ACS channel penalty percentage\n"
+		"  acs get_dcs_channel_penalty : get ACS channel penalty percentage\n"
 		"  acs dbgtrace <value>     : set debug (0x00FF=level, 0xFF00=module mask)\n"
 		"  acs get_dbgtrace         : get debug mask\n"
 		"  acs wradar <0|1>         : enable/disable excluding weather radar channels\n"
@@ -949,6 +1011,38 @@ static int hostapd_acs_get_dwell_extn(struct hostapd_config_extn *conf_extn,
 	return ret;
 }
 
+static int hostapd_acs_set_dcs_channel_penalty_extn(
+					struct hostapd_config_extn *conf_extn,
+					const char *pos,
+					char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val < 0 || val > 100) {
+		wpa_printf(MSG_ERROR, "%s: Invalid value %d (expected 0..100)",
+			   __func__, val);
+		return -1;
+	}
+
+	conf_extn->qacs_conf.dcs_channel_penalty = val;
+	return 0;
+}
+
+static int hostapd_acs_get_dcs_channel_penalty_extn(
+					struct hostapd_config_extn *conf_extn,
+					const char *pos,
+					char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS dcs_channel_penalty: %u\n",
+			      conf_extn->qacs_conf.dcs_channel_penalty);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
 static int hostapd_acs_set_dbgtrace_extn(struct hostapd_config_extn *conf_extn,
 					 const char *pos,
 					 char *reply, size_t reply_size)
@@ -1181,6 +1275,16 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 
 	} else if (os_strncmp(pos, "get_dwell", 9) == 0) {
 		return hostapd_acs_get_dwell_extn(conf_extn, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "dcs_channel_penalty ", 20) == 0) {
+		return hostapd_acs_set_dcs_channel_penalty_extn(
+							conf_extn, pos + 20,
+							buf, buflen);
+
+	} else if (os_strncmp(pos, "get_dcs_channel_penalty", 23) == 0) {
+		return hostapd_acs_get_dcs_channel_penalty_extn(
+							conf_extn, pos,
+							buf, buflen);
 
 	} else if (os_strncmp(pos, "dbgtrace ", 9) == 0) {
 		return hostapd_acs_set_dbgtrace_extn(conf_extn, pos + 9,

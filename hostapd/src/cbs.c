@@ -395,6 +395,7 @@ int hostapd_cbs_trigger_csa(struct hostapd_data *hapd)
 {
 	struct hostapd_config_extn *conf_extn = &hapd->iface->conf->conf_extn;
 	struct hostapd_channel_data *cbs_chan;
+	int current_freq = hapd->iface->freq;
 	struct os_reltime now, age;
 	u64 age_ms;
 
@@ -414,6 +415,12 @@ int hostapd_cbs_trigger_csa(struct hostapd_data *hapd)
 		   conf_extn->cbs_params.acs_scan_complete_ts.usec,
 		   age.sec, age.usec);
 
+	if (!( conf_extn->cbs_params.acs_scan_complete_ts.sec ||
+	     conf_extn->cbs_params.acs_scan_complete_ts.usec ||
+	     conf_extn->cbs_params.cbs_scan_complete_ts.sec ||
+	     conf_extn->cbs_params.cbs_scan_complete_ts.usec))
+		return -1;
+
 	age_ms = (u64) age.sec * 1000 + (u64) age.usec / 1000;
 	if (age_ms >= conf_extn->cbs_params.retrigger_time) {
 		wpa_printf(MSG_INFO,
@@ -426,9 +433,13 @@ int hostapd_cbs_trigger_csa(struct hostapd_data *hapd)
 
 	wpa_msg(hapd->msg_ctx, MSG_INFO, CBS_EVENT_STARTED);
 	acs_init_extn(hapd->iface, CBS_SCAN_TRIGGER);
-	hostapd_cbs_find_acs_ideal_chan(hapd, hapd->iface, conf_extn);
-	cbs_chan = conf_extn->cbs_params.best_chan;
+	hostapd_set_channel_penalty_extn(hapd->iface, current_freq,
+		conf_extn->qacs_conf.dcs_channel_penalty);
 
+	hostapd_cbs_find_acs_ideal_chan(hapd, hapd->iface, conf_extn);
+	hostapd_set_channel_penalty_extn(hapd->iface, current_freq, 0);
+
+	cbs_chan = conf_extn->cbs_params.best_chan;
 	if (!cbs_chan) {
 		wpa_printf(MSG_DEBUG, "CBS CSA attempt failed. CBS chan: %p",
 			   cbs_chan);

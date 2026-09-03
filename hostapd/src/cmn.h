@@ -436,6 +436,7 @@ struct qacs_conf_extn {
 	u16 min_dwell;
 	u16 max_dwell;
 	u16 dwelltime;
+	u8 dcs_channel_penalty;
 
 	/* Debug/trace controls:
 	 * - upper 0xFF00: module bitmap
@@ -898,6 +899,8 @@ struct hostapd_channel_data_extn {
 	long double acs_total_interference_factor;
 	s8 secondary_channel;
 	u8 eht_bw320_offset;
+
+	u8 acs_channel_penalty;
 };
 
 struct hostapd_hw_modes_extn {
@@ -2790,6 +2793,13 @@ static inline void acs_rank_channels(struct hostapd_hw_modes *mode)
 {
 }
 
+static inline
+int hostapd_get_dcs_channel_penalty_extn(struct hostapd_iface *iface,
+					 struct hostapd_channel_data *chan)
+{
+	wpa_printf(MSG_ERROR, "QACS is not supported");
+	return -EOPNOTSUPP;
+}
 #ifdef CONFIG_IEEE80211BN
 static inline int
 qacs_select_best_npca_chan(struct hostapd_iface *iface,
@@ -2819,6 +2829,8 @@ int acs_process_hostapd_scan_data_per_freq(struct hostapd_iface *iface,
 					       int freq_filter);
 void qacs_reset_scan_stats(struct hostapd_iface *iface,
 			   struct hostapd_hw_modes *mode);
+int hostapd_get_dcs_channel_penalty_extn(struct hostapd_iface *iface,
+					 struct hostapd_channel_data *chan);
 
 #ifdef CONFIG_IEEE80211BN
 int qacs_select_best_npca_chan(struct hostapd_iface *iface,
