@@ -101,11 +101,6 @@ ieee802_11_parse_qcn_vht_mcs_10_11_he_cap_ie(struct ieee802_11_elems_extn *elems
 		}
 		off += (size_t)2 + (size_t)tln;
 	}
-	wpa_printf(MSG_DEBUG,
-		   "QCN IE Parsed: VHT MCS 10/11: %u HE 2xLTF 160: %u 400ns SGI: 0x%02x",
-		   elems_extn->vht_mcs10_11_peer_cap,
-		   elems_extn->he_2xltf_160_80p80_peer_cap,
-		   elems_extn->he_400ns_sgi_peer_cap);
 }
 
 static int ieee802_11_parse_qcn_he_mcs_12_13_ie(struct ieee802_11_elems_extn *elems_extn,
