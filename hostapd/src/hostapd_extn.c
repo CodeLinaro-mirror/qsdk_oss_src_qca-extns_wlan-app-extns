@@ -259,19 +259,24 @@ bool hostapd_has_mesh_vap_in_group_extn(struct hostapd_data *hapd,
 }
 
 /* If mesh vap is the 1st vap to come up, adjust the num_mbssid_group to
- * include the mesh group and assign the last group for the mesh vap. */
-void hostapd_mesh_mbssid_reserve_group_extn(struct hostapd_multi_mbssid *multi_mbssid,
-					    u8 max_bssid_indicator,
-					    u8 *group_index, u64 *prefix_mask)
+ * include the mesh group and assign the last group for the mesh vap.
+ * Returns -1, leaving multi_mbssid unchanged, if that would exceed the
+ * driver's supported group limit. */
+int hostapd_mesh_mbssid_reserve_group_extn(struct hostapd_multi_mbssid *multi_mbssid,
+					   u8 max_bssid_indicator,
+					   u8 *group_index, u64 *prefix_mask)
 {
-	multi_mbssid->num_mbssid_groups++;
+	if (multi_mbssid->num_mbssid_groups + 1 > multi_mbssid->mbssid_max_ngroups) {
+		wpa_printf(MSG_ERROR,
+			   "Configured MBSSID group size results in more groups than supported by driver");
+		return -1;
+	}
 
-	*group_index = multi_mbssid->num_mbssid_groups - 1;
-
-	wpa_printf(MSG_INFO, "Mesh vap detected, assigning to last group %d",
-		   *group_index);
+	*group_index = multi_mbssid->num_mbssid_groups++;
 
 	*prefix_mask = UINT64_MAX << max_bssid_indicator;
+
+	return 0;
 }
 
 /* Reject only if the mesh MBSSID group already has an active mesh VAP. A
@@ -294,18 +299,27 @@ bool hostapd_mesh_mbssid_reject_duplicate_extn(struct hostapd_data *hapd,
 }
 
 /* If mesh VAP is being added and the group array was allocated before the
- * mesh VAP existed, reuse a previously retained empty mesh slot, or
- * reallocate to accommodate a new last group for the mesh VAP. The
- * reallocation case handles AP VAPs being brought up first, then the mesh
- * VAP being added later. Returns -1 on allocation failure. */
+ * mesh VAP existed, reuse a previously retained empty mesh slot, or grow
+ * multi_mbssid->group[] and create a new group for the mesh VAP. The
+ * growth case handles AP VAPs being brought up first, then the mesh VAP
+ * being added later.
+ *
+ * The array growth, driver group-limit check, and new group allocation
+ * are done atomically here: multi_mbssid->num_mbssid_groups and
+ * multi_mbssid->group[] are left completely unchanged, and no group is
+ * allocated, unless a fully initialized group is stored at the returned
+ * *group_index. Returns -1 on failure (limit exceeded or allocation
+ * failure). */
 int hostapd_mesh_mbssid_grow_or_reuse_group_extn(struct hostapd_data *hapd,
 						 struct hostapd_multi_mbssid *multi_mbssid,
 						 u8 max_bssid_indicator,
 						 u8 *group_index, u64 *prefix_mask)
 {
+	struct hostapd_multi_mbssid_group **new_group_array;
+	struct hostapd_multi_mbssid_group *group;
+	u8 new_index;
 	struct hostapd_multi_mbssid_group *mesh_group =
 		hostapd_get_mesh_group_extn(multi_mbssid);
-	struct hostapd_multi_mbssid_group **new_group;
 
 	if (mesh_group) {
 		/* A previous mesh VAP remove left this slot allocated but
@@ -317,23 +331,53 @@ int hostapd_mesh_mbssid_grow_or_reuse_group_extn(struct hostapd_data *hapd,
 		return 0;
 	}
 
-	new_group = os_realloc_array(multi_mbssid->group,
-				     multi_mbssid->num_mbssid_groups + 1,
-				     sizeof(struct hostapd_multi_mbssid_group *));
-
-	if (!new_group) {
-		wpa_printf(MSG_ERROR, "Failed to allocate MBSSID group for mesh VAP");
+	if (multi_mbssid->num_mbssid_groups + 1 > multi_mbssid->mbssid_max_ngroups) {
+		wpa_printf(MSG_ERROR,
+			   "Mesh MBSSID group add results in more groups than supported by driver");
 		return -1;
 	}
 
+	new_group_array = os_realloc_array(multi_mbssid->group,
+					   multi_mbssid->num_mbssid_groups + 1,
+					   sizeof(struct hostapd_multi_mbssid_group *));
+
+	if (!new_group_array) {
+		wpa_printf(MSG_ERROR, "Failed to re-allocate MBSSID group array for mesh VAP");
+		return -1;
+	}
+
+	new_index = multi_mbssid->num_mbssid_groups;
+	multi_mbssid->group = new_group_array;
+	multi_mbssid->group[new_index] = NULL;
+
+	group = os_zalloc(sizeof(struct hostapd_multi_mbssid_group));
+	if (!group) {
+		wpa_printf(MSG_ERROR, "Failed to allocate MBSSID group for mesh VAP");
+		/* Shrink the array back down; num_mbssid_groups was never
+		 * incremented, so the grown slot is not accounted for
+		 * anywhere and safe to drop. Best effort: if the shrink
+		 * itself fails, leave the harmless unused slot allocated
+		 * rather than leak multi_mbssid->group. */
+		new_group_array = os_realloc_array(multi_mbssid->group,
+						   multi_mbssid->num_mbssid_groups,
+						   sizeof(struct hostapd_multi_mbssid_group *));
+		if (new_group_array)
+			multi_mbssid->group = new_group_array;
+		return -1;
+	}
+
+	group->group_id = new_index;
+	group->txbss = hapd;
+	dl_list_init(&group->bss_list);
+	group->is_mesh_group = true;
+	multi_mbssid->group[new_index] = group;
+
 	multi_mbssid->num_mbssid_groups++;
-	*group_index = multi_mbssid->num_mbssid_groups - 1;
+	*group_index = new_index;
 	wpa_printf(MSG_INFO, "Mesh vap detected: %s, assigning to last group %d",
 		   hapd->conf->iface, *group_index);
 
 	*prefix_mask = UINT64_MAX << max_bssid_indicator;
-	multi_mbssid->group = new_group;
-	multi_mbssid->group[multi_mbssid->num_mbssid_groups - 1] = NULL;
 
 	return 0;
 }
