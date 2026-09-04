@@ -358,7 +358,8 @@ void hostapd_drv_set_vht_mcs_10_11_supp_extn(struct hostapd_data *hapd,
 	if (!sta || !sta->vht_capabilities || !elems_extn)
 		return;
 
-	if (elems_extn->vht_mcs10_11_peer_cap)
+	if (hapd->conf->bss_extn.vht_mcs_10_11_supp &&
+	    elems_extn->vht_mcs10_11_peer_cap)
 		sta->sta_extn.higher_vhtmcs_supp = 0xff;
 	else if (hapd->conf->bss_extn.vht_mcs_10_11_nq2q_peer_supp)
 		sta->sta_extn.higher_vhtmcs_supp = 0xff;
