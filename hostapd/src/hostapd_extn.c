@@ -214,7 +214,9 @@ int hostapd_validate_mbssid_configuration_extn(struct hostapd_data *hapd)
 
 bool hostapd_is_mesh_vap_extn(struct hostapd_bss_config *conf)
 {
-	return conf->bss_extn.vap_submode == QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH;
+	return (conf->bss_extn.vap_submode == QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH ||
+		conf->bss_extn.vap_submode == QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_ETH_OFFLOAD_MESH ||
+		conf->bss_extn.vap_submode == QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_RAW_MODE_MESH);
 }
 
 /* Returns the reserved trailing mesh MBSSID group, if any. The slot is
