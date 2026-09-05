@@ -1860,7 +1860,7 @@ static int hostapd_ctrl_iface_deauthenticate_plugin(struct hostapd_data *hapd,
 }
 
 static int hostapd_ctrl_iface_get_pmk_plugin(struct hostapd_data *hapd,
-					     const char *txtaddr,
+					     const char *param,
 					     char *buf, size_t buflen)
 {
 	u8 addr[ETH_ALEN];
@@ -1868,8 +1868,23 @@ static int hostapd_ctrl_iface_get_pmk_plugin(struct hostapd_data *hapd,
 	size_t pmk_len = 0;
 	uint8_t pmkid[PMKID_LEN];
 	int ret, len = 0;
+	bool is_privacy_pmk = false;
+	char txtaddr[18]; /* xx:xx:xx:xx:xx:xx\0 */
+	const char *pos;
 
-	wpa_printf(MSG_DEBUG, "CTRL_IFACE GET_PMK_PLUGIN %s", txtaddr);
+	/* Parse: GET_PMK <MAC> [privacy] */
+	if (sscanf(param, "%17s", txtaddr) != 1) {
+		wpa_printf(MSG_ERROR, "GET_PMK_PLUGIN: Missing MAC address");
+		return -1;
+	}
+	pos = param + os_strlen(txtaddr);
+	while (*pos == ' ')
+		pos++;
+	if (os_strncasecmp(pos, "privacy", 7) == 0)
+		is_privacy_pmk = true;
+
+	wpa_printf(MSG_DEBUG, "CTRL_IFACE GET_PMK_PLUGIN %s is_privacy_pmk=%d",
+		   txtaddr, is_privacy_pmk);
 
 	if (hwaddr_aton(txtaddr, addr)) {
 		wpa_printf(MSG_ERROR, "GET_PMK_PLUGIN: Invalid MAC address");
@@ -1882,7 +1897,7 @@ static int hostapd_ctrl_iface_get_pmk_plugin(struct hostapd_data *hapd,
 
 	/* Call the plugin function to get PMK */
 	test_plugin.get_pmk((char *)hapd->conf->iface, addr, pmk, &pmk_len,
-			    pmkid);
+			    pmkid, is_privacy_pmk);
 
 	/* Check if PMK was retrieved */
 	if (pmk_len == 0) {
