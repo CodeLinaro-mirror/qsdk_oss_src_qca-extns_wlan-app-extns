@@ -653,7 +653,7 @@ struct hostapd_external_app_object {
 
 	int (*get_pmk)(char *ifname, uint8_t *sta_mac,
 		       uint8_t pmk[PMK_LEN_MAX], size_t *pmk_len,
-		       uint8_t pmkid[PMKID_LEN]);
+		       uint8_t pmkid[PMKID_LEN], bool is_privacy_pmk);
 
 	/*
 	 * ASYNC: Set PTK
