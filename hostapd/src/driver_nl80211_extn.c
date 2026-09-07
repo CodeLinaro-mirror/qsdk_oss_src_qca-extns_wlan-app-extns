@@ -31,7 +31,7 @@
 #include "dcs.h"
 #include "rropinfo.h"
 #include "reg_extn.h"
-
+#include "mapc_extn.h"
 
 struct hostapd_sta_add_params;
 
@@ -2287,3 +2287,212 @@ int netlink_increase_rcvbuf_extn(int sock)
 
 	return 0;
 }
+
+#ifdef CONFIG_IEEE80211BN
+static int mapc_get_peer_params_reply_handler(struct nl_msg *msg, void *arg)
+{
+	struct mapc_peer_params_result *res = arg;
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct nlattr *vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct nlattr *etb[QCA_WLAN_VENDOR_ATTR_MAPC_COTDMA_E2E_CONFIG_ENTRY_MAX + 1];
+	struct mapc_cotdma_e2e_entry *entry;
+	const struct nlattr *vendor_data;
+	struct nlattr *pos;
+	int rem_e2e;
+
+	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		  genlmsg_attrlen(gnlh, 0), NULL);
+
+	if (!tb[NL80211_ATTR_VENDOR_DATA])
+		return NL_SKIP;
+
+	nla_parse(vendor_tb, QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_MAX,
+		  nla_data(tb[NL80211_ATTR_VENDOR_DATA]),
+		  nla_len(tb[NL80211_ATTR_VENDOR_DATA]), NULL);
+
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_CAP_BITMAP])
+		res->cap_bitmap   = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_CAP_BITMAP]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_APID_TO])
+		res->apid_to      = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_APID_TO]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_APID_FROM])
+		res->apid_from    = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_APID_FROM]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_Q2Q_TO])
+		res->q2q_to       = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_Q2Q_TO]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_Q2Q_FROM])
+		res->q2q_from     = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_Q2Q_FROM]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_CH_WIDTH])
+		res->ch_width     = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_CH_WIDTH]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_CCFS])
+		res->ccfs         = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_CCFS]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_BSS_COLOR])
+		res->bss_color    = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_BSS_COLOR]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_RX_TXOP])
+		res->rx_txop      = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_RX_TXOP]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_DSB])
+		res->dsb          = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_DSB]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_PRIMARY_AC])
+		res->primary_ac   = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_PRIMARY_AC]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_NBR_PRIO])
+		res->nbr_prio     = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_NBR_PRIO]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_SVC_START])
+		res->svc_start    = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_SVC_START]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_SVC_INTERVAL])
+		res->svc_interval = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_SVC_INTERVAL]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_SVC_END])
+		res->svc_end      = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_SVC_END]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_LATENCY_THRESHOLD])
+		res->latency_threshold = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_LATENCY_THRESHOLD]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_MAX_TXOP])
+		res->max_txop     = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_MAX_TXOP]);
+	if (vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_MIN_TXOP])
+		res->min_txop     = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_MIN_TXOP]);
+
+	res->e2e_entry_count = 0;
+	vendor_data = tb[NL80211_ATTR_VENDOR_DATA];
+	nla_for_each_attr(pos,
+			  (struct nlattr *)nla_data(vendor_data),
+			  nla_len(vendor_data), rem_e2e) {
+		if (nla_type(pos) != QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_E2E_ENTRIES)
+			continue;
+		if (res->e2e_entry_count >= MAPC_MAX_E2E_ENTRIES)
+			break;
+
+		entry = &res->e2e_entries[res->e2e_entry_count];
+		os_memset(entry, 0, sizeof(*entry));
+
+		if (nla_parse_nested(etb,
+				     QCA_WLAN_VENDOR_ATTR_MAPC_COTDMA_E2E_CONFIG_ENTRY_MAX,
+				     pos, NULL))
+			continue;
+
+		if (etb[QCA_WLAN_VENDOR_ATTR_MAPC_COTDMA_E2E_ENTRY_CONFIG_MODE])
+			entry->config_mode = nla_get_u8(
+				etb[QCA_WLAN_VENDOR_ATTR_MAPC_COTDMA_E2E_ENTRY_CONFIG_MODE]);
+		if (etb[QCA_WLAN_VENDOR_ATTR_MAPC_COTDMA_E2E_ENTRY_QMID])
+			entry->qmid = nla_get_u16(
+				etb[QCA_WLAN_VENDOR_ATTR_MAPC_COTDMA_E2E_ENTRY_QMID]);
+		if (etb[QCA_WLAN_VENDOR_ATTR_MAPC_COTDMA_E2E_ENTRY_PEER_MAC])
+			os_memcpy(entry->peer_mac,
+				  nla_data(etb[QCA_WLAN_VENDOR_ATTR_MAPC_COTDMA_E2E_ENTRY_PEER_MAC]),
+				  ETH_ALEN);
+		if (etb[QCA_WLAN_VENDOR_ATTR_MAPC_COTDMA_E2E_ENTRY_PEER_BACKHAUL_MAC]) {
+			entry->bsta_mac_valid = true;
+			os_memcpy(entry->bsta_mac,
+				  nla_data(etb[QCA_WLAN_VENDOR_ATTR_MAPC_COTDMA_E2E_ENTRY_PEER_BACKHAUL_MAC]),
+				  ETH_ALEN);
+		}
+		res->e2e_entry_count++;
+	}
+
+	return NL_SKIP;
+}
+
+int nl80211_set_mapc_vendor_params_extn(struct hostapd_data *hapd,
+					const u8 *peer_addr,
+					u16 apid_to, u16 apid_from)
+{
+	struct i802_bss *bss;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	struct nlattr *params;
+	int ret;
+
+	if (!hapd || !hapd->drv_priv || !peer_addr)
+		return -EINVAL;
+	bss = hapd->drv_priv;
+	drv = bss->drv;
+	if (!drv)
+		return -ENODEV;
+
+	msg = nl80211_cmd_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_MAPC_PEER_PARAMS))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (hapd->conf->mld_ap &&
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID,
+		       hapd->mld_link_id))
+		goto fail;
+
+	if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_MAPC_PEER_MAC, ETH_ALEN, peer_addr) ||
+	    nla_put_u16(msg, QCA_WLAN_VENDOR_ATTR_MAPC_Q2Q_APID_TO,   apid_to)   ||
+	    nla_put_u16(msg, QCA_WLAN_VENDOR_ATTR_MAPC_Q2Q_APID_FROM, apid_from))
+		goto fail;
+
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "MAPC: set vendor params NL cmd failed for " MACSTR
+			   ": %d", MAC2STR(peer_addr), ret);
+	return ret;
+
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
+int nl80211_get_mapc_peer_params_extn(struct hostapd_data *hapd,
+				      const u8 *peer_addr,
+				      struct mapc_peer_params_result *res)
+{
+	struct i802_bss *bss;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	struct nlattr *params;
+	int ret;
+
+	if (!hapd || !hapd->drv_priv || !peer_addr || !res)
+		return -EINVAL;
+	bss = hapd->drv_priv;
+	drv = bss->drv;
+	if (!drv)
+		return -ENODEV;
+
+	msg = nl80211_cmd_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_MAPC_PEER_GET_PARAMS))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (hapd->conf->mld_ap &&
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID,
+		       hapd->mld_link_id))
+		goto fail;
+
+	if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_MAPC_GET_PARAMS_PEER_MAC,
+		    ETH_ALEN, peer_addr))
+		goto fail;
+
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_resp(drv, msg,
+				 mapc_get_peer_params_reply_handler, res);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "MAPC: get peer params NL cmd failed for " MACSTR
+			   ": %d", MAC2STR(peer_addr), ret);
+	return ret;
+
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+#endif /* CONFIG_IEEE80211BN */

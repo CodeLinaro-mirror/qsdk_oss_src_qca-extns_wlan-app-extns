@@ -126,9 +126,18 @@ static int hostapd_cbs_set_enable(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	if (val == 1 && cbs_params->best_chan) {
+	if (val == 1 &&
+	    (cbs_params->cbs_scan_complete_ts.sec || cbs_params->cbs_scan_complete_ts.usec ||
+	     cbs_params->acs_scan_complete_ts.sec || cbs_params->acs_scan_complete_ts.usec)) {
+		struct os_reltime *last_ts;
+
 		os_get_reltime(&now);
-		os_reltime_sub(&now, &cbs_params->cbs_scan_complete_ts, &age);
+		if (os_reltime_before(&cbs_params->cbs_scan_complete_ts,
+				      &cbs_params->acs_scan_complete_ts))
+			last_ts = &cbs_params->acs_scan_complete_ts;
+		else
+			last_ts = &cbs_params->cbs_scan_complete_ts;
+		os_reltime_sub(&now, last_ts, &age);
 		age_ms = (u64) age.sec * 1000 + (u64) age.usec / 1000;
 		if (age_ms < cbs_params->retrigger_time)
 			skip_cbs_scan = true;
@@ -320,15 +329,8 @@ hostapd_cbs_find_acs_ideal_chan(struct hostapd_data *link_hapd,
 		conf_extn->cbs_params.best_chan = acs_find_ideal_chan(iface);
 	}
 
-	if (conf_extn->cbs_params.best_chan) {
-		os_get_reltime(&conf_extn->cbs_params.best_chan_fill_ts);
-		wpa_printf(MSG_INFO,
-			   "CBS best_chan filled at ts=%ld.%06ld (freq=%d)",
-			   conf_extn->cbs_params.best_chan_fill_ts.sec,
-			   conf_extn->cbs_params.best_chan_fill_ts.usec,
-			   conf_extn->cbs_params.best_chan->freq);
+	if (conf_extn->cbs_params.best_chan)
 		acs_fill_timestamp(iface, CBS_SCAN_TRIGGER, false);
-	}
 
 	if (conf_extn->cbs_params.cbs_enable == 1)
 		conf_extn->cbs_params.cbs_enable = 0;
@@ -378,6 +380,11 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 
 	if (cbs_evt->status == VENDOR_SCAN_STATUS_NEW_RESULTS) {
 		os_get_reltime(&conf_extn->cbs_params.cbs_scan_complete_ts);
+		wpa_printf(MSG_DEBUG,
+			   "Scan complete ts is recorded for CBS: %ld.%06ld (freq=%u link_id=%u)",
+			   conf_extn->cbs_params.cbs_scan_complete_ts.sec,
+			   conf_extn->cbs_params.cbs_scan_complete_ts.usec,
+			   cbs_evt->scan_complete_freq, cbs_evt->link_id);
 		hostapd_cbs_find_acs_ideal_chan(link_hapd, iface, conf_extn);
 	}
 
@@ -387,31 +394,44 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 int hostapd_cbs_trigger_csa(struct hostapd_data *hapd)
 {
 	struct hostapd_config_extn *conf_extn = &hapd->iface->conf->conf_extn;
-	struct hostapd_channel_data *cbs_chan =
-		conf_extn->cbs_params.best_chan;
+	struct hostapd_channel_data *cbs_chan;
 	struct os_reltime now, age;
+	u64 age_ms;
+
+	os_get_reltime(&now);
+	if (os_reltime_before(&conf_extn->cbs_params.cbs_scan_complete_ts,
+			      &conf_extn->cbs_params.acs_scan_complete_ts))
+		os_reltime_sub(&now, &conf_extn->cbs_params.acs_scan_complete_ts, &age);
+	else
+		os_reltime_sub(&now, &conf_extn->cbs_params.cbs_scan_complete_ts, &age);
+
+	wpa_printf(MSG_DEBUG,
+		   "CBS CSA timestamp check: now=%ld.%06ld cbs_scan_complete_ts=%ld.%06ld acs_scan_complete_ts=%ld.%06ld age=%ld.%06ld",
+		   now.sec, now.usec,
+		   conf_extn->cbs_params.cbs_scan_complete_ts.sec,
+		   conf_extn->cbs_params.cbs_scan_complete_ts.usec,
+		   conf_extn->cbs_params.acs_scan_complete_ts.sec,
+		   conf_extn->cbs_params.acs_scan_complete_ts.usec,
+		   age.sec, age.usec);
+
+	age_ms = (u64) age.sec * 1000 + (u64) age.usec / 1000;
+	if (age_ms >= conf_extn->cbs_params.retrigger_time) {
+		wpa_printf(MSG_INFO,
+			   "CBS best channel age %llu ms exceeds max %u ms. Skipping CSA for CBS channel",
+			   (unsigned long long) age_ms,
+			   conf_extn->cbs_params.retrigger_time);
+		conf_extn->cbs_params.best_chan = NULL;
+		return -1;
+	}
+
+	wpa_msg(hapd->msg_ctx, MSG_INFO, CBS_EVENT_STARTED);
+	acs_init_extn(hapd->iface, CBS_SCAN_TRIGGER);
+	hostapd_cbs_find_acs_ideal_chan(hapd, hapd->iface, conf_extn);
+	cbs_chan = conf_extn->cbs_params.best_chan;
 
 	if (!cbs_chan) {
 		wpa_printf(MSG_DEBUG, "CBS CSA attempt failed. CBS chan: %p",
 			   cbs_chan);
-		return -1;
-	}
-
-	os_get_reltime(&now);
-	os_reltime_sub(&now, &conf_extn->cbs_params.best_chan_fill_ts, &age);
-
-	wpa_printf(MSG_DEBUG,
-		   "CBS CSA timestamp check: now=%ld.%06ld best_chan_fill_ts=%ld.%06ld age=%ld.%06ld",
-		   now.sec, now.usec,
-		   conf_extn->cbs_params.best_chan_fill_ts.sec,
-		   conf_extn->cbs_params.best_chan_fill_ts.usec,
-		   age.sec, age.usec);
-
-	if (age.sec >= HOSTAPD_CBS_BEST_CHAN_MAX_AGE_SEC) {
-		wpa_printf(MSG_INFO,
-			   "CBS best channel age %ld sec exceeds max %u sec. Skipping CSA for CBS channel",
-			   age.sec, HOSTAPD_CBS_BEST_CHAN_MAX_AGE_SEC);
-		conf_extn->cbs_params.best_chan = NULL;
 		return -1;
 	}
 

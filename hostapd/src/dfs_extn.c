@@ -1614,6 +1614,7 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 		   channel->chan);
 
 	os_memset(&freq_params, 0, sizeof(freq_params));
+	iface->radar_bit_pattern = 0;
 	err = hostapd_set_freq_params(&freq_params,
 				      iface->conf->hw_mode,
 				      channel->freq, channel->chan,

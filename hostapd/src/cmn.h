@@ -857,6 +857,8 @@ struct hostapd_iface_extn {
 struct hostapd_channel_data_extn {
 	bool is_non_primary;
 	long double acs_total_interference_factor;
+	s8 secondary_channel;
+	u8 eht_bw320_offset;
 };
 
 struct hostapd_hw_modes_extn {
@@ -2655,6 +2657,13 @@ qacs_find_ideal_chan(struct hostapd_iface *iface)
 	return NULL;
 }
 
+static inline void
+qacs_adjust_sec_chan_and_eht320_offset(struct hostapd_iface *iface,
+				       struct hostapd_channel_data *ideal_chan)
+{
+	wpa_printf(MSG_ERROR, "QACS is not supported");
+}
+
 static inline int
 acs_process_hostapd_scan_data(struct hostapd_iface *iface)
 {
@@ -2715,6 +2724,8 @@ void acs_reset_chan_ranks(struct hostapd_hw_modes *mode);
 void acs_rank_channels(struct hostapd_hw_modes *mode);
 struct hostapd_channel_data *
 qacs_find_ideal_chan(struct hostapd_iface *iface);
+void qacs_adjust_sec_chan_and_eht320_offset(struct hostapd_iface *iface,
+					    struct hostapd_channel_data *ideal_chan);
 int acs_process_hostapd_scan_data(struct hostapd_iface *iface);
 int acs_process_hostapd_scan_data_per_freq(struct hostapd_iface *iface,
 					       int freq_filter);

@@ -381,6 +381,13 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 
 	csa->freq_params.mcst = iface->cs_time ?
 		IEEE80211_MS_TO_TU(iface->cs_time) : 0;
+
+	/* CSwOpts 0x4: AP must perform CAC on STA-triggered bring-up.
+	 * Override any skip_cac set above (conf skip_cac or MCST-based);
+	 * cswopts is runtime-only and not overwritten by config reloads. */
+	if (IS_CSH_CAC_APUP_BYSTA_ENABLED(conf->conf_extn.cswopts))
+		csa->freq_params.skip_cac = 0;
+
 	wpa_printf(MSG_INFO,
 		   "CSA: phy=%s is_dfs=%d pre_connect=%d skip_cac=%d mcst=%u TU "
 		   "cs_time=%u ms freq=%d channel=%d cf1=%d cf2=%d link_id=%d",

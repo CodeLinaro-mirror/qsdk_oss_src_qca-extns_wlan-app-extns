@@ -28,8 +28,8 @@ struct cbs_params_extn {
 	int resttime; /* time to wait between scans on different channels (msec) */
 	int waittime; /* time to wait after scanning all channels and before starting the next scan (msec) */
 	struct hostapd_channel_data *best_chan; /* Best channel chosen based on CBS scan results */
-	struct os_reltime best_chan_fill_ts; /* Timestamp when best_chan was updated */
-	struct os_reltime cbs_scan_complete_ts; /* Timestamp when CBS scan completed with new results */
+	struct os_reltime cbs_scan_complete_ts; /* Timestamp when CBS scan completed */
+	struct os_reltime acs_scan_complete_ts; /* Timestamp when ACS scan completed */
 	u32 retrigger_time; /* Minimum age (ms) before CBS scan can be retriggered. ACS is directly
 			     * triggered by skipping the CBS scan if cbs enable is invoked before this time
 			     * (msec)
