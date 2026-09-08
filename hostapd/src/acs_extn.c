@@ -249,14 +249,14 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 
 	/* ---- Single header ---- */
 	ret = os_snprintf(pos, end - pos,
-			" Freq(chan)          BSS    NF   Load  Sec   SRP  Grade  Radar    Eff   Power   Rank\n");
+			" Freq(chan)          BSS    NF   Load  Sec   SRP  Grade  Radar    Eff   Power   Rank  MaxRSSI  MinRSSI\n");
 	if (os_snprintf_error(end - pos, ret)) {
 		return (int)(pos - reply);
 	}
 	pos += ret;
 
 	ret = os_snprintf(pos, end - pos,
-			"-------------------------------------------------------------------------------------\n");
+			"----------------------------------------------------------------------------------------------------------\n");
 	if (os_snprintf_error(end - pos, ret)) {
 		return (int)(pos - reply);
 	}
@@ -277,12 +277,13 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 
 			if (has_plus) {
 				ret = os_snprintf(pos, end - pos,
-						" %4u(%3u %4u)  %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d\n",
+						" %4u(%3u %4u)  %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d  %7d  %7d\n",
 						r->chan_freq, r->ieee_chan, r->center_freq1,
 						r->chan_nbss, r->noisefloor, r->chan_load,
 						r->sec_chan, r->chan_nbss_srp, r->chan_grade,
 						(unsigned) r->chan_radar_noise,
-						r->chan_efficiency_1, r->txpower, r->rank_1);
+						r->chan_efficiency_1, r->txpower, r->rank_1,
+						r->max_rssi, r->min_rssi);
 
 				if (os_snprintf_error(end - pos, ret))
 					return (int)(pos - reply);
@@ -292,12 +293,13 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 			/* Row 2 : center_freq2 → seg1 / HT40− */
 			if (has_minus) {
 				ret = os_snprintf(pos, end - pos,
-						" %4u(%3u %4u)  %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d\n",
+						" %4u(%3u %4u)  %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d  %7d  %7d\n",
 						r->chan_freq, r->ieee_chan, r->center_freq2,
 						r->chan_nbss, r->noisefloor, r->chan_load,
 						r->sec_chan, r->chan_nbss_srp, r->chan_grade,
 						(unsigned) r->chan_radar_noise,
-						r->chan_efficiency, r->txpower, r->rank);
+						r->chan_efficiency, r->txpower, r->rank,
+						r->max_rssi, r->min_rssi);
 
 				if (os_snprintf_error(end - pos, ret))
 					return (int)(pos - reply);
@@ -309,11 +311,12 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 
 		else {
 			ret = os_snprintf(pos, end - pos,
-					" %4u(%3u)       %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d\n",
+					" %4u(%3u)       %6u %5d %6u %4u %5d %6u %6u %7d %6d %5d  %7d  %7d\n",
 					r->chan_freq, r->ieee_chan,
 					r->chan_nbss, r->noisefloor, r->chan_load,
 					r->sec_chan, r->chan_nbss_srp, r->chan_grade,
-					(unsigned)r->chan_radar_noise, r->chan_efficiency, r->txpower, r->rank);
+					(unsigned)r->chan_radar_noise, r->chan_efficiency, r->txpower, r->rank,
+					r->max_rssi, r->min_rssi);
 			if (os_snprintf_error(end - pos, ret))
 				return (int)(pos - reply);
 			pos += ret;
