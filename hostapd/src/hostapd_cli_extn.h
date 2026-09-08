@@ -77,6 +77,8 @@ int hostapd_cli_cmd_set_tpe_punct_channel_tx_pwr(struct wpa_ctrl *ctrl, int argc
 int hostapd_cli_cmd_get_tpe_punct_channel_tx_pwr(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_tpe_tx_pwr_interp(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_tpe_tx_pwr_interp(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_set_cck_rx_5g(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_cck_rx_5g(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_pureg(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_pureg(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_puren(struct wpa_ctrl *ctrl, int argc, char *argv[]);
@@ -230,6 +232,10 @@ int _wpa_ctrl_command_large(struct wpa_ctrl *ctrl, const char *cmd, int print);
 		"<opclass> = override operating class in ECSA IE" }, \
 	{ "g_ecsa_opclass", hostapd_cli_cmd_g_ecsa_opclass_extn, NULL, \
 		"= get configured ECSA IE operating class override" }, \
+	{ "set_cck_rx_5g", hostapd_cli_cmd_set_cck_rx_5g, NULL, \
+		"<value 0|1> :Enable/disable CCK RX support on 5 GHz (5 GHz radio only)" }, \
+	{ "get_cck_rx_5g", hostapd_cli_cmd_get_cck_rx_5g, NULL, \
+		"Get CCK RX 5 GHz support config" }, \
 	{ "set_pureg", hostapd_cli_cmd_set_pureg, NULL, \
 		"<value 0|1> :Enable/disable pureg" }, \
 	{ "get_pureg", hostapd_cli_cmd_get_pureg, NULL, \
