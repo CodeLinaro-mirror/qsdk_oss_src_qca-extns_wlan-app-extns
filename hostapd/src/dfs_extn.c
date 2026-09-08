@@ -482,6 +482,16 @@ int dfs_nol_ie_get_subchan_count(enum oper_chan_width chan_width,
 	return 0;
 }
 
+int dfs_compute_chan_params_320mhz(int chan_num, u8 *seg0, int *sec)
+{
+	if (chan_num < UNII_2_EXT_START_CHAN || chan_num > UNII_2_EXT_END_CHAN)
+		return -1;
+
+	*seg0 = UNII_2_EXT_CHAN320_CEN_CHAN;
+	*sec = GET_SEC_CHAN_OFFSET(chan_num, UNII_2_EXT_START_CHAN);
+	return UNII_2_EXT_START_CHAN;
+}
+
 static int dfs_nol_ie_get_base_freq(int freq, int cf1,
 				    enum oper_chan_width chan_width,
 				    int *base_freq)

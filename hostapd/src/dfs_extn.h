@@ -128,9 +128,24 @@ bool optional_ml_info_ie_access(u8 *buf, size_t buf_len,
 #define HAPD_DFS_WAIT_FOR_RCSA_FROM_ROOT_DUR_US(bcn_intval) (HOSTAPD_RCSA_TX_COUNT * (bcn_intval) * 2)
 #define HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_US 1000
 #define HOSTAPD_RCSA_INTVAL_US (100 * 1000)
+#define UNII_2_EXT_CHAN320_CEN_CHAN 130
 
 int dfs_nol_ie_get_subchan_count(enum oper_chan_width chan_width,
 				 int freq, int cf1,
 				 int *n_subchans);
+
+/**
+ * dfs_compute_chan_params_320mhz() - Compute seg0 index and sec channel offset
+ *                                    for 320 MHz in the UNII-2 Extended band
+ * @chan_num: Primary channel number (must be within UNII-2 Extended band).
+ * @seg0: Output: center frequency segment 0 channel index.
+ * @sec: Output: secondary channel offset.
+ *
+ * Only handles 5 GHz UNII-2 Extended band 320 MHz (240 MHz special case).
+ * Returns the block-start channel number on success, -1 if chan_num is
+ * outside the range.
+ */
+int dfs_compute_chan_params_320mhz(int chan_num, u8 *seg0, int *sec);
+int dfs_compute_chan_params_320mhz(int chan_num, u8 *seg0, int *sec);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* DFS_EXTN_H */
