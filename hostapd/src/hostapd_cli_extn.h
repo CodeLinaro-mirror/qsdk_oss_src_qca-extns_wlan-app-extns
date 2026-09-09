@@ -248,7 +248,8 @@ int _wpa_ctrl_command_large(struct wpa_ctrl *ctrl, const char *cmd, int print);
 		"<bssid> = retrieve cached MAPC params for the named peer" }, \
 
 #define HOSTAPD_CLI_CMD_FIELDS_EXTN \
-	"he_mcs_12_13_supp",
+	"he_mcs_12_13_supp", \
+	"post_nol_freq", "post_nol_width", "post_nol_bgcac_en",
 #else
 #define HOSTAPD_CLI_CMDS_EXTN
 #define HOSTAPD_CLI_CMD_FIELDS_EXTN

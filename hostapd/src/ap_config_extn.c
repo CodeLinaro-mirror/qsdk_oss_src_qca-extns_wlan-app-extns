@@ -206,6 +206,11 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	/* Auto-recovery after NOL VAP down */
 	conf_extn->autorecovery_after_nol_vapdown = 1;
 
+	/* postNOL channel switch: unset by default */
+	conf_extn->post_nol_chan.freq = -1;
+	conf_extn->post_nol_chan.width = -1;
+	conf_extn->post_nol_chan.bgcac_en = 1;
+
 	conf_extn->he_mcs_12_13_enabled = DEFAULT_HE_MCS_12_13_SUPPORT;
 
 	conf_extn->udbg_enh_enable = false;
@@ -285,6 +290,22 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		return 0;
 	} else if (os_strcmp(buf, "skip_cac") == 0) {
 		conf_extn->skip_cac = atoi(pos);
+		return 0;
+	} else if (os_strcmp(buf, "post_nol_freq") == 0) {
+		conf_extn->post_nol_chan.freq = atoi(pos);
+		return 0;
+	} else if (os_strcmp(buf, "post_nol_width") == 0) {
+		conf_extn->post_nol_chan.width = atoi(pos);
+		return 0;
+	} else if (os_strcmp(buf, "post_nol_bgcac_en") == 0) {
+		val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid post_nol_bgcac_en %d (0 or 1)",
+				   line, val);
+			return -1;
+		}
+		conf_extn->post_nol_chan.bgcac_en = val;
 		return 0;
 	} else if (os_strcmp(buf, "ignorecac") == 0) {
 		conf_extn->ignorecac = atoi(pos);
