@@ -2566,12 +2566,114 @@ static int hostapd_he_mcs_12_13_supp_extn(struct hostapd_data *hapd, bool val)
 	return 0;
 }
 
+/**
+ * hostapd_ctrl_iface_set_post_nol_freq_extn - Set the post_nol frequency
+ * @hapd: Pointer to hostapd BSS data
+ * @value: Frequency in MHz
+ *
+ * Parse and apply the user provided value for post_nol_freq. Rejected on
+ * any non-5 GHz link.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int hostapd_ctrl_iface_set_post_nol_freq_extn(struct hostapd_data *hapd,
+						      const char *value)
+{
+	int val;
+	char *end = NULL;
+
+	if (!is_5ghz_freq(hapd->iface->freq)) {
+		wpa_printf(MSG_ERROR,
+			   "post_nol_freq is only applicable to the 5 GHz link");
+		return -1;
+	}
+
+	val = strtol(value, &end, 10);
+	if (value == end) {
+		wpa_printf(MSG_ERROR, "Invalid post_nol_freq value: %s", value);
+		return -1;
+	}
+
+	if (val != -1 &&
+	    (!hapd->iface->current_mode ||
+	     !hw_mode_get_channel(hapd->iface->current_mode, val, NULL)))
+		return -1;
+
+	hapd->iconf->conf_extn.post_nol_chan.freq = val;
+	return 0;
+}
+
+/**
+ * hostapd_ctrl_iface_set_post_nol_width_extn - Set the post_nol bandwidth
+ * @hapd: Pointer to hostapd BSS data
+ * @value: Bandwidth in MHz
+ *
+ * Parse and apply the user provided value for post_nol_width. Rejected on
+ * any non-5 GHz link request.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int hostapd_ctrl_iface_set_post_nol_width_extn(struct hostapd_data *hapd,
+						       const char *value)
+{
+	int val;
+	char *end = NULL;
+
+	if (!is_5ghz_freq(hapd->iface->freq)) {
+		wpa_printf(MSG_ERROR,
+			   "post_nol_width is only applicable to the 5 GHz link");
+		return -1;
+	}
+
+	val = strtol(value, &end, 10);
+	if (value == end) {
+		wpa_printf(MSG_ERROR, "Invalid post_nol_width value: %s", value);
+		return -1;
+	}
+
+	hapd->iconf->conf_extn.post_nol_chan.width = val;
+	return 0;
+}
+
+/**
+ * hostapd_ctrl_iface_set_post_nol_bgcac_en_extn - Enable/disable Agile CAC
+ * for post_nol channel switch
+ * @hapd: Pointer to hostapd BSS data
+ * @value: "0" to disable, "1" to enable
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int
+hostapd_ctrl_iface_set_post_nol_bgcac_en_extn(struct hostapd_data *hapd,
+					      const char *value)
+{
+	int val;
+	char *end = NULL;
+
+	val = strtol(value, &end, 10);
+	if (value == end || *end != '\0' || (val != 0 && val != 1)) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid post_nol_bgcac_en value: %s (use 0 or 1)",
+			   value);
+		return -1;
+	}
+
+	hapd->iconf->conf_extn.post_nol_chan.bgcac_en = val;
+	return 0;
+}
+
 int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *value)
 {
 	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
 	int val, ret = -1;
 
-	if (os_strcasecmp(cmd, "rnr_member_ess_colocated_en") == 0) {
+	if (os_strcasecmp(cmd, "post_nol_freq") == 0) {
+		return hostapd_ctrl_iface_set_post_nol_freq_extn(hapd, value);
+	} else if (os_strcasecmp(cmd, "post_nol_width") == 0) {
+		return hostapd_ctrl_iface_set_post_nol_width_extn(hapd, value);
+	} else if (os_strcasecmp(cmd, "post_nol_bgcac_en") == 0) {
+		return hostapd_ctrl_iface_set_post_nol_bgcac_en_extn(hapd, value);
+	} else if (os_strcasecmp(cmd, "rnr_member_ess_colocated_en") == 0) {
 		val = atoi(value);
 		if (val < 0 || val > 1) {
 			wpa_printf(MSG_ERROR,
@@ -2658,7 +2760,22 @@ int hostapd_ctrl_iface_get_extn(struct hostapd_data *hapd, char *cmd,
 	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
 	int res = -1;
 
-	if (os_strcasecmp(cmd, "nontx_profile_elem_size") == 0) {
+	if (os_strcasecmp(cmd, "post_nol_freq") == 0) {
+		res = os_snprintf(buf, buflen, "%d\n", conf_extn->post_nol_chan.freq);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "post_nol_width") == 0) {
+		res = os_snprintf(buf, buflen, "%d\n", conf_extn->post_nol_chan.width);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "post_nol_bgcac_en") == 0) {
+		res = os_snprintf(buf, buflen, "%d\n", conf_extn->post_nol_chan.bgcac_en);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "nontx_profile_elem_size") == 0) {
 		res = os_snprintf(buf, buflen, "Optional elem size = %u\nVendor elem size = %u\n",
 				  hapd->conf->bss_extn.nontx_optional_elem_size,
 				  hapd->conf->bss_extn.nontx_vendor_elem_size);

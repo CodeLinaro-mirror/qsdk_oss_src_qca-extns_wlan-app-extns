@@ -550,6 +550,21 @@ enum tpe_tx_pwr_interp_unit {
 #define QCN_HOP_COUNT_CONNECTED 1
 #define QCN_HOP_COUNT_UNKNOWN 255
 
+/**
+ * struct post_nol_chan - Post-NOL channel recovery configuration
+ * @freq: Frequency (MHz) the AP switches to once the NOL entry for this
+ *        channel expires. -1 by default (unset).
+ * @width: Bandwidth (MHz) the AP switches to once the NOL entry for @freq
+ *         expires. -1 by default (unset).
+ * @bgcac_en: Whether to use Agile CAC for the post-NOL channel switch.
+ *            Enabled (1) by default.
+ */
+struct post_nol_chan {
+	int freq;
+	int width;
+	bool bgcac_en;
+};
+
 struct hostapd_config_extn {
 	/* Add Per-radio configuration for extn here */
 
@@ -626,6 +641,12 @@ struct hostapd_config_extn {
 
 	/* Auto-recovery after NOL VAP down */
 	bool autorecovery_after_nol_vapdown;
+
+	/**
+	 * @post_nol_chan: User-configured channel to switch to once the
+	 * NOL entry for that channel expires.
+	 */
+	struct post_nol_chan post_nol_chan;
 
 	/* CBS (Continuous Background Scan) params */
 	struct cbs_params_extn cbs_params;
