@@ -205,11 +205,10 @@ int hostapd_validate_mbssid_configuration_extn(struct hostapd_data *hapd)
 		return -1;
 	}
 
-	if ((hapd->iface->conf->group_size == MULTI_MBSSID_GROUP_SIZE_MAX) &&
-	    (hapd->iface->max_mgmt_frm_sz < MGMT_MIN_FRAME_SIZE_REQUIRED_MLO_MBSSID)) {
+	if (hapd->iface->conf->group_size == MULTI_MBSSID_GROUP_SIZE_MAX) {
 		wpa_printf(MSG_ERROR,
-			   "Invalid MBSSID group size (%u) for MLD AP with mgmt frame size (%d)",
-			   hapd->iface->conf->group_size, MGMT_MIN_FRAME_SIZE_REQUIRED_MLO_MBSSID);
+			   "Invalid MBSSID group size (%u) for MLD AP. Allowed group size 2 or 4",
+			   hapd->iface->conf->group_size);
 		return -1;
 	}
 
