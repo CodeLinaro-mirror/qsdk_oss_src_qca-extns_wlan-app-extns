@@ -46,6 +46,8 @@ int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
 			      dfs_nol_ie_info *nol_info);
 int dfs_process_nol_ie_bitmap(struct hostapd_iface *iface,
 			      const dfs_nol_ie_info *nol_info);
+int dfs_process_nol_ie_bitmap_rcsa(struct hostapd_data *hapd,
+				   const dfs_nol_ie_info *nol_info);
 int dfs_decode_nol_ie(const u8 *ie, size_t ie_len,
 		      dfs_nol_ie_info *nol_info);
 int dfs_encode_nol_ie(const dfs_nol_ie_info *nol_info, u8 *buf,
