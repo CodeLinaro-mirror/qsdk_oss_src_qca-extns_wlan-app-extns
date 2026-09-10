@@ -349,7 +349,7 @@ int hostapd_get_n_chans_and_frequency_extn(enum oper_chan_width oper_chwidth,
 
 	switch (oper_chwidth) {
 	case CONF_OPER_CHWIDTH_320MHZ:
-		chans = 12;
+		chans = N_CHANS_5GHZ_240MHZ;
 		freq = cf1 - 150;
 		status = 0;
 		break;

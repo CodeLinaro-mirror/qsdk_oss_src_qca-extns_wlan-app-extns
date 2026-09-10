@@ -32,12 +32,12 @@ typedef struct dfs_nol_ie_info_extn dfs_nol_ie_info;
 
 #define DFS_NOL_IE_BITMAP_MASK(n_subchans) ((u16)((1U << (n_subchans)) - 1))
 
-enum dfs_nol_ie_bw_mhz {
-	DFS_NOL_IE_BW_20_MHZ = 20,
-	DFS_NOL_IE_BW_40_MHZ = 40,
-	DFS_NOL_IE_BW_80_MHZ = 80,
-	DFS_NOL_IE_BW_160_MHZ = 160,
-	DFS_NOL_IE_BW_320_MHZ = 320,
+enum dfs_chan_bw_mhz {
+	DFS_CHAN_BW_20_MHZ = 20,
+	DFS_CHAN_BW_40_MHZ = 40,
+	DFS_CHAN_BW_80_MHZ = 80,
+	DFS_CHAN_BW_160_MHZ = 160,
+	DFS_CHAN_BW_320_MHZ = 320,
 };
 
 int dfs_prepare_nol_ie_bitmap(struct hostapd_iface *iface, int freq,
@@ -51,6 +51,7 @@ int dfs_decode_nol_ie(const u8 *ie, size_t ie_len,
 int dfs_encode_nol_ie(const dfs_nol_ie_info *nol_info, u8 *buf,
 		      size_t buf_len);
 int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface);
+bool dfs_switch_to_postnol_chan_extn(struct hostapd_iface *iface);
 bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface);
 void hostapd_bootup_cac_complete_extn(struct hostapd_iface *iface);
 bool hostapd_bss_rnr_eligible_extn(struct hostapd_data *bss);
@@ -138,6 +139,7 @@ int dfs_nol_ie_get_subchan_count(enum oper_chan_width chan_width,
  * dfs_compute_chan_params_320mhz() - Compute seg0 index and sec channel offset
  *                                    for 320 MHz in the UNII-2 Extended band
  * @chan_num: Primary channel number (must be within UNII-2 Extended band).
+ * @ch_width: Output: Operating channel width.
  * @seg0: Output: center frequency segment 0 channel index.
  * @sec: Output: secondary channel offset.
  *
@@ -145,7 +147,7 @@ int dfs_nol_ie_get_subchan_count(enum oper_chan_width chan_width,
  * Returns the block-start channel number on success, -1 if chan_num is
  * outside the range.
  */
-int dfs_compute_chan_params_320mhz(int chan_num, u8 *seg0, int *sec);
-int dfs_compute_chan_params_320mhz(int chan_num, u8 *seg0, int *sec);
+int dfs_compute_chan_params_320mhz(int chan_num, enum oper_chan_width *ch_width,
+				   u8 *seg0, int *sec);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* DFS_EXTN_H */

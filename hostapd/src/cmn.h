@@ -250,6 +250,7 @@ enum dcs_cmd_type {
 #define FREQ_2GHZ_CHAN14            2484
 #define FREQ_5GHZ_240MHZ_START      5500
 #define FREQ_5GHZ_240MHZ_END        5730
+#define N_CHANS_5GHZ_240MHZ         12
 
 #define IEEE_2GHZ_CHAN_MIN          1
 #define IEEE_2GHZ_CHAN_MAX          13
@@ -2173,6 +2174,12 @@ int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
 			   bool is_offloaded_cac);
 int dfs_get_used_n_chans(struct hostapd_iface *iface, int *seg1,
 			 int chan_width);
+int dfs_compute_chan_params(int chan, int bw_mhz,
+			    enum oper_chan_width *oper_width,
+			    u8 *seg0, int *sec);
+int dfs_chan_range_available(struct hostapd_hw_modes *mode,
+			     int first_chan_idx, int num_chans,
+			     enum dfs_channel_type type);
 void hostapd_get_oper_center_freq_seg_extn(struct hostapd_config *conf,
 					   u8 *oper_centr_freq_seg0_idx,
 					   u8 *oper_centr_freq_seg1_idx,

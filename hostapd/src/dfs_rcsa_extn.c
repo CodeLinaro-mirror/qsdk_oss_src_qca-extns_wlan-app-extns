@@ -547,7 +547,7 @@ static void hostapd_rcsa_notify_radar(struct hostapd_data *hapd)
 
 
 	if (hapd->iface->conf->use_ru_puncture_dfs &&
-	    nol_info->bandwidth < DFS_NOL_IE_BW_80_MHZ) {
+	    nol_info->bandwidth < DFS_CHAN_BW_80_MHZ) {
 		wpa_printf(MSG_DEBUG,
 			   "RCSA: Puncturing is not applicable for bandwidth less than 80 MHz");
 		return;
