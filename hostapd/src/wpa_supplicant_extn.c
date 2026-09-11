@@ -1742,6 +1742,53 @@ void wpas_country_change_check_current_bss(struct wpa_supplicant *wpa_s,
 
 	wpa_supplicant_req_scan(wpa_s, 0, 100000);
 }
+
+/**
+ * wpas_diagnostic_sta_vap_has_mlo_network_extn - check for a multi-band
+ * (MLO-capable) network among this interface's configured networks
+ * @wpa_s: Pointer to wpa_supplicant data
+ * Returns: 1 if any enabled network's freq_list spans more than one band,
+ *	    0 otherwise
+ *
+ * A network's freq_list spanning more than one band
+ * (2.4/5/6 GHz) is treated as an MLO-capable configuration;
+ */
+int wpas_diagnostic_sta_vap_has_mlo_network_extn(struct wpa_supplicant *wpa_s)
+{
+	struct wpa_ssid *ssid;
+
+	for (ssid = wpa_s->conf->ssid; ssid; ssid = ssid->next) {
+		bool has_24ghz = false, has_5ghz = false, has_6ghz = false;
+		int i;
+
+		if (ssid->disabled)
+			continue;
+
+		if (!ssid->freq_list)
+			continue;
+
+		for (i = 0; ssid->freq_list[i]; i++) {
+			int freq = ssid->freq_list[i];
+
+			if (is_24ghz_freq(freq))
+				has_24ghz = true;
+			else if (is_5ghz_freq(freq))
+				has_5ghz = true;
+			else if (is_6ghz_freq(freq))
+				has_6ghz = true;
+		}
+
+		if (has_24ghz + has_5ghz + has_6ghz > 1) {
+			wpa_printf(MSG_ERROR,
+				   "DEBUG_DIAG_STA: network id=%d freq_list spans multiple bands (24ghz=%d 5ghz=%d 6ghz=%d) -- MLO config, rejecting",
+				   ssid->id, has_24ghz, has_5ghz, has_6ghz);
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 int wpa_drv_mark_diagnostic_sta_vap(struct wpa_supplicant *wpa_s, int enable)
 {
 	wpa_printf(MSG_DEBUG,
