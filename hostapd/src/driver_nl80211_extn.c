@@ -249,11 +249,12 @@ int hostapd_get_agile_capable_extn(struct hostapd_iface *iface)
 	drv = bss->drv;
 
 	if (iface->num_multi_hws) {
-		/* Multi-radio: query only if current radio is known */
 		if (!iface->current_hw_info) {
-			wpa_printf(MSG_DEBUG,
-				   "agile capable: no current_hw_info, skipping query");
-			return 0;
+			if (hostapd_set_current_hw_info(iface, iface->freq)) {
+				wpa_printf(MSG_DEBUG,
+					   "agile capable: no current_hw_info, skipping query");
+				return 0;
+			}
 		}
 		radio_idx = iface->current_hw_info->hw_idx;
 	}
