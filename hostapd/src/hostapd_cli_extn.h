@@ -136,6 +136,8 @@ int _wpa_ctrl_command_large(struct wpa_ctrl *ctrl, const char *cmd, int print);
 		"6g_only_psc <1|0>    : restrict 6 GHz to PSC channels only\n" \
 		"get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n" \
 		"acs invoke <0|1>     : invoke ACS (0=dynamicACS+CSA)|(1=DynamicACS)\n" \
+		"show_report           : print last ACS report\n" \
+		"show_reject_report    : print ACS channel rejection report\n" \
 		"show_neighbor_report : print ACS neighbor report\n" \
 		"periodic_interval <sec> : set periodic ACS interval (0 disables, max 86400)\n" \
 		"get_periodic_interval : get periodic ACS interval\n" \
