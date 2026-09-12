@@ -436,20 +436,20 @@ int dfs_nol_ie_chan_width_to_bw_mhz(enum oper_chan_width chan_width,
 		 * cf1 is always populated by nl80211_send_chandef() for both
 		 * widths, so this check is reliable.
 		 */
-		*bandwidth_mhz = (cf1 != freq) ? DFS_NOL_IE_BW_40_MHZ
-					       : DFS_NOL_IE_BW_20_MHZ;
+		*bandwidth_mhz = (cf1 != freq) ? DFS_CHAN_BW_40_MHZ
+					       : DFS_CHAN_BW_20_MHZ;
 		return 0;
 	case CONF_OPER_CHWIDTH_40MHZ_6GHZ:
-		*bandwidth_mhz = DFS_NOL_IE_BW_40_MHZ;
+		*bandwidth_mhz = DFS_CHAN_BW_40_MHZ;
 		return 0;
 	case CONF_OPER_CHWIDTH_80MHZ:
-		*bandwidth_mhz = DFS_NOL_IE_BW_80_MHZ;
+		*bandwidth_mhz = DFS_CHAN_BW_80_MHZ;
 		return 0;
 	case CONF_OPER_CHWIDTH_160MHZ:
-		*bandwidth_mhz = DFS_NOL_IE_BW_160_MHZ;
+		*bandwidth_mhz = DFS_CHAN_BW_160_MHZ;
 		return 0;
 	case CONF_OPER_CHWIDTH_320MHZ:
-		*bandwidth_mhz = DFS_NOL_IE_BW_320_MHZ;
+		*bandwidth_mhz = DFS_CHAN_BW_320_MHZ;
 		return 0;
 	default:
 		return -1;
@@ -470,7 +470,7 @@ int dfs_nol_ie_get_subchan_count(enum oper_chan_width chan_width,
 		 * UD 5 GHz "320 MHz" operation is the 240 MHz special case and
 		 * spans only 12 contiguous 20 MHz subchannels.
 		 */
-		*n_subchans = 12;
+		*n_subchans = N_CHANS_5GHZ_240MHZ;
 		return 0;
 	}
 
@@ -482,11 +482,13 @@ int dfs_nol_ie_get_subchan_count(enum oper_chan_width chan_width,
 	return 0;
 }
 
-int dfs_compute_chan_params_320mhz(int chan_num, u8 *seg0, int *sec)
+int dfs_compute_chan_params_320mhz(int chan_num, enum oper_chan_width *ch_width,
+				   u8 *seg0, int *sec)
 {
 	if (chan_num < UNII_2_EXT_START_CHAN || chan_num > UNII_2_EXT_END_CHAN)
 		return -1;
 
+	*ch_width = CONF_OPER_CHWIDTH_320MHZ;
 	*seg0 = UNII_2_EXT_CHAN320_CEN_CHAN;
 	*sec = GET_SEC_CHAN_OFFSET(chan_num, UNII_2_EXT_START_CHAN);
 	return UNII_2_EXT_START_CHAN;
@@ -2006,6 +2008,103 @@ static bool dfs_range_has_nol_extn(struct hostapd_hw_modes *mode,
 			return true;
 	}
 
+	return false;
+}
+
+/**
+ * dfs_switch_to_postnol_chan_extn() - Switch to configured post-NOL channel
+ * @iface: Pointer to hostapd interface
+ *
+ * After a NOL expiry event, check whether the user-configured
+ * post_nol_freq and width is usable for operation and, if so, initiate
+ * a channel switch to that channel.
+ *
+ * All 20 MHz subchannels within the requested operating bandwidth
+ * must be usable before a switch is attempted. If any part of the
+ * target channel block remains unavailable, the operation is deferred
+ * until a future NOL expiry event.
+ *
+ * Return: true if the post-NOL channel switch was initiated,
+ * 	   false otherwise.
+ */
+bool dfs_switch_to_postnol_chan_extn(struct hostapd_iface *iface)
+{
+	struct hostapd_config_extn *conf_extn = &iface->conf->conf_extn;
+	struct hostapd_hw_modes *mode = iface->current_mode;
+	struct hostapd_channel_data *chan;
+	enum oper_chan_width target_oper_width, max_width;
+	int post_nol_freq, post_nol_bw_mhz, block_start, start_chan_idx, n_chans;
+	int secondary_channel = 0;
+	u16 punct_bitmap = 0;
+	u8 seg0 = 0;
+
+	post_nol_freq = conf_extn->post_nol_chan.freq;
+	post_nol_bw_mhz = conf_extn->post_nol_chan.width;
+	if (post_nol_freq <= 0 || post_nol_bw_mhz <= 0)
+		return false;
+
+	if (hostapd_csa_in_progress(iface) || iface->cac_started)
+		return false;
+
+	chan = hw_mode_get_channel(mode, post_nol_freq, NULL);
+	if (!chan) {
+		wpa_printf(MSG_WARNING,
+			   "postNOL freq %d MHz not found in current mode",
+			   post_nol_freq);
+		return false;
+	}
+
+	if (post_nol_bw_mhz == DFS_CHAN_BW_320_MHZ) {
+		block_start = dfs_compute_chan_params_320mhz(chan->chan,
+							     &target_oper_width,
+							     &seg0,
+							     &secondary_channel);
+		n_chans = N_CHANS_5GHZ_240MHZ;
+		punct_bitmap = RIGHT80_240MHZ_PUNC;
+	} else {
+		block_start = dfs_compute_chan_params(chan->chan, post_nol_bw_mhz,
+						      &target_oper_width, &seg0,
+						      &secondary_channel);
+		n_chans = post_nol_bw_mhz / DFS_CHAN_BW_20_MHZ;
+	}
+
+	if (block_start < 0) {
+		wpa_printf(MSG_ERROR,
+			   "postNOL channel %d width %d MHz has no valid block",
+			   chan->chan, post_nol_bw_mhz);
+		return false;
+	}
+
+	max_width = hostapd_get_max_oper_chwidth_5ghz(iface->conf);
+	if (target_oper_width > max_width) {
+		wpa_printf(MSG_ERROR,
+			   "postNOL width %d MHz not supported for current mode",
+			   post_nol_bw_mhz);
+		return false;
+	}
+
+	start_chan_idx = hostapd_get_channel_idx(mode, block_start);
+	if (start_chan_idx < 0)
+		return false;
+
+	if (!dfs_chan_range_available(mode, start_chan_idx, n_chans,
+				      DFS_ANY_CHANNEL)) {
+		wpa_printf(MSG_INFO,
+			   "postNOL freq %d MHz width %d MHz is not fully available for an immediate switch",
+			   post_nol_freq, post_nol_bw_mhz);
+		return false;
+	}
+
+	wpa_printf(MSG_INFO, "Switching to postNOL freq %d MHz", post_nol_freq);
+	if (hostapd_dfs_request_channel_switch(iface, chan->chan,
+					       post_nol_freq,
+					       secondary_channel,
+					       (u8) target_oper_width, seg0,
+					       0, punct_bitmap) == 0)
+		return true;
+
+	wpa_printf(MSG_INFO, "Channel switch to postNOL freq %d MHz failed",
+		   post_nol_freq);
 	return false;
 }
 
