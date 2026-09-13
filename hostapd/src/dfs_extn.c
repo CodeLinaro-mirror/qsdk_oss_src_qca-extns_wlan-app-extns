@@ -2175,6 +2175,9 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 	if (!iface || !iface->conf)
 		return false;
 
+	if (iface->bootup_cac_in_progress)
+		return true;
+
 	if (!is_5ghz_freq(iface->freq))
 		return false;
 
