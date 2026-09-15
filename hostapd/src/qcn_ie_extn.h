@@ -50,6 +50,14 @@
 #define QCN_ATTRIB_HE_2XLTF_160_80P80_SUPP	0x04
 #define QCN_HE_2XLTF_160_80P80_SUPP_ATTRIB_LEN	1
 
+/* CCK RX/TX 5 GHz support attribute (QCN_ATTRIB_CCK_SUPPORT = 0x0F).
+ * 1-byte payload; bit 0 = RX capable, bit 1 = TX capable.
+ */
+#define QCN_ATTRIB_CCK_SUPPORT			0x0F
+#define QCN_CCK_RX_5G_ENABLED_POS		0
+#define QCN_CCK_TX_5G_ENABLED_POS		1
+#define QCN_CCK_SUPPORT_ATTRIB_LEN		1
+
 /*
  * Wire format in QCN IE (2-byte payload):
  *   byte[0] = (self_cap >> QCN_HE_MCS_12_13_L80_SHIFT) & QCN_HE_MCS_12_13_MASK
@@ -60,6 +68,8 @@
 #define QCN_HE_MCS_12_13_MASK			0xff
 #define QCN_HE_MCS_12_13_EXTRACT_NSS(c, s)	(((c) >> (s)) & QCN_HE_MCS_12_13_MASK)
 
+struct sta_info;
+
 #define OUI_QCOM				0x00037f
 
 u8 *qcn_ie_begin(u8 *pos, u8 **len_ptr);
@@ -68,5 +78,12 @@ u8 *qcn_eid_add_he_mcs_12_13_attr(u16 self_cap, bool is_enabled, u8 *pos);
 u8 *qcn_eid_add_vht_mcs10_11_attr(bool is_enabled, u8 *pos);
 u8 *qcn_eid_add_he_400ns_sgi_attr(bool is_enabled, u8 *pos);
 u8 *qcn_eid_add_he_2xltf_160_attr(bool is_enabled, u8 *pos);
+
+u8 *qcn_eid_add_cck_rx_5g_attr(struct hostapd_data *hapd,
+				struct sta_info *sta, u8 *pos);
+u8 * hostapd_eid_qcn_vendor_ie_assocresp_extn(struct hostapd_data *hapd,
+						  u8 *eid,
+						  enum ieee80211_op_mode opmode,
+						  struct sta_info *sta);
 
 #endif /* QCN_IE_EXTN_H */

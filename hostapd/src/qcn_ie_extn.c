@@ -94,6 +94,10 @@ ieee802_11_parse_qcn_vht_mcs_10_11_he_cap_ie(struct ieee802_11_elems_extn *elems
 		} else if (id == QCN_ATTRIB_HE_2XLTF_160_80P80_SUPP &&
 			   tln >= QCN_HE_2XLTF_160_80P80_SUPP_ATTRIB_LEN) {
 			elems_extn->he_2xltf_160_80p80_peer_cap = p[off + 2];
+		} else if (id == QCN_ATTRIB_CCK_SUPPORT &&
+			   tln >= QCN_CCK_SUPPORT_ATTRIB_LEN) {
+			elems_extn->cck_tx_5g_peer_cap =
+				!!(p[off + 2] & BIT(QCN_CCK_TX_5G_ENABLED_POS));
 		} else if (id == QCN_ATTRIB_HE_400NS_SGI_SUPP &&
 			   tln >= QCN_HE_400NS_SGI_SUPP_ATTRIB_LEN) {
 			elems_extn->he_400ns_sgi_peer_cap =
@@ -210,6 +214,14 @@ static size_t hostapd_qcn_buflen_add_he_2xltf_160_attr(struct hostapd_data *hapd
 	return QCN_ATTRIB_HDR_LEN + QCN_HE_2XLTF_160_80P80_SUPP_ATTRIB_LEN;
 }
 
+static size_t hostapd_qcn_buflen_add_cck_rx_5g_attr(struct hostapd_data *hapd)
+{
+	if (!hapd->conf->bss_extn.cck_rx_5g_supp)
+		return 0;
+
+	return QCN_ATTRIB_HDR_LEN + QCN_CCK_SUPPORT_ATTRIB_LEN;
+}
+
 size_t hostapd_modify_buflen_for_qcn_ie_extn(struct hostapd_data *hapd)
 {
 	size_t attr_len = 0;
@@ -220,6 +232,7 @@ size_t hostapd_modify_buflen_for_qcn_ie_extn(struct hostapd_data *hapd)
 	attr_len += hostapd_qcn_buflen_add_vht_mcs10_11_attr(hapd);
 	attr_len += hostapd_qcn_buflen_add_he_400ns_sgi_attr(hapd);
 	attr_len += hostapd_qcn_buflen_add_he_2xltf_160_attr(hapd);
+	attr_len += hostapd_qcn_buflen_add_cck_rx_5g_attr(hapd);
 	if (attr_len)
 		attr_len += QCN_IE_HDR_LEN;
 
@@ -301,6 +314,85 @@ u8 *qcn_eid_add_he_2xltf_160_attr(bool is_enabled, u8 *pos)
 	return pos;
 }
 
+/**
+ * hostapd_mlo_partner_has_cck_rx_5g - Check if any MLO partner 5 GHz link
+ *                                     has cck_rx_5g_supp enabled.
+ * @hapd: current BSS
+ *
+ * Used in the AssocResp path: when the current radio does not have
+ * cck_rx_5g_supp but a 5 GHz MLO partner link does, we still advertise
+ * CCK RX support so the STA knows the MLD can receive CCK on 5 GHz.
+ */
+static bool hostapd_mlo_partner_has_cck_rx_5g(struct hostapd_data *hapd)
+{
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *partner;
+
+	if (!hapd->conf->mld_ap || !hapd->mld)
+		return false;
+
+	for_each_mld_link(partner, hapd) {
+		if (partner == hapd)
+			continue;
+		if (!partner->iface || !partner->conf)
+			continue;
+		if (is_5ghz_freq(partner->iface->freq) &&
+		    partner->conf->bss_extn.cck_rx_5g_supp)
+			return true;
+	}
+#endif /* CONFIG_IEEE80211BE */
+	return false;
+}
+
+/**
+ * qcn_eid_add_cck_rx_5g_attr - Encode CCK RX 5 GHz support attribute.
+ * @hapd: current BSS (used for MLO partner check in AssocResp path)
+ * @sta:  associating station, or NULL for Beacon/ProbeResp
+ * @pos:  write cursor
+ *
+ * Beacon / Probe Response (sta == NULL):
+ *   Advertise if cck_rx_5g_supp is set on this BSS.
+ *
+ * Association Response (sta != NULL):
+ *   Advertise if:
+ *     - the STA indicated CCK TX support (cck_tx_5g_peer_cap), AND
+ *     - either this BSS has cck_rx_5g_supp, OR an MLO partner 5 GHz
+ *       link has cck_rx_5g_supp (MLO partner link path).
+ *
+ * Appends: id(0x0F) + len(1) + value(bit0=RX capable)
+ */
+u8 *qcn_eid_add_cck_rx_5g_attr(struct hostapd_data *hapd,
+				struct sta_info *sta, u8 *pos)
+{
+	bool advertise = false;
+
+	if (!hapd || !hapd->conf)
+		return pos;
+
+	if (!sta) {
+		/* Beacon / Probe Response: advertise own capability */
+		advertise = hapd->conf->bss_extn.cck_rx_5g_supp;
+	} else {
+		/* Association Response: only if STA supports CCK TX on 5 GHz */
+		if (!sta->sta_extn.cck_tx_5g_peer_cap)
+			return pos;
+		if (hapd->conf->bss_extn.cck_rx_5g_supp) {
+			advertise = true;
+		} else {
+			/* MLO partner link path */
+			advertise = hostapd_mlo_partner_has_cck_rx_5g(hapd);
+		}
+	}
+
+	if (!advertise)
+		return pos;
+
+	*pos++ = QCN_ATTRIB_CCK_SUPPORT;
+	*pos++ = QCN_CCK_SUPPORT_ATTRIB_LEN;
+	*pos++ = BIT(QCN_CCK_RX_5G_ENABLED_POS);
+	return pos;
+}
+
 u8 * hostapd_eid_qcn_vendor_ie_extn(struct hostapd_data *hapd, u8 *eid,
 				    enum ieee80211_op_mode opmode)
 {
@@ -326,6 +418,7 @@ u8 * hostapd_eid_qcn_vendor_ie_extn(struct hostapd_data *hapd, u8 *eid,
 					    hostapd_is_he_enabled(hapd), pos);
 	pos = qcn_eid_add_he_2xltf_160_attr(hapd->conf->bss_extn.he_2xltf_160_80p80_supp &&
 					    hostapd_is_he_enabled(hapd), pos);
+	pos = qcn_eid_add_cck_rx_5g_attr(hapd, NULL, pos);
 
 	if (pos == eid + QCN_IE_HDR_LEN)
 		return eid;
@@ -334,6 +427,50 @@ u8 * hostapd_eid_qcn_vendor_ie_extn(struct hostapd_data *hapd, u8 *eid,
 	return pos;
 }
 
+
+/**
+ * hostapd_eid_qcn_vendor_ie_assocresp_extn - Build QCN IE for AssocResp.
+ * @hapd:   current BSS
+ * @eid:    write cursor
+ * @opmode: operating mode
+ * @sta:    associating station (must not be NULL)
+ *
+ * Identical to hostapd_eid_qcn_vendor_ie_extn() except that the CCK
+ * attribute is gated on the STA's CCK TX capability and the MLO partner
+ * link path is evaluated.
+ */
+u8 * hostapd_eid_qcn_vendor_ie_assocresp_extn(struct hostapd_data *hapd,
+					      u8 *eid,
+					      enum ieee80211_op_mode opmode,
+					      struct sta_info *sta)
+{
+	u8 *pos = eid;
+	u8 *len_ptr = NULL;
+
+	if (!eid || !hapd || !hapd->iface || !hapd->iconf)
+		return eid;
+
+	pos = qcn_ie_begin(pos, &len_ptr);
+	pos = hostapd_qcn_eid_add_240mhz_attr(hapd, pos, opmode);
+	pos = hostapd_qcn_eid_add_5ghz_320mhz_csa_attr(hapd, pos);
+	pos = qcn_eid_add_he_mcs_12_13_attr(hapd->iface->iface_extn.he_mcs_12_13_radio_cap,
+					   hapd->iconf->conf_extn.he_mcs_12_13_enabled &&
+					   hostapd_is_he_enabled(hapd),
+					   pos);
+	pos = qcn_eid_add_vht_mcs10_11_attr(hapd->conf->bss_extn.vht_mcs_10_11_supp &&
+					    hostapd_is_vht_enabled(hapd), pos);
+	pos = qcn_eid_add_he_400ns_sgi_attr(hapd->conf->bss_extn.he_400ns_sgi_supp &&
+					    hostapd_is_he_enabled(hapd), pos);
+	pos = qcn_eid_add_he_2xltf_160_attr(hapd->conf->bss_extn.he_2xltf_160_80p80_supp &&
+					    hostapd_is_he_enabled(hapd), pos);
+	pos = qcn_eid_add_cck_rx_5g_attr(hapd, sta, pos);
+
+	if (pos == eid + QCN_IE_HDR_LEN)
+		return eid;
+
+	qcn_ie_end(len_ptr, pos);
+	return pos;
+}
 
 void hostapd_drv_set_peer_he_mcs_12_13_cap_extn(struct hostapd_data *hapd,
 						struct ieee802_11_elems_extn *elems_extn)
