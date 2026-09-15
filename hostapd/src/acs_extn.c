@@ -198,6 +198,8 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs get_status           : get ACS current status\n"
 		"  acs rank_en <1|0>        : enable/disable channel ranking\n"
 		"  acs get_rank_en          : get channel ranking enable state\n"
+		"  acs pri_sec20_penalty <0-100> : set PRI_SEC20 penalty\n"
+		"  acs get_pri_sec20_penalty : get PRI_SEC20 penalty\n"
 		"  acs qacs_enable <1|0>    : enable/disable QACS extension\n"
 		"  acs get_qacs_enable      : get QACS extension enable state\n"
 		"  acs noscan <1|0>         : enable/disable noscan mode\n"
@@ -836,9 +838,10 @@ static int hostapd_acs_get_rank_en_extn(struct hostapd_config_extn *conf_extn,
 	return ret;
 }
 
-static int hostapd_acs_set_nf_bond_penalty_extn(struct hostapd_config_extn *conf_extn,
-					    const char *pos,
-					    char *reply, size_t reply_size)
+static int
+hostapd_acs_set_nf_bond_penalty_extn(struct hostapd_config_extn *conf_extn,
+				     const char *pos,
+				     char *reply, size_t reply_size)
 {
 	int val = atoi(pos);
 
@@ -851,13 +854,43 @@ static int hostapd_acs_set_nf_bond_penalty_extn(struct hostapd_config_extn *conf
 	return -1;
 }
 
-static int hostapd_acs_get_nf_bond_penalty_extn(struct hostapd_config_extn *conf_extn,
-					    const char *pos,
-					    char *reply, size_t reply_size)
+static int
+hostapd_acs_get_nf_bond_penalty_extn(struct hostapd_config_extn *conf_extn,
+				     const char *pos,
+				     char *reply, size_t reply_size)
 {
 	int ret = os_snprintf(reply, reply_size,
 			      "ACS nf_bond_penalty_pct: %u\n",
 			      conf_extn->qacs_conf.nf_bond_penalty_pct);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
+static int hostapd_acs_set_pri_sec20_penalty_extn(
+		struct hostapd_config_extn *conf_extn,
+		const char *pos, char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val >= 0 && val <= 100) {
+		conf_extn->qacs_conf.acs_pri_sec20_penalty = val;
+		return 0;
+	}
+
+	wpa_printf(MSG_ERROR, "%s: Invalid value", __func__);
+	return -1;
+}
+
+static int hostapd_acs_get_pri_sec20_penalty_extn(
+		struct hostapd_config_extn *conf_extn,
+		const char *pos, char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS pri_sec20_penalty: %u\n",
+			      conf_extn->qacs_conf.acs_pri_sec20_penalty);
 
 	if (os_snprintf_error(reply_size, ret))
 		return -1;
@@ -1272,6 +1305,14 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(pos, "get_rank_en", 11) == 0) {
 		return hostapd_acs_get_rank_en_extn(conf_extn, pos,
 						    buf, buflen);
+
+	} else if (os_strncmp(pos, "pri_sec20_penalty ", 18) == 0) {
+		return hostapd_acs_set_pri_sec20_penalty_extn(conf_extn,
+							      pos + 18, buf, buflen);
+
+	} else if (os_strncmp(pos, "get_pri_sec20_penalty", 21) == 0) {
+		return hostapd_acs_get_pri_sec20_penalty_extn(conf_extn, pos,
+							      buf, buflen);
 
 	} else if (os_strncmp(pos, "qacs_enable ", 12) == 0) {
 		return hostapd_acs_set_qacs_enable_extn(conf_extn, pos + 12,
