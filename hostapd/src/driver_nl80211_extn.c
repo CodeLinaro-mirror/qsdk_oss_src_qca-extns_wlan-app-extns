@@ -15,7 +15,6 @@
 #include <netpacket/packet.h>
 #include <linux/errqueue.h>
 #include "common.h"
-#include "eloop.h"
 #include "common/qca-vendor.h"
 #include "common/qca-vendor-attr.h"
 #include "common/brcm_vendor.h"
@@ -26,6 +25,7 @@
 #include "drivers/driver_nl80211.h"
 #include "ap/hostapd.h"
 #include "ap/hw_features.h"
+#include "ap/dfs.h"
 #include "esp.h"
 #include "cbs.h"
 #include "dcs.h"
@@ -980,6 +980,43 @@ static int qca_nl80211_handle_wiphy_config_evt_extn(struct i802_bss *bss,
 	return 0;
 }
 
+static void qca_nl80211_fw_recovery_event_extn(struct i802_bss *bss,
+					       u8 *data, size_t len)
+{
+	struct nlattr *tb[QCA_VENDOR_ATTR_FW_RECOVERY_MAX + 1];
+	struct hostapd_data *hapd = bss->ctx;
+	struct hostapd_iface *iface = hapd ? hapd->iface : NULL;
+	u8 type;
+
+	if (!iface)
+		return;
+
+	if (nla_parse(tb, QCA_VENDOR_ATTR_FW_RECOVERY_MAX,
+		      (struct nlattr *) data, len, NULL) ||
+	    !tb[QCA_VENDOR_ATTR_FW_RECOVERY_EVENT_TYPE])
+		return;
+
+	type = nla_get_u8(tb[QCA_VENDOR_ATTR_FW_RECOVERY_EVENT_TYPE]);
+	if (type != QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_RECOVERY_DONE)
+		return;
+
+	if (!hostapd_is_cac_required(iface))
+		return;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: FW recovery done, DFS iface freq=%d, re-arming CAC",
+		   iface->freq);
+
+	if (hostapd_disable_iface(iface) < 0) {
+		wpa_printf(MSG_WARNING,
+			   "nl80211: FW recovery: disable_iface failed");
+		return;
+	}
+	if (hostapd_enable_iface(iface) < 0)
+		wpa_printf(MSG_WARNING,
+			   "nl80211: FW recovery: enable_iface failed");
+}
+
 int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 				  u32 subcmd, u8 *data, size_t len)
 {
@@ -1002,6 +1039,9 @@ int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 		qca_nl80211_scan_done_event_extn(bss, data, len);
 		break;
 #endif
+	case QCA_NL80211_VENDOR_SUBCMD_WLAN_FW_RECOVERY_EVENT:
+		qca_nl80211_fw_recovery_event_extn(bss, data, len);
+		break;
 	default:
 		return -EINVAL;
 	}
