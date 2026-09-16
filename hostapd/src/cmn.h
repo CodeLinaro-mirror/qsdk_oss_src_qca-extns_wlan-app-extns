@@ -826,6 +826,12 @@ struct hostapd_rcsa_ctx {
 	s8 rcsa_tx_cnt;
 };
 
+struct hostapd_hw_modes_extn {
+#ifdef CONFIG_QCN_APP_EXTN
+	struct qacs_data_extn qacs_extn;
+#endif
+};
+
 #define DEF_VLP_NON_PRIOR_PENALTY 30
 
 struct hostapd_iface_extn {
@@ -880,6 +886,8 @@ struct hostapd_iface_extn {
 	/* CAC was running when country change was detected.  The disable has
 	 * been done; enable is deferred until DFS_CAC_ABORTED is received. */
 	bool country_change_post_cac_abort;
+
+	struct hostapd_hw_modes_extn mode_extn;
 };
 
 struct hostapd_channel_data_extn {
@@ -889,12 +897,6 @@ struct hostapd_channel_data_extn {
 	u8 eht_bw320_offset;
 
 	u8 acs_channel_penalty;
-};
-
-struct hostapd_hw_modes_extn {
-#ifdef CONFIG_QCN_APP_EXTN
-	struct qacs_data_extn qacs_extn;
-#endif
 };
 
 #ifdef CONFIG_QCN_APP_EXTN 
@@ -1799,8 +1801,7 @@ hostapd_iface_deinit_extn(struct hostapd_iface *iface)
 }
 
 static inline void
-hostapd_free_hw_features_extn(struct hostapd_hw_modes *hw_features,
-			      size_t num_hw_features)
+hostapd_iface_free_extn(struct hostapd_iface *iface)
 {
 }
 
@@ -2773,11 +2774,13 @@ acs_update_total_interference_factor_extn(struct hostapd_iface *iface,
 {
 }
 
-static inline void acs_reset_chan_ranks(struct hostapd_hw_modes *mode)
+static inline void acs_reset_chan_ranks(struct hostapd_iface *iface,
+                                      struct hostapd_hw_modes *mode)
 {
 }
 
-static inline void acs_rank_channels(struct hostapd_hw_modes *mode)
+static inline void acs_rank_channels(struct hostapd_iface *iface,
+                                   struct hostapd_hw_modes *mode)
 {
 }
 
@@ -2806,8 +2809,10 @@ void acs_update_total_interference_factor_extn(struct hostapd_iface *iface,
                       struct hostapd_hw_modes *mode, u32 bw, int bw320_offset,
                       int n_chans, struct hostapd_channel_data *chan,
                       long double factor);
-void acs_reset_chan_ranks(struct hostapd_hw_modes *mode);
-void acs_rank_channels(struct hostapd_hw_modes *mode);
+void acs_reset_chan_ranks(struct hostapd_iface *iface,
+                           struct hostapd_hw_modes *mode);
+void acs_rank_channels(struct hostapd_iface *iface,
+                      struct hostapd_hw_modes *mode);
 struct hostapd_channel_data *
 qacs_find_ideal_chan(struct hostapd_iface *iface);
 void qacs_adjust_sec_chan_and_eht320_offset(struct hostapd_iface *iface,
@@ -2979,8 +2984,7 @@ int hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
 				  char *buf, size_t buflen);
 void hostapd_iface_init_extn(struct hostapd_iface *iface);
 void hostapd_iface_deinit_extn(struct hostapd_iface *iface);
-void hostapd_free_hw_features_extn(struct hostapd_hw_modes *hw_features,
-				   size_t num_hw_features);
+void hostapd_iface_free_extn(struct hostapd_iface *iface);
 void wpas_iface_init_extn(struct wpa_supplicant *wpa_s);
 void wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s);
 /**
