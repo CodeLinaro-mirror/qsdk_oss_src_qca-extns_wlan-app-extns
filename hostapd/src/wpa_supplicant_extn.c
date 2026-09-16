@@ -1580,13 +1580,20 @@ static void wpa_rcsa_get_local_ml_info(struct wpa_supplicant *wpa_s,
 		if (freq == wpa_s->assoc_freq)
 			*link_id = i;
 
-		if (is_5ghz_freq(freq) && (wpa_s->wpa_state == WPA_STACACING ||
-		    wpa_s->links[i].pending_ch_switch_freq)) {
-			*include_ml_ie = true;
-			*link_id_bitmap = BIT(i);
-			wpa_printf(MSG_DEBUG,
-				   "rcsa: selecting 5G link %u (freq=%d) for ML info IE",
-				   i, freq);
+		if (is_5ghz_freq(freq)) {
+			if (wpa_s->wpa_state == WPA_STACACING ||
+			    wpa_s->links[i].pending_ch_switch_freq) {
+				*include_ml_ie = true;
+				*link_id_bitmap = BIT(i);
+				wpa_printf(MSG_DEBUG,
+					   "rcsa: selecting 5G link %u (freq=%d) for ML info IE",
+					   i, freq);
+			} else {
+				*link_id = i;
+				 wpa_printf(MSG_DEBUG,
+					    "rcsa: 5G link %u (freq=%d) operational, sending RCSA on 5G",
+					     i, freq);
+			}
 			break;
 		}
 	}
