@@ -151,7 +151,7 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->qacs_conf.min_dwell = 50;        /* msec */
 	conf_extn->qacs_conf.max_dwell = 250;       /* msec */
 	conf_extn->qacs_conf.dwelltime = 200;   /* msec */
-	conf_extn->qacs_conf.dcs_channel_penalty = 0;
+	conf_extn->qacs_conf.dcs_channel_penalty = 90;
         conf_extn->qacs_conf.dbg_module_bitmap = 0x00; /* bitmap of QACS debug modules id */
 	conf_extn->qacs_conf.dbg_level = 0; /* QACS debug level */
 	conf_extn->block_chan_list.n_chan = 0;

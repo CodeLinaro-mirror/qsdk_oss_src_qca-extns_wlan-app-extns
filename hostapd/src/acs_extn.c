@@ -254,10 +254,10 @@ void acs_fill_timestamp(struct hostapd_iface *iface,
 	struct os_time now = { 0 };
 	enum trigger_type trigger = acs_get_valid_trigger_type(trigger_type);
 
-	if (!iface || !iface->current_mode)
+	if (!iface)
 		return;
 
-	data_extn = ICM_GET_EXTN_DATA_PTR(iface->current_mode);
+	data_extn = ICM_GET_EXTN_DATA_PTR(iface);
 	if (!data_extn)
 		return;
 
@@ -289,16 +289,17 @@ void acs_fill_timestamp(struct hostapd_iface *iface,
 static void acs_fill_algo_type(struct hostapd_iface *iface)
 {
 	struct qacs_data_extn *data_extn;
-	enum acs_type acs_algo = iface->conf->conf_extn.qacs_enable ?
-				 qacs : standard_acs;
+	enum acs_type acs_algo;
 
-	if (!iface || !iface->current_mode)
+	if (!iface)
 		return;
 
-	data_extn = ICM_GET_EXTN_DATA_PTR(iface->current_mode);
+	data_extn = ICM_GET_EXTN_DATA_PTR(iface);
 	if (!data_extn)
 		return;
 
+	acs_algo = iface->conf->conf_extn.qacs_enable ?
+		qacs : standard_acs;
 	data_extn->acs_algo = acs_algo;
 }
 
@@ -511,7 +512,7 @@ static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
 	struct hostapd_iface *iface = hapd->iface;
 
 	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
-	struct qacs_data_extn *data_extn = ICM_GET_EXTN_DATA_PTR(mode);
+	struct qacs_data_extn *data_extn = ICM_GET_EXTN_DATA_PTR(iface);
 	if (!mode) {
 		wpa_printf(MSG_ERROR,
 				"No current mode selected (interface not initialized?)");
@@ -613,8 +614,6 @@ static int hostapd_acs_show_neighbor_report_extn(struct hostapd_data *hapd,
 	struct hostapd_hw_modes *mode;
 	struct qacs_data_extn *data_extn;
 
-	(void) pos;
-
 	if (!hapd || !hapd->iface || !reply || !reply_size)
 		return -1;
 
@@ -623,7 +622,7 @@ static int hostapd_acs_show_neighbor_report_extn(struct hostapd_data *hapd,
 		return os_snprintf(reply, reply_size,
 				   "No current mode selected\n");
 
-	data_extn = ICM_GET_EXTN_DATA_PTR(mode);
+	data_extn = ICM_GET_EXTN_DATA_PTR(hapd->iface);
 	if (!data_extn || !data_extn->neighbor_report ||
 	    !data_extn->num_neighbor_entries)
 		return os_snprintf(reply, reply_size,
