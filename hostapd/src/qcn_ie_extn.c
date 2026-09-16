@@ -572,8 +572,15 @@ void hostapd_set_sta_vht_mcs10_11_and_he_cap_internal_extn(struct hostapd_data *
 		   " supp=%d he_cap_internal=0x%08x",
 		   MAC2STR(sta->addr), supp, he_cap_internal);
 
+#ifdef RDK_ONEWIFI
+	if (hapd->driver &&
+	    hapd->driver->set_sta_vht_mcs10_11_and_he_cap_internal)
+		hapd->driver->set_sta_vht_mcs10_11_and_he_cap_internal(
+			hapd->drv_priv, sta->addr, supp, he_cap_internal);
+#else /* RDK_ONEWIFI */
 	nl80211_set_vht_mcs10_11_and_he_cap_internal_extn(hapd->drv_priv,
 							  sta->addr,
 							  supp,
 							  he_cap_internal);
+#endif /* RDK_ONEWIFI */
 }
