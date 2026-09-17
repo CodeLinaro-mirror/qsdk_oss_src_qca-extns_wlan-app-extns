@@ -212,8 +212,8 @@ static void hostapd_get_local_rcsa_ml_info(struct hostapd_iface *iface,
 		return;
 
 	if (iface->bss[0]->conf->mld_ap &&
-	    (iface->cac_started || iface->bootup_cac_in_progress) &&
-	    iface->bss[0]->mld_link_id >= 0) {
+	    (iface->bss[0]->mld_link_id >= 0) &&
+	    (iface->state == HAPD_IFACE_DFS)) {
 		*include_ml_ie = true;
 		*link_id_bitmap = BIT(iface->bss[0]->mld_link_id);
 	}
