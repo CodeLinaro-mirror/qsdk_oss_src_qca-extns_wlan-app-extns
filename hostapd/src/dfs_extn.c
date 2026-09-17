@@ -2011,7 +2011,7 @@ static bool dfs_range_has_nol_extn(struct hostapd_hw_modes *mode,
  * Return: true if the current channel configuration contains a DFS unavailable
  * channel, false otherwise.
  */
-static bool bootup_cac_current_channel_has_nol_extn(struct hostapd_iface *iface)
+bool bootup_cac_current_channel_has_nol_extn(struct hostapd_iface *iface)
 {
 	struct hostapd_hw_modes *mode;
 	int start_chan_idx, start_chan_idx1;
