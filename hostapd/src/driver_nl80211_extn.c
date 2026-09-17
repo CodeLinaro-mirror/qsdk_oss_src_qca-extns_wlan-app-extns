@@ -1796,6 +1796,71 @@ fail:
 	return -ENOBUFS;
 }
 
+int nl80211_vendor_cmd_diagnostic_sta_vap_extn(void *priv, unsigned int vendor_id,
+					       unsigned int subcmd,
+					       const char *ifname,
+					       int enable, bool is_bss)
+{
+	struct i802_bss *bss = NULL;
+	struct wpa_driver_nl80211_data *drv = NULL;
+	struct nl_msg *msg;
+	struct nlattr *attr;
+	int ret;
+	int ifidx;
+
+	if (is_bss) {
+		bss = priv;
+		drv = bss->drv;
+	} else {
+		drv = priv;
+	}
+
+	if (!drv)
+		return -EINVAL;
+
+	ifidx = if_nametoindex(ifname);
+
+	wpa_printf(MSG_DEBUG,
+		   "DEBUG_DIAG_STA: nl80211_vendor_cmd_diagnostic_sta_vap_extn ifname=%s ifidx=%d enable=%d is_bss=%d\n",
+		   ifname, ifidx, enable, is_bss);
+
+	msg = nlmsg_alloc();
+	if (!msg)
+		return -ENOMEM;
+
+	if (!genlmsg_put(msg, 0, 0, drv->global->nl80211_id,
+			0,  0, NL80211_CMD_VENDOR, 0))
+		goto fail;
+
+	if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, ifidx) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, vendor_id) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD, subcmd))
+		goto fail;
+
+	attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!attr)
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_DIAGNOSTIC_STA_VAP,
+		       enable))
+		goto fail;
+
+	nla_nest_end(msg, attr);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR, "nl80211: vendor command failed err=%d",
+			   ret);
+	else
+		wpa_printf(MSG_INFO,
+			   "nl80211: vendorcmd diagnostic_sta_vap: ifname %s enable %d",
+			   ifname, enable);
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
 int nl80211_set_he_mcs_12_13_peer_cap_extn(void *priv, u8 radio_idx,
 					   u16 peer_cap)
 {
