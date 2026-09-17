@@ -222,6 +222,8 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs get_block_chan_list  : get the blocked channels\n"
 		"  acs clear_block_chan_list: clear the blocked channels \n"
 		"  acs show_neighbor_report : print ACS neighbor report\n"
+		"  acs set_nf_bond_penalty <0-100> : set NF penalty %% for bonded channel (default 75)\n"
+		"  acs get_nf_bond_penalty          : get NF bond penalty percentage\n"
 		"  acs periodic_interval <sec> : set periodic ACS interval (0 disables, max 86400)\n"
 		"  acs get_periodic_interval : get periodic ACS interval\n"
 		"  acs 2g_scan_all <1|0>    : 2.4 GHz ACS: 1=all channels, 0=only 1/6/11\n"
@@ -834,6 +836,35 @@ static int hostapd_acs_get_rank_en_extn(struct hostapd_config_extn *conf_extn,
 	return ret;
 }
 
+static int hostapd_acs_set_nf_bond_penalty_extn(struct hostapd_config_extn *conf_extn,
+					    const char *pos,
+					    char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val >= 0 && val <= 100) {
+		conf_extn->qacs_conf.nf_bond_penalty_pct = (u8)val;
+		return 0;
+	}
+
+	wpa_printf(MSG_ERROR, "%s: Invalid value (0-100)", __func__);
+	return -1;
+}
+
+static int hostapd_acs_get_nf_bond_penalty_extn(struct hostapd_config_extn *conf_extn,
+					    const char *pos,
+					    char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS nf_bond_penalty_pct: %u\n",
+			      conf_extn->qacs_conf.nf_bond_penalty_pct);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
 static int hostapd_acs_set_qacs_enable_extn(struct hostapd_config_extn *conf_extn,
 					    const char *pos,
 					    char *reply, size_t reply_size)
@@ -1342,6 +1373,14 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 
 	} else if (os_strcmp(pos, "get_block_chan_list") == 0) {
 		return hostapd_acs_get_block_chanlist(hapd, buf, buflen);
+
+	} else if (os_strncmp(pos, "set_nf_bond_penalty ", 20) == 0) {
+		return hostapd_acs_set_nf_bond_penalty_extn(conf_extn, pos + 20,
+							 buf, buflen);
+
+	} else if (os_strncmp(pos, "get_nf_bond_penalty", 19) == 0) {
+		return hostapd_acs_get_nf_bond_penalty_extn(conf_extn, pos,
+							 buf, buflen);
 
 	} else if (os_strncmp(pos, "show_neighbor_report", 20) == 0) {
 		return hostapd_acs_show_neighbor_report_extn(hapd, pos, buf, buflen);
