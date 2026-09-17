@@ -322,6 +322,14 @@ struct sta_info_extn {
 	 * bit 2: 2xLTF in 160/80+80 MHz
 	 */
 	u32 he_cap_info_internal;
+	/*
+	 * wds_ie_active - WDS IE active state flag
+	 *
+	 * Set to true when hostapd_set_wds_sta() has been called with enable=1
+	 * for this station. Cleared when hostapd_set_wds_sta() is called with
+	 * enable=0. Guards against redundant enable/disable calls.
+	 */
+	bool wds_ie_active;
 };
 
 /**
