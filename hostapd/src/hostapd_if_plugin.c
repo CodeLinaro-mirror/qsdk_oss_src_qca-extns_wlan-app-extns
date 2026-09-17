@@ -295,6 +295,9 @@ const char *hostapd_if_event_string(enum hostapd_if_event_type type)
 		case HOSTAPD_IF_EVENT_INBOUND_CALL_ERROR:
 			event_str = "INBOUND_CALL_ERROR";
 			break;
+		case HOSTAPD_IF_EVENT_DOT1X_COMPLETE:
+			event_str = "DOT1X_COMPLETE";
+			break;
 		default:
 			event_str = "UNKNOWN_EVENT";
 			break;
@@ -939,6 +942,7 @@ static int interface_create(char *ifname, void *ctx)
 				     true);
 	test_plugin.register_event(ctx, HOSTAPD_IF_EVENT_ACTION_COMPLETION,
 				     true);
+	test_plugin.register_event(ctx, HOSTAPD_IF_EVENT_DOT1X_COMPLETE, true);
 
 	pthread_mutex_unlock(&plugin_iface_mutex);
 	return 0;
