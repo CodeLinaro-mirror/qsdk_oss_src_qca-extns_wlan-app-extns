@@ -15,6 +15,7 @@ void hostapd_iface_init_extn(struct hostapd_iface *iface)
 
 	iface->iface_extn.check_hw_blocklist = true;
 	iface->iface_extn.agile_capable = true;
+	iface->iface_extn.vlp_non_prior_penalty = DEF_VLP_NON_PRIOR_PENALTY;
 }
 
 void hostapd_iface_deinit_extn(struct hostapd_iface *iface)
