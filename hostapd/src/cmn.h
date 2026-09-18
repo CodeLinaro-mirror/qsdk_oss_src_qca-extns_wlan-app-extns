@@ -857,6 +857,8 @@ struct hostapd_rcsa_ctx {
 	s8 rcsa_tx_cnt;
 };
 
+#define DEF_VLP_NON_PRIOR_PENALTY 30
+
 struct hostapd_iface_extn {
 	struct esp_extn esp;
 	u16 csa_bitmap;
