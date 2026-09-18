@@ -1042,7 +1042,18 @@ static int hostapd_acs_set_dwelltime_extn(struct hostapd_config_extn *conf_extn,
 					  const char *pos,
 					  char *reply, size_t reply_size)
 {
-	u16 acs_dwell = atoi(pos);
+	char *endptr;
+	long val;
+	u16 acs_dwell;
+
+	val = strtol(pos, &endptr, 10);
+	if (endptr == pos || *endptr != '\0' || val < 0 || val > (long)UINT16_MAX) {
+		wpa_printf(MSG_ERROR,
+			   "ACS dwelltime: invalid value '%s', expected non-negative integer up to %d",
+			   pos, (int)UINT16_MAX);
+		return -1;
+	}
+	acs_dwell = (u16)val;
 
 	if (acs_dwell <= conf_extn->qacs_conf.max_dwell &&
 	    acs_dwell >= conf_extn->qacs_conf.min_dwell) {
@@ -1050,7 +1061,8 @@ static int hostapd_acs_set_dwelltime_extn(struct hostapd_config_extn *conf_extn,
 		return 0;
 	}
 
-	wpa_printf(MSG_ERROR, "Dwell time must be between %d milliseconds and %d milliseconds",
+	wpa_printf(MSG_ERROR,
+		   "Dwell time must be between %d milliseconds and %d milliseconds",
 		   conf_extn->qacs_conf.min_dwell,
 		   conf_extn->qacs_conf.max_dwell);
 	return -1;
@@ -1342,7 +1354,7 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 							     buf, buflen);
 
 	} else if (os_strncmp(pos, "dwelltime ", 10) == 0) {
-		return hostapd_acs_set_dwelltime_extn(conf_extn, pos + 9,
+		return hostapd_acs_set_dwelltime_extn(conf_extn, pos + 10,
 						      buf, buflen);
 
 	} else if (os_strncmp(pos, "get_dwell", 9) == 0) {
