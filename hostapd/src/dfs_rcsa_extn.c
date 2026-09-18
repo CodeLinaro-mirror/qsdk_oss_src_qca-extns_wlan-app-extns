@@ -26,7 +26,7 @@
 bool hostapd_rcsa_tx_bh_enabled(struct hostapd_iface *iface)
 {
 	if (IS_CSH_RCSA_TO_UPLINK_ENABLED(iface->conf->conf_extn.cswopts) &&
-	    hostapd_is_backhaul_sta_configured(iface))
+	    hostapd_is_bh_sta_link_connected_extn(iface))
 		return true;
 
 	return false;
@@ -35,7 +35,7 @@ bool hostapd_rcsa_tx_bh_enabled(struct hostapd_iface *iface)
 static bool hostapd_rcsa_rx_bh_enabled(struct hostapd_iface *iface)
 {
        if (IS_CSH_PROCESS_RCSA_ENABLED(iface->conf->conf_extn.cswopts) &&
-           hostapd_is_backhaul_sta_configured(iface))
+           hostapd_is_bh_sta_link_connected_extn(iface))
                return true;
 
        return false;
@@ -969,7 +969,7 @@ void hostapd_rcsa_trigger_channal_change(void *eloop_data, void *user_data)
 	}
 
 	rcsa_ctx->bh_discon_wait_cnt--;
-	if (hostapd_is_backhaul_sta_configured(iface)) {
+	if (hostapd_is_bh_sta_link_connected_extn(iface)) {
 		eloop_register_timeout(0, HOSTAPD_DFS_BH_DISCONNECT_WAIT_TIME_US,
 				       hostapd_rcsa_trigger_channal_change,
 				       iface, NULL);
