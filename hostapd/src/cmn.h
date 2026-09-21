@@ -737,6 +737,8 @@ struct hostapd_bss_config_extn {
 	u8 nontx_optional_elem_size;
 	enum repurpose_mode repurpose_mode;
 	enum qca_wlan_vendor_vap_submode_type vap_submode;
+	/* When set, post vap up disable beacon transmission for this BSS */
+	bool non_beacon_bss;
 	/* Config to enable/disable HT40 intolerance */
 	struct ht40_intolerant_bss_extn ht40_intol;
 	/* Config to control adding single common PSD to TPE IE */
@@ -3243,6 +3245,7 @@ int hostapd_drv_mark_vap_submode_extn(void *priv, unsigned int vendor_id,
 				      unsigned int subcmd,
 				      const char *ifname,
 				      u8 vap_submode);
+int hostapd_drv_set_non_beacon_bss_extn(struct hostapd_data *hapd);
 
 u16 hostapd_get_width_from_oper_chwidth_extn(enum oper_chan_width oper_chwidth,
 					     int secondary_channel);
