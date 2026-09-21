@@ -230,6 +230,8 @@ struct hostapd_if_frame_ctx {
 			 * status code is outside
 			 */
 			uint8_t sta_assoc_link_mac[6];
+			size_t eap_offset;
+			size_t eap_len;
 		} auth_req; /* not valid for remote auth (FT-over-DS) */
 
 		struct {
@@ -243,6 +245,8 @@ struct hostapd_if_frame_ctx {
 			 * status code is outside
 			 */
 			struct __hostapd_if_pmk pmk;
+			uint8_t *eap;
+			size_t eap_len;
 			uint8_t *additional_ies;
 			uint16_t additional_ies_len;
 		} auth_resp;
@@ -544,7 +548,8 @@ struct hostapd_external_app_object {
 	void (*notify_event)(void *hapd_ctx, struct hostapd_if_event *event);
 
 	void (*eapol_rx)(char *ifname, uint8_t link_id, const uint8_t *sa,
-			 uint8_t *frame, uint16_t frame_len);
+			 uint8_t *frame, uint16_t frame_len,
+			 uint16_t auth_transaction);
 
 	void (*eapol_key_rx)(char *ifname, uint8_t link_id, const uint8_t *sa,
 			     uint8_t *frame, uint16_t frame_len);
@@ -701,7 +706,9 @@ struct hostapd_external_app_object {
 	 */
 	void (*eapol_tx)(char *ifname, uint8_t *sta_mac, int link_id,
                               uint8_t type, uint8_t *data,
-                              uint16_t data_len, bool with_header);
+                              uint16_t data_len, bool with_header,
+			      struct __hostapd_if_pmk pmk,
+			      uint16_t auth_transaction);
 
 	/*
 	 * ASYNC: EAPOL-Key Tx
