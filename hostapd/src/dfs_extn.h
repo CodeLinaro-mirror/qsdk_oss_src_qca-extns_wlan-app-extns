@@ -65,6 +65,7 @@ void hostapd_trigger_rcsa_tx(void *eloop_data, void *user_data);
 bool hostapd_rcsa_tx_bh_enabled(struct hostapd_iface *iface);
 void hostapd_rcsa_handle_csa_timeout(struct hostapd_iface *iface);
 void hostapd_set_rcsa_inprogress(struct hostapd_iface *iface, bool value);
+bool bootup_cac_current_channel_has_nol_extn(struct hostapd_iface *iface);
 
 /**
  * dfs_get_ch_flags_extn - Compute DFS random channel selection flags
