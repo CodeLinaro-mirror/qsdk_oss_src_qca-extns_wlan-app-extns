@@ -204,6 +204,13 @@ struct hostapd_if_pmk_r1 {
 	uint16_t radius_cui_len;
 };
 
+struct __hostapd_if_pmk {
+	uint8_t *pmk;
+	size_t pmk_len;
+	uint8_t *pmkid;
+	struct dot1x_ctx *ctx;
+};
+
 struct hostapd_if_frame_ctx {
 	int rx_link_id;
 	int status_code;
@@ -235,6 +242,7 @@ struct hostapd_if_frame_ctx {
 			/*
 			 * status code is outside
 			 */
+			struct __hostapd_if_pmk pmk;
 			uint8_t *additional_ies;
 			uint16_t additional_ies_len;
 		} auth_resp;
@@ -253,11 +261,7 @@ struct hostapd_if_frame_ctx {
 			uint8_t sta_assoc_link_mac[6];
 			uint8_t *additional_ies;
 			uint16_t additional_ies_len;
-			struct {
-				uint8_t *pmk;
-				size_t pmk_len;
-				uint8_t *pmkid;
-			} pmk;
+			struct __hostapd_if_pmk pmk;
 		} assoc_resp;
 
 		struct {
