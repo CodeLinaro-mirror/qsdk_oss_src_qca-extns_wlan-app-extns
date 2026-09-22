@@ -395,9 +395,8 @@ bool regdom_subchans_valid(struct hostapd_iface *iface)
 	enum oper_chan_width cur_width = hostapd_get_oper_chwidth(iface->conf);
 	int center_freq = 0;
 
-	/* No channel is configured yet. Skip validation. Continue with regular flow */
 	if (!iface->freq || !iface->current_mode)
-		return true;
+		return false;
 
 	/* Currently 80P80 support is not present, treat as valid to continue regular flow */
 	if (cur_width == CONF_OPER_CHWIDTH_80P80MHZ)
@@ -1112,6 +1111,7 @@ int hostapd_handle_regchannel_update_extn(struct hostapd_iface *iface, bool afc_
 {
 	char prev_country[3];
 	bool regdom_reenable = iface->iface_extn.is_regdom_forced_down;
+	bool same_country;
 	int i, ret;
 
 	if (!iface->freq) {
@@ -1134,16 +1134,39 @@ int hostapd_handle_regchannel_update_extn(struct hostapd_iface *iface, bool afc_
 		break;
 	}
 
-	if (os_memcmp(prev_country, iface->conf->country, 2) || !afc_regd) {
+	same_country = !os_memcmp(prev_country, iface->conf->country, 2);
+	if (same_country) {
+		if (afc_regd) {
+			wpa_printf(MSG_DEBUG,
+				   "REGDOM: same-country AFC update on %s; "
+				   "deferring country-change handling",
+				   iface->conf->bss[0]->iface);
+			goto regdom_update_done;
+		}
+		if (regdom_subchans_valid(iface)) {
+			wpa_printf(MSG_DEBUG,
+				   "REGDOM: same-country update on %s; current "
+				   "channels valid, deferring country-change handling",
+				   iface->conf->bss[0]->iface);
+			goto regdom_update_done;
+		}
 		wpa_printf(MSG_INFO,
-			   "REGDOM: country changed %c%c -> %c%c on %s",
+			   "REGDOM: same-country update on %s; current channels "
+			   "invalid, handling country change",
+			   iface->conf->bss[0]->iface);
+	} else {
+		wpa_printf(MSG_INFO,
+			   "REGDOM: country changed %c%c -> %c%c on %s; "
+			   "handling country change",
 			   prev_country[0], prev_country[1],
 			   iface->conf->country[0], iface->conf->country[1],
 			   iface->conf->bss[0]->iface);
-		ret = hostapd_country_change_handle(iface);
-		return ret ? ret : 1;
 	}
 
+	ret = hostapd_country_change_handle(iface);
+	return ret ? ret : 1;
+
+regdom_update_done:
 	if (regdom_reenable) {
 		wpa_printf(MSG_DEBUG,
 			   "REGDOM: restoring forced-down iface %s",
@@ -1157,6 +1180,9 @@ int hostapd_handle_regchannel_update_extn(struct hostapd_iface *iface, bool afc_
 
 bool hostapd_regdom_bringup_failed_extn(struct hostapd_iface *iface)
 {
+	if (!iface->freq || !iface->current_mode)
+		return false;
+
 	if (!iface->hw_features || !iface->num_hw_features)
 		return false;
 
