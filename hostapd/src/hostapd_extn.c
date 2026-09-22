@@ -353,6 +353,7 @@ void hostapd_mesh_mbssid_mark_group_extn(struct hostapd_data *hapd,
 #ifdef HOSTAPD
 static bool regdom_is_chan_bw_valid(struct hostapd_iface *iface,
 				    u16 freq,
+				    u16 center_freq,
 				    enum oper_chan_width try_width,
 				    int secondary,
 				    u16 punct_bitmap)
@@ -366,7 +367,7 @@ static bool regdom_is_chan_bw_valid(struct hostapd_iface *iface,
 	if (bw_mhz > 20)
 		cen_freq = hostapd_get_bonded_chan_center_freq(freq,
 							       bw_mhz,
-							       0,
+							       center_freq,
 							       (s8)secondary);
 
 	if (bw_mhz > 20 && !cen_freq)
@@ -393,6 +394,7 @@ static bool regdom_is_chan_bw_valid(struct hostapd_iface *iface,
 bool regdom_subchans_valid(struct hostapd_iface *iface)
 {
 	enum oper_chan_width cur_width = hostapd_get_oper_chwidth(iface->conf);
+	int center_freq = 0;
 
 	/* No channel is configured yet. Skip validation. Continue with regular flow */
 	if (!iface->freq || !iface->current_mode)
@@ -402,7 +404,18 @@ bool regdom_subchans_valid(struct hostapd_iface *iface)
 	if (cur_width == CONF_OPER_CHWIDTH_80P80MHZ)
 		return true;
 
-	if (!regdom_is_chan_bw_valid(iface, iface->freq, cur_width,
+	/* 320 MHz blocks overlap; validate the configured segment. */
+	if (cur_width == CONF_OPER_CHWIDTH_320MHZ) {
+		u8 center = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+
+		if (!center)
+			return false;
+
+		center_freq = iface->freq +
+			5 * (center - iface->conf->channel);
+	}
+
+	if (!regdom_is_chan_bw_valid(iface, iface->freq, center_freq, cur_width,
 				     iface->conf->secondary_channel,
 				     iface->conf->punct_bitmap))
 		return false;
@@ -485,25 +498,23 @@ static bool regdom_chan_allowed_bw(struct hostapd_iface *iface,
  * regdom_chan_seg0 - Validate bonded channel group and compute seg0 center
  * channel index.
  *
- * Uses hostapd_get_bonded_chan_center_freq() to check the bonded group exists,
- * then acs_get_bw_center_chan() (ACS table) for the center channel index.
+ * Uses acs_get_bw_center_chan() (ACS table) for the center channel index,
+ * then checks that the selected bonded group exists.
  *
  * @secondary: secondary channel offset for HT40+/-.
+ * @bw320: 320 MHz layout to try; ignored for other widths.
  * @out_center: set to the center channel index on success.
+ * @out_center_freq: set to the center frequency in MHz on success.
  * Return: true if seg0 could be determined; false to skip channel.
  */
 static bool regdom_chan_seg0(const struct hostapd_channel_data *chan,
 			     enum oper_chan_width try_width,
-			     int secondary, int *out_center)
+			     int secondary, enum bw_type bw320,
+			     int *out_center, int *out_center_freq)
 {
 	u16 bw_mhz = hostapd_get_width_from_oper_chwidth_extn(try_width,
 							      secondary);
-	int center = 0;
-
-	if (bw_mhz > 20 &&
-	    !hostapd_get_bonded_chan_center_freq(chan->freq, bw_mhz, 0,
-						 (s8)secondary))
-		return false;
+	int center = 0, center_freq;
 
 	switch (try_width) {
 	case CONF_OPER_CHWIDTH_USE_HT:
@@ -524,10 +535,7 @@ static bool regdom_chan_seg0(const struct hostapd_channel_data *chan,
 		center = acs_get_bw_center_chan(chan->freq, ACS_BW160);
 		break;
 	case CONF_OPER_CHWIDTH_320MHZ:
-		if (acs_usable_bw_chan(chan, ACS_BW320_1))
-			center = acs_get_bw_center_chan(chan->freq, ACS_BW320_1);
-		else if (acs_usable_bw_chan(chan, ACS_BW320_2))
-			center = acs_get_bw_center_chan(chan->freq, ACS_BW320_2);
+		center = acs_get_bw_center_chan(chan->freq, bw320);
 		break;
 	default:
 		center = chan->chan;
@@ -537,7 +545,16 @@ static bool regdom_chan_seg0(const struct hostapd_channel_data *chan,
 	if (!center)
 		return false;
 
+	center_freq = chan->freq + 5 * (center - chan->chan);
+
+	if (bw_mhz > 20 &&
+	    !hostapd_get_bonded_chan_center_freq(chan->freq, bw_mhz,
+						 center_freq,
+						 (s8)secondary))
+		return false;
+
 	*out_center = center;
+	*out_center_freq = center_freq;
 	return true;
 }
 
@@ -620,11 +637,15 @@ regdom_select_channel_from_mode(struct hostapd_iface *iface, struct hostapd_hw_m
 				enum oper_chan_width try_width, int secondary,
 				struct hostapd_freq_params *freq_params)
 {
-	int j;
+	static const enum bw_type bw320[] = { ACS_BW320_1, ACS_BW320_2 };
+	int num_centers = (mode->is_6ghz &&
+			   try_width == CONF_OPER_CHWIDTH_320MHZ) ?
+		ARRAY_SIZE(bw320) : 1;
+	int j, k;
 
 	for (j = 0; j < mode->num_channels; j++) {
 		struct hostapd_channel_data *chan = &mode->channels[j];
-		int center = 0;
+		int center = 0, center_freq;
 		int sec = secondary;
 		u16 pp = 0;
 
@@ -637,16 +658,22 @@ regdom_select_channel_from_mode(struct hostapd_iface *iface, struct hostapd_hw_m
 		if (try_width == CONF_OPER_CHWIDTH_320MHZ && is_5ghz_freq(chan->freq))
 			pp = RIGHT80_240MHZ_PUNC;
 
-		if (!regdom_is_chan_bw_valid(iface, chan->freq,
-					     try_width, sec, pp))
-			continue;
+		/* Only 6 GHz has two overlapping 320 MHz layouts. */
+		for (k = 0; k < num_centers; k++) {
+			if (!regdom_chan_seg0(chan, try_width, sec, bw320[k],
+					      &center, &center_freq))
+				continue;
 
-		if (!regdom_chan_seg0(chan, try_width, sec, &center))
-			continue;
+			/* Validate the same segment that will be applied. */
+			if (!regdom_is_chan_bw_valid(iface, chan->freq,
+						     center_freq,
+						     try_width, sec, pp))
+				continue;
 
-		if (regdom_apply_channel(iface, chan, try_width, sec, center,
-					 freq_params, pp) == 0)
-			return true;
+			if (regdom_apply_channel(iface, chan, try_width, sec,
+						 center, freq_params, pp) == 0)
+				return true;
+		}
 	}
 
 	return false;
