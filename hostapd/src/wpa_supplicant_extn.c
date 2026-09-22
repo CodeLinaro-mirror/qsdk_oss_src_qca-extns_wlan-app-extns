@@ -1010,7 +1010,48 @@ void wpas_event_hw_blocklist_notify_extn(
 	}
 }
 
-static u8 wpas_get_6ghz_bss_pwr_mode_extn(const struct wpa_bss *bss)
+/**
+ * wpas_center_idx_to_freq_extn - Convert a band channel index to MHz
+ * @freq: primary frequency in MHz
+ * @center_idx: center frequency channel index
+ *
+ * Center frequency indices use the channel numbering of their band. They do
+ * not require the operating width to be passed to a channel-class lookup.
+ *
+ * Return: center frequency in MHz, or 0 when @center_idx is zero or the
+ *         input is unsupported
+ */
+u16 wpas_center_idx_to_freq_extn(int freq, u8 center_idx)
+{
+	if (!center_idx)
+		return 0;
+
+	if (freq >= 2400 && freq < 3000) {
+		if (center_idx == 14)
+			return 2484;
+		if (center_idx <= 13)
+			return 2407 + center_idx * 5;
+		return 0;
+	}
+
+	if (is_5ghz_freq(freq)) {
+		if (center_idx > 177)
+			return 0;
+		return 5000 + center_idx * 5;
+	}
+
+	if (is_6ghz_freq(freq)) {
+		if (center_idx == 2)
+			return 5935;
+		if (center_idx > 233)
+			return 0;
+		return 5950 + center_idx * 5;
+	}
+
+	return 0;
+}
+
+u8 wpas_get_6ghz_bss_pwr_mode_extn(const struct wpa_bss *bss)
 {
 	const u8 *ie;
 	struct ieee80211_he_operation *heop;
@@ -1042,59 +1083,103 @@ static u8 wpas_get_6ghz_bss_pwr_mode_extn(const struct wpa_bss *bss)
 	return he_reg_info;
 }
 
-bool wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
-				     const struct wpa_bss *bss)
+u8 wpas_get_6ghz_link_pwr_mode_extn(struct wpa_supplicant *wpa_s,
+				    const struct wpa_bss *bss)
+{
+	u8 pwr_mode;
+
+	if (bss)
+		return wpas_get_6ghz_bss_pwr_mode_extn(bss);
+
+	if (!wpa_s || !wpa_s->ifmsh || !wpa_s->ifmsh->conf)
+		return NL80211_REG_NUM_POWER_MODES;
+
+	pwr_mode = wpa_s->ifmsh->conf->he_6ghz_reg_pwr_type;
+	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP)
+		pwr_mode = HE_REG_INFO_6GHZ_AP_TYPE_SP;
+
+	return pwr_mode;
+}
+
+static bool wpas_is_6ghz_hwbl_params_ok_extn(struct wpa_supplicant *wpa_s,
+					     int freq, u16 center_freq, u16 bw,
+					     u8 pwr_mode, u16 punct_bitmap)
 {
 	struct wpa_supplicant_extn *wpas_extn;
+
+	if (!wpa_s || !is_6ghz_freq(freq))
+		return true;
+
+	wpas_extn = &wpa_s->wpas_extn;
+	if (!wpas_extn->check_hw_blocklist ||
+	    !wpas_extn->hw_blocklist_info ||
+	    !wpas_extn->num_hw_blocklist ||
+	    pwr_mode >= NL80211_REG_NUM_POWER_MODES)
+		return true;
+
+	if (!center_freq) {
+		wpa_printf(MSG_DEBUG,
+			   "HWBL: no valid bonded center for freq=%d bw=%u",
+			   freq, bw);
+		return false;
+	}
+
+	if (hw_features_is_channel_in_hw_blocklist_for_hw_idx_extn(wpas_extn->hw_blocklist_info,
+								   wpas_extn->num_hw_blocklist,
+								   NL80211_WIPHY_RADIO_ID_MAX,
+								   (u16)freq, center_freq, bw,
+								   pwr_mode, punct_bitmap)) {
+		wpa_printf(MSG_DEBUG,
+			   "HWBL: 6 GHz freq=%d bw=%u center=%u pwr=%u blocked",
+			   freq, bw, center_freq, pwr_mode);
+		return false;
+	}
+
+	return true;
+}
+
+bool wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
+				    const struct wpa_bss *bss)
+{
 	u16 center_freq, bw;
 	u8 pwr_mode;
 
 	if (!wpa_s || !bss || !is_6ghz_freq(bss->freq))
 		return true;
 
-	wpas_extn = &wpa_s->wpas_extn;
-	if (!wpas_extn->check_hw_blocklist ||
-	    !wpas_extn->hw_blocklist_info ||
-	    !wpas_extn->num_hw_blocklist)
-		return true;
-
 	pwr_mode = wpas_get_6ghz_bss_pwr_mode_extn(bss);
-	if (pwr_mode >= NL80211_REG_NUM_POWER_MODES)
-		return true;
 
 	bw = channel_width_to_int(bss->max_cw);
 	if (!bw)
 		bw = 20;
 
 	/*
-	 * Compute center frequency. Use ccfs0 from the Operation IE when
-	 * available (center_freq1_idx != 0). For 320 MHz, ccfs0 unambiguously
-	 * identifies the segment. When center_freq1_idx is zero (IE not
-	 * parsed), fall back to hostapd_get_bonded_chan_center_freq() which
-	 * uses the bonded channel table; for 320 MHz it returns the first
-	 * matching segment's center — good enough for a conservative check.
+	 * Compute center frequency from the Operation IE when available. For
+	 * contiguous EHT 160/320 MHz, CCFS1 identifies the full bonded center;
+	 * CCFS0 identifies the primary-side segment center.
 	 */
-	if (bss->center_freq1_idx == 2)
-		center_freq = 5935;
-	else if (bss->center_freq1_idx)
-		center_freq = 5950 + bss->center_freq1_idx * 5;
+	if (bw >= 160 && bss->center_freq2_idx)
+		center_freq = wpas_center_idx_to_freq_extn(bss->freq,
+							   bss->center_freq2_idx);
 	else
-		center_freq = hostapd_get_bonded_chan_center_freq(
-			(u16)bss->freq, bw, 0, 0);
+		center_freq = wpas_center_idx_to_freq_extn(bss->freq,
+							   bss->center_freq1_idx);
 
-	if (hw_features_is_channel_in_hw_blocklist_for_hw_idx_extn(
-		    wpas_extn->hw_blocklist_info,
-		    wpas_extn->num_hw_blocklist,
-		    NL80211_WIPHY_RADIO_ID_MAX,
-		    (u16)bss->freq, center_freq, bw,
-		    pwr_mode, bss->punc_bitmap)) {
-		wpa_printf(MSG_DEBUG,
-			   "HWBL: 6 GHz BSS freq=%d bw=%u center=%u pwr=%u blocked",
-			   bss->freq, bw, center_freq, pwr_mode);
-		return false;
+	if (!center_freq)
+		center_freq = hostapd_get_bonded_chan_center_freq((u16)bss->freq, bw,
+								  0, 0);
+
+	if (bw >= 160 && !bss->center_freq2_idx) {
+		u16 bonded_center;
+
+		bonded_center = hostapd_get_bonded_chan_center_freq((u16)bss->freq, bw,
+								    0, 0);
+		if (bonded_center)
+			center_freq = bonded_center;
 	}
 
-	return true;
+	return wpas_is_6ghz_hwbl_params_ok_extn(wpa_s, bss->freq, center_freq,
+						bw, pwr_mode, bss->punc_bitmap);
 }
 
 static size_t wpas_qcn_buflen_add_vht_mcs10_11_attr(struct wpa_supplicant *wpa_s)
@@ -1705,19 +1790,203 @@ void wpa_rcsa_handle_radar(struct wpa_supplicant *wpa_s,
 #endif
 }
 
-/*
- * wpas_country_change_check_current_bss - Disconnect STA on country change.
+static bool wpas_is_6ghz_hwbl_signal_link_ok_extn(struct wpa_supplicant *wpa_s,
+						  int freq,
+						  const struct wpa_signal_info *si, u8 pwr_mode)
+{
+	u16 center_freq, bw;
+
+	if (!wpa_s || !si || !is_6ghz_freq(freq))
+		return true;
+
+	bw = channel_width_to_int(si->chanwidth);
+	if (!bw)
+		bw = 20;
+
+	center_freq = 0;
+	if (si->chanwidth == CHAN_WIDTH_80P80) {
+		if (si->center_frq2 > 0)
+			center_freq = si->center_frq2;
+	}
+
+	if (!center_freq) {
+		if (si->center_frq1 > 0)
+			center_freq = si->center_frq1;
+	}
+
+	if (!center_freq)
+		center_freq = hostapd_get_bonded_chan_center_freq((u16)freq, bw, 0, 0);
+
+	return wpas_is_6ghz_hwbl_params_ok_extn(wpa_s, freq, center_freq, bw,
+						pwr_mode, (u16)si->punct_bitmap);
+}
+
+static bool wpas_is_6ghz_signal_link_valid_extn(struct wpa_supplicant *wpa_s,
+						const struct wpa_bss *bss,
+						int freq,
+						const struct wpa_signal_info *si)
+{
+	const u8 *ie;
+	struct ieee80211_he_operation *heop;
+	u8 pwr_mode;
+	struct hostapd_channel_data *chan;
+
+	if (!is_6ghz_freq(freq))
+		return true;
+
+	if (bss) {
+		ie = wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_HE_OPERATION);
+		if (!ie || ie[1] < 6)
+			return true;
+
+		heop = (struct ieee80211_he_operation *)(&ie[3]);
+		if (!(heop->he_oper_params & HE_OPERATION_6GHZ_OPER_INFO))
+			return true;
+	} else if (!wpa_s->ifmsh || !wpa_s->ifmsh->conf) {
+		return false;
+	}
+
+	pwr_mode = wpas_get_6ghz_link_pwr_mode_extn(wpa_s, bss);
+	if (pwr_mode >= NL80211_REG_NUM_POWER_MODES)
+		return false;
+
+	chan = hw_mode_get_6ghz_power_mode_channel(wpa_s->hw.modes, wpa_s->hw.num_modes,
+						   freq, pwr_mode, NULL, NULL, true);
+	if (!chan || (chan->flag & HOSTAPD_CHAN_DISABLED))
+		return false;
+
+	return wpas_is_6ghz_hwbl_signal_link_ok_extn(wpa_s, freq, si, pwr_mode);
+}
+
+static bool wpas_current_link_channel_valid_extn(struct wpa_supplicant *wpa_s,
+						 struct wpa_bss *bss, int freq,
+						 const struct wpa_signal_info *si)
+{
+	if (freq <= 0)
+		return false;
+
+	if (wpas_link_uses_disabled_channel_signal_extn(wpa_s, bss, freq, si))
+		return false;
+
+	if (wpas_link_uses_nol_channel_signal_extn(wpa_s, freq, si))
+		return false;
+
+	return wpas_is_6ghz_signal_link_valid_extn(wpa_s, bss, freq, si);
+}
+
+static void
+wpas_log_signal_channel_info_extn(const char *link_type, int link_id,
+				  int freq, const struct wpa_signal_info *si)
+{
+	if (link_id >= 0) {
+		wpa_printf(MSG_DEBUG,
+			   "REGDOM: %s link=%d signal info freq=%d bw=%d "
+			   "cf1=%d cf2=%d punc=0x%08x",
+			   link_type, link_id, freq,
+			   channel_width_to_int(si->chanwidth),
+			   si->center_frq1, si->center_frq2,
+			   si->punct_bitmap);
+		return;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "REGDOM: %s signal info freq=%d bw=%d cf1=%d cf2=%d "
+		   "punc=0x%08x",
+		   link_type, freq, channel_width_to_int(si->chanwidth),
+		   si->center_frq1, si->center_frq2, si->punct_bitmap);
+}
+
+static bool wpa_is_mlo_sta_channel_valid(struct wpa_supplicant *wpa_s)
+{
+	struct wpa_mlo_signal_info mlo_si;
+	struct wpa_bss *bss;
+	int i;
+
+	if (wpa_drv_mlo_signal_poll(wpa_s, &mlo_si))
+		return false;
+
+	for_each_link(wpa_s->valid_links, i) {
+		int link_freq;
+
+		bss = wpa_s->links[i].bss;
+		if (!(mlo_si.valid_links & BIT(i)))
+			return false;
+
+		link_freq = mlo_si.links[i].frequency;
+		if (!link_freq)
+			link_freq = wpa_s->links[i].freq;
+
+		wpas_log_signal_channel_info_extn("MLO", i, link_freq,
+						   &mlo_si.links[i]);
+		if (!wpas_current_link_channel_valid_extn(wpa_s, bss, link_freq,
+							  &mlo_si.links[i]))
+			return false;
+	}
+
+	return true;
+}
+
+/**
+ * wpas_current_bss_channel_valid_extn - Check active BSS channel state
+ * @wpa_s: wpa_supplicant context
+ *
+ * Check that the current BSS or every active MLO link still has valid
+ * channel, NOL, and 6 GHz power-mode state.
+ *
+ * Return: true if all active links are valid, false otherwise
+ */
+static bool
+wpas_current_bss_channel_valid_extn(struct wpa_supplicant *wpa_s)
+{
+	struct wpa_bss *bss;
+	struct wpa_signal_info si;
+	int freq;
+
+	if (!wpa_s || wpa_s->wpa_state != WPA_COMPLETED ||
+	    !wpa_s->hw.modes || !wpa_s->hw.num_modes)
+		return false;
+
+	if (!wpa_s->current_bss && !wpa_s->ifmsh)
+		return false;
+
+	if (wpa_s->valid_links)
+		return wpa_is_mlo_sta_channel_valid(wpa_s);
+
+	bss = wpa_s->current_bss;
+	if (wpa_drv_signal_poll(wpa_s, &si))
+		return false;
+
+	freq = si.frequency;
+	if (!freq && wpa_s->ifmsh)
+		freq = wpa_s->ifmsh->freq;
+	if (!freq && wpa_s->assoc_freq)
+		freq = wpa_s->assoc_freq;
+	if (!freq && bss)
+		freq = bss->freq;
+
+	wpas_log_signal_channel_info_extn(wpa_s->ifmsh ? "MESH" : "SLO", -1,
+					  freq, &si);
+	if (!wpas_current_link_channel_valid_extn(wpa_s, bss, freq, &si))
+		return false;
+
+	return true;
+}
+
+/**
+ * wpas_country_change_check_current_bss - Disconnect STA on country change
+ * @wpa_s: wpa_supplicant context
+ * @info: regulatory channel-list update information
  *
  * Called from wpa_supplicant_update_channel_list() after hw.modes has been
- * refreshed with the new country's channel flags.  Disconnects immediately
- * when the regulatory country has actually changed so the STA can reconnect
- * under the new domain.  Beacon-hint and other soft regulatory events are
- * ignored — only real country changes trigger a disconnect.
+ * refreshed with the new country's channel flags. Disconnect when the
+ * country changes or the current BSS/MLO channel is no longer valid.
+ * Same-country updates that leave every active link valid are ignored.
  */
 void wpas_country_change_check_current_bss(struct wpa_supplicant *wpa_s,
 					   struct channel_list_changed *info)
 {
 	bool is_afc_regd = false;
+	bool same_country;
 
 	if (!info)
 		return;
@@ -1732,12 +2001,33 @@ void wpas_country_change_check_current_bss(struct wpa_supplicant *wpa_s,
 		wpa_s->wpas_extn.is_waiting_for_afc_regd = false;
 	}
 
-	/* Only disconnect if the alpha2 actually changed from last time.
-	 * The kernel can fire REGDOM_TYPE_COUNTRY multiple times for the
-	 * same country (e.g. wiphy-specific events after a global set). */
-	if (!os_strncmp(wpa_s->wpas_extn.active_alpha2, info->alpha2, 2) &&
-	    is_afc_regd)
-		return;
+	same_country = !os_strncmp(wpa_s->wpas_extn.active_alpha2,
+				   info->alpha2, 2);
+
+	/* The kernel can fire REGDOM_TYPE_COUNTRY multiple times for the same
+	 * country (e.g. wiphy-specific events after a global set). */
+	if (same_country) {
+		if (is_afc_regd) {
+			wpa_msg(wpa_s, MSG_INFO,
+				"REGDOM: same-country AFC update on %s; "
+				"deferring country-change handling",
+				wpa_s->ifname);
+			return;
+		}
+
+		if (wpas_current_bss_channel_valid_extn(wpa_s)) {
+			wpa_msg(wpa_s, MSG_INFO,
+				"REGDOM: same-country update leaves current BSS "
+				"channels valid, keeping STA connected on %s",
+				wpa_s->ifname);
+			return;
+		}
+
+		wpa_msg(wpa_s, MSG_INFO,
+			"REGDOM: same-country update found invalid current BSS "
+			"channels on %s; recovering STA",
+			wpa_s->ifname);
+	}
 
 	os_strlcpy(wpa_s->wpas_extn.active_alpha2, info->alpha2,
 		   sizeof(wpa_s->wpas_extn.active_alpha2));
@@ -1748,9 +2038,15 @@ void wpas_country_change_check_current_bss(struct wpa_supplicant *wpa_s,
 	if (wpa_s->wpa_state == WPA_INACTIVE || wpa_s->wpa_state == WPA_INTERFACE_DISABLED)
 		return;
 
-	wpa_msg(wpa_s, MSG_INFO,
-		"REGDOM: country changed to %s, disconnecting STA on %s",
-		info->alpha2, wpa_s->ifname);
+	if (same_country) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"REGDOM: same-country update disconnecting STA on %s",
+			wpa_s->ifname);
+	} else {
+		wpa_msg(wpa_s, MSG_INFO,
+			"REGDOM: country changed to %s, disconnecting STA on %s",
+			info->alpha2, wpa_s->ifname);
+	}
 
 	wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_DEAUTH_LEAVING);
 
