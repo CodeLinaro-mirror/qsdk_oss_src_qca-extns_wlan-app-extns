@@ -332,6 +332,32 @@ static int hostapd_validate_rcsa_nol_info(struct hostapd_iface *iface,
 }
 
 /**
+ * hostapd_get_rcsa_oper_chwidth_cf1 - Get RCSA width and center frequency
+ * @iface: hostapd interface with current operating channel information
+ * @oper_chwidth: output operating channel width
+ * @cf1: output operating center frequency in MHz
+ */
+static void hostapd_get_rcsa_oper_chwidth_cf1(struct hostapd_iface *iface,
+					       enum oper_chan_width *oper_chwidth,
+					       int *cf1)
+{
+	*oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	*cf1 = iface->freq;
+	if (*oper_chwidth == CONF_OPER_CHWIDTH_USE_HT &&
+	    iface->conf->secondary_channel) {
+		*cf1 += iface->conf->secondary_channel * 10;
+	} else if (*oper_chwidth == CONF_OPER_CHWIDTH_80MHZ &&
+		   hostapd_get_oper_centr_freq_seg1_idx(iface->conf)) {
+		*oper_chwidth = CONF_OPER_CHWIDTH_160MHZ;
+		*cf1 += (hostapd_get_oper_centr_freq_seg1_idx(iface->conf) -
+			 iface->conf->channel) * 5;
+	} else if (*oper_chwidth != CONF_OPER_CHWIDTH_USE_HT) {
+		*cf1 += (hostapd_get_oper_centr_freq_seg0_idx(iface->conf) -
+			 iface->conf->channel) * 5;
+	}
+}
+
+/**
  * hostapd_get_rcsa_oper_bw - Get operating bandwidth for RCSA NOL bitmap
  * @iface: hostapd interface with current operating channel information
  * @bandwidth_mhz: output operating bandwidth in MHz
@@ -342,13 +368,9 @@ static int hostapd_get_rcsa_oper_bw(struct hostapd_iface *iface,
 				    int *bandwidth_mhz)
 {
 	int cf1;
-	int oper_chwidth;
+	enum oper_chan_width oper_chwidth;
 
-	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
-	cf1 = iface->freq;
-	if (oper_chwidth == CONF_OPER_CHWIDTH_USE_HT &&
-	    iface->conf->secondary_channel)
-		cf1 += iface->conf->secondary_channel * 10;
+	hostapd_get_rcsa_oper_chwidth_cf1(iface, &oper_chwidth, &cf1);
 
 	if (dfs_nol_ie_chan_width_to_bw_mhz(oper_chwidth, iface->freq,
 					    cf1, bandwidth_mhz)) {
@@ -453,11 +475,11 @@ static int hostapd_extract_rcsa_nol_ie_bitmap(struct hostapd_iface *iface,
 {
 	u16 parsed_bitmap;
 	u16 nol_ie_bitmap;
-	int base_freq;
+	int start_freq;
 	int bandwidth_mhz;
 	int cf1;
 	int n_subchans;
-	int oper_chwidth;
+	enum oper_chan_width oper_chwidth;
 	int start_subchan_idx;
 
 	if (hostapd_validate_rcsa_nol_info(iface, rcsa_nol, nol_info))
@@ -467,11 +489,7 @@ static int hostapd_extract_rcsa_nol_ie_bitmap(struct hostapd_iface *iface,
 	if (hostapd_get_rcsa_oper_bw(iface, &bandwidth_mhz))
 		return -1;
 
-	oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
-	cf1 = iface->freq;
-	if (oper_chwidth == CONF_OPER_CHWIDTH_USE_HT &&
-	    iface->conf->secondary_channel)
-		cf1 += iface->conf->secondary_channel * 10;
+	hostapd_get_rcsa_oper_chwidth_cf1(iface, &oper_chwidth, &cf1);
 
 	if (dfs_nol_ie_get_subchan_count(oper_chwidth, iface->freq, cf1,
 					&n_subchans)) {
@@ -488,8 +506,8 @@ static int hostapd_extract_rcsa_nol_ie_bitmap(struct hostapd_iface *iface,
 		return -1;
 	}
 
-	base_freq = iface->freq;
-	if (hostapd_get_rcsa_start_subchan(rcsa_nol, base_freq, n_subchans,
+	start_freq = cf1 - (bandwidth_mhz / 2) + (RCSA_MIN_DFS_SUBCHAN_BW / 2);
+	if (hostapd_get_rcsa_start_subchan(rcsa_nol, start_freq, n_subchans,
 					   &start_subchan_idx))
 		return -1;
 
@@ -500,8 +518,8 @@ static int hostapd_extract_rcsa_nol_ie_bitmap(struct hostapd_iface *iface,
 
 	if (!nol_ie_bitmap) {
 		wpa_printf(MSG_ERROR,
-			   "RCSA: empty NOL bitmap freq=%u base=%d bitmap=0x%04x",
-			   rcsa_nol->freq, base_freq, parsed_bitmap);
+			   "RCSA: empty NOL bitmap freq=%u start=%d bitmap=0x%04x",
+			   rcsa_nol->freq, start_freq, parsed_bitmap);
 		return -1;
 	}
 
