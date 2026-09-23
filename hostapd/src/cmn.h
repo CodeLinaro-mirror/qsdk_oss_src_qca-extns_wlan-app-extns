@@ -609,7 +609,7 @@ struct hostapd_config_extn {
 	 */
 	bool rptr_allow_chan_sw;
 	u32 acs_periodic_interval;
-	bool disable_iface_during_cac; /* Disable iface creation during DFS CAC (boot-up CAC feature off) */
+	bool disable_bootup_cac_feature; /* Disable boot-up CAC feature */
 
 	/* Indicates whether HE MCS 12/13 support is enabled
 	 * (the support is enabled by default)
@@ -3259,6 +3259,7 @@ int hostapd_drv_mark_vap_submode_extn(void *priv, unsigned int vendor_id,
 				      const char *ifname,
 				      u8 vap_submode);
 int hostapd_drv_set_non_beacon_bss_extn(struct hostapd_data *hapd);
+int hostapd_drv_set_bootup_cac_feature_extn(struct hostapd_data *hapd);
 
 u16 hostapd_get_width_from_oper_chwidth_extn(enum oper_chan_width oper_chwidth,
 					     int secondary_channel);
