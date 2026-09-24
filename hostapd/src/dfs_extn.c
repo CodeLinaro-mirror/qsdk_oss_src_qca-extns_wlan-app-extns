@@ -565,6 +565,7 @@ void hostapd_uplink_cancel_disconnect_timeout_extn(struct hostapd_iface *iface)
 		eloop_cancel_timeout(hostapd_rcsa_trigger_channal_change, iface, NULL);
 		eloop_cancel_timeout(hostapd_trigger_rcsa_tx, iface, NULL);
 		hostapd_set_rcsa_inprogress(iface, false);
+		iface->iface_extn.cac_abort = 0;
 	}
 }
 
