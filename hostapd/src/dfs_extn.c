@@ -2215,6 +2215,7 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 			iface->freq = channel->freq;
 			iface->conf->channel = channel->chan;
 			iface->conf->secondary_channel = secondary_channel;
+			iface->conf->punct_bitmap = 0;
 			hostapd_set_oper_chwidth(iface->conf, oper_chwidth);
 			hostapd_set_oper_centr_freq_seg0_idx(iface->conf,
 							     oper_centr_freq_seg0_idx);
