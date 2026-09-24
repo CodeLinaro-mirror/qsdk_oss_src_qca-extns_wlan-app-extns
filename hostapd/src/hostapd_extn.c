@@ -553,7 +553,8 @@ static int regdom_apply_channel(struct hostapd_iface *iface,
 				const struct hostapd_channel_data *chan,
 				enum oper_chan_width try_width,
 				int secondary, int center,
-				struct hostapd_freq_params *freq_params)
+				struct hostapd_freq_params *freq_params,
+				u16 pp)
 {
 	struct hostapd_hw_modes *mode = iface->current_mode;
 	int ret;
@@ -586,7 +587,7 @@ static int regdom_apply_channel(struct hostapd_iface *iface,
 				      mode ? &mode->he_capab[IEEE80211_MODE_AP] : NULL,
 				      mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
 				      mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
-				      0, /* Does not support puncturing */
+				      pp,
 				      iface->conf->he_6ghz_reg_pwr_type, /* BPM would override later */
 				      0, 0,
 				      iface->conf->bandwidth_device,
@@ -598,10 +599,11 @@ static int regdom_apply_channel(struct hostapd_iface *iface,
 	}
 
 	wpa_printf(MSG_INFO,
-		   "REGDOM: %s selected channel %d (%d MHz) seg0=%d width=%d after country change",
+		   "REGDOM: %s selected channel %d (%d MHz) seg0=%d width=%d pp 0x%x after country change",
 		   iface->conf->bss[0]->iface,
 		   chan->chan, chan->freq, center,
-		   hostapd_get_width_from_oper_chwidth_extn(try_width, secondary));
+		   hostapd_get_width_from_oper_chwidth_extn(try_width, secondary),
+		   pp);
 
 	return 0;
 }
@@ -623,6 +625,7 @@ regdom_select_channel_from_mode(struct hostapd_iface *iface, struct hostapd_hw_m
 		struct hostapd_channel_data *chan = &mode->channels[j];
 		int center = 0;
 		int sec = secondary;
+		u16 pp = 0;
 
 		if (!chan_in_current_hw_info(iface->current_hw_info, chan))
 			continue;
@@ -630,15 +633,18 @@ regdom_select_channel_from_mode(struct hostapd_iface *iface, struct hostapd_hw_m
 		if (!regdom_chan_allowed_bw(iface, chan, try_width, &sec))
 			continue;
 
+		if (try_width == CONF_OPER_CHWIDTH_320MHZ && is_5ghz_freq(chan->freq))
+			pp = RIGHT80_240MHZ_PUNC;
+
 		if (!regdom_is_chan_bw_valid(iface, chan->freq,
-					     try_width, sec, 0))
+					     try_width, sec, pp))
 			continue;
 
 		if (!regdom_chan_seg0(chan, try_width, sec, &center))
 			continue;
 
 		if (regdom_apply_channel(iface, chan, try_width, sec, center,
-					 freq_params) == 0)
+					 freq_params, pp) == 0)
 			return true;
 	}
 
