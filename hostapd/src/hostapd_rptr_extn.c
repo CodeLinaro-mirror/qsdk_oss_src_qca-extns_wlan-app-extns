@@ -40,6 +40,7 @@ void hostapd_csa_bitmap_update_extn(struct hostapd_iface *iface, int freq)
 			}
 		}
 		if (!iface->iface_extn.csa_bitmap) {
+			iface->mcst = 0;
 			wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
 				"Revd CSA/CAC completion, notify wpa_supplicant");
 #ifdef CONFIG_HOSTAPD_SRC_DIR
@@ -387,6 +388,9 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 	 * cswopts is runtime-only and not overwritten by config reloads. */
 	if (IS_CSH_CAC_APUP_BYSTA_ENABLED(conf->conf_extn.cswopts))
 		csa->freq_params.skip_cac = 0;
+
+	if (csa->freq_params.skip_cac)
+		iface->mcst = csa->freq_params.mcst;
 
 	wpa_printf(MSG_INFO,
 		   "CSA: phy=%s is_dfs=%d pre_connect=%d skip_cac=%d mcst=%u TU "
