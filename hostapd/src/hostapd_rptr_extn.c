@@ -441,6 +441,30 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 		}
 
 		for (i = 0; i < iface->num_bss; i++) {
+			wpa_printf(MSG_DEBUG,
+				   "CSA: switch_channel bss[%d]=%s mld_link_id=%d beacon_set_done=%d",
+				   i, iface->bss[i]->conf->iface,
+				   iface->bss[i]->mld_link_id,
+				   iface->bss[i]->beacon_set_done);
+
+			/*
+			 * NL80211_CMD_CHANNEL_SWITCH returns -ENOTCONN on a
+			 * non-beaconing BSS (see the identical WAR in
+			 * hostapd_deferred_csa_dispatch() in dfs.c). A
+			 * BSS sharing this radio that is not currently
+			 * beaconing is unrelated to the CSA target and must
+			 * not abort CSA for every other BSS on the radio -
+			 * one of which may be the fronthaul BSS the
+			 * reconnecting bSTA actually depends on.
+			 */
+			if (!iface->bss[i]->beacon_set_done) {
+				wpa_printf(MSG_DEBUG,
+					   "CSA skip bss[%d]=%s mld_link_id=%d: not beaconing",
+					   i, iface->bss[i]->conf->iface,
+					   iface->bss[i]->mld_link_id);
+				continue;
+			}
+
 			ret = hostapd_switch_channel(iface->bss[i], csa);
 			if (ret) {
 				/*
@@ -464,8 +488,10 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 						   csa->freq_params.freq, i);
 					continue;
 				}
-				wpa_printf(MSG_ERROR, "Channel switch failed"
-					   " ret = %d", ret);
+				wpa_printf(MSG_ERROR,
+					   "Channel switch failed on bss[%d]=%s mld_link_id=%d"
+					   " ret = %d", i, iface->bss[i]->conf->iface,
+					   iface->bss[i]->mld_link_id, ret);
 #ifdef CONFIG_HOSTAPD_SRC_DIR
 				if (pre_connect) {
 					hostapd_ucode_chsw_result_ev_notify(
