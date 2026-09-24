@@ -368,6 +368,9 @@ static void notify_event(void *hapd_ctx, struct hostapd_if_event *event)
 				   event->data.authorize_completion.authorized);
 			break;
 
+		case HOSTAPD_IF_EVENT_DOT1X_COMPLETE:
+			wpa_printf(MSG_DEBUG, "DOT1X COMPLETE STATUS:%d\n",
+				   event->data.dot1x_completion.success);
 		default:
 			break;
 	}
