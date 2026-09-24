@@ -28,17 +28,14 @@ int hostapd_get_center_chan_extn(struct hostapd_iface *iface,
 				 enum oper_chan_width oper_bw)
 {
 	int center = 0;
-	int bw;
 
-	bw = channel_width_to_int(
-			hostapd_get_chan_width_from_oper_chan_width(iface->conf));
 	switch (oper_bw) {
 	case CONF_OPER_CHWIDTH_USE_HT:
 		if (chan->extn.secondary_channel &&
 		    chan->freq >= 2400 && chan->freq < 2500)
 			center = chan->chan +
 				2 * chan->extn.secondary_channel;
-		else if (bw == 40)
+		else if (chan->extn.secondary_channel)
 			center = acs_get_bw_center_chan(chan->freq, ACS_BW40);
 		else
 			center = chan->chan;
@@ -1469,8 +1466,25 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
 	settings.freq_params.sec_channel_offset = chan->extn.secondary_channel;
 	settings.freq_params.freq = chan->freq;
 	settings.freq_params.channel = chan->chan;
-	settings.freq_params.bandwidth = channel_width_to_int(
-		hostapd_get_chan_width_from_oper_chan_width(iface->conf));
+
+	switch (hostapd_get_oper_chwidth(iface->conf)) {
+		case CONF_OPER_CHWIDTH_80MHZ:
+			settings.freq_params.bandwidth = 80;
+			break;
+		case CONF_OPER_CHWIDTH_80P80MHZ:
+			settings.freq_params.bandwidth = 160;
+			break;
+		case CONF_OPER_CHWIDTH_160MHZ:
+			settings.freq_params.bandwidth = 160;
+			break;
+		case CONF_OPER_CHWIDTH_320MHZ:
+			settings.freq_params.bandwidth = 320;
+			break;
+		case CONF_OPER_CHWIDTH_USE_HT:
+		default:
+			settings.freq_params.bandwidth = chan->extn.secondary_channel ? 40 : 20;
+			break;
+	}
 
 	/* Get the center_freq1 for the chan->freq and operating bw*/
 	hostapd_get_center_chanfreq1_from_channel(iface, chan,
