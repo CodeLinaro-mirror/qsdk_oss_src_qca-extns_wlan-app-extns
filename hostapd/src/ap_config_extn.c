@@ -145,6 +145,8 @@ hostapd_config_defaults_extn(struct hostapd_config *conf)
 	conf_extn->qacs_conf.wradar = 1;            /* wradar reject enabled */
 	conf_extn->qacs_conf.rep_txpower_policy = 0;/* Option pwr disabled */
 	conf_extn->qacs_conf.rank_en = 1;           /* rank enabled */
+	conf_extn->qacs_conf.auto_puncture = 0;     /* auto puncture disabled */
+	conf_extn->qacs_conf.nf_bond_penalty_pct = 75; /* NF bond penalty percentage */
 	conf_extn->qacs_conf.acs_pri_sec20_penalty = ICM_PRI_SEC20_PENALIZATION_FACTOR;
 	conf_extn->qacs_conf.min_dwell = 50;        /* msec */
 	conf_extn->qacs_conf.max_dwell = 250;       /* msec */
@@ -379,6 +381,8 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		conf_extn->qacs_conf.rep_txpower_policy = val;
 	} else if (os_strcmp(buf, "acs_rank_en") == 0) {
 		conf_extn->qacs_conf.rank_en = atoi(pos);
+	} else if (os_strcmp(buf, "acs_auto_puncture") == 0) {
+		conf_extn->qacs_conf.auto_puncture = atoi(pos);
 	} else if (os_strcmp(buf, "acs_pri_sec20_penalty") == 0) {
 		int val = atoi(pos);
 

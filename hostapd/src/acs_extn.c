@@ -195,6 +195,8 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs get_status           : get ACS current status\n"
 		"  acs rank_en <1|0>        : enable/disable channel ranking\n"
 		"  acs get_rank_en          : get channel ranking enable state\n"
+		"  acs auto_puncture <1|0> : enable/disable automatic channel puncturing\n"
+		"  acs get_auto_puncture   : get automatic channel puncturing state\n"
 		"  acs pri_sec20_penalty <0-100> : set PRI_SEC20 penalty\n"
 		"  acs get_pri_sec20_penalty : get PRI_SEC20 penalty\n"
 		"  acs qacs_enable <1|0>    : enable/disable QACS extension\n"
@@ -835,6 +837,35 @@ static int hostapd_acs_get_rank_en_extn(struct hostapd_config_extn *conf_extn,
 	return ret;
 }
 
+static int hostapd_acs_set_auto_puncture_extn(
+		struct hostapd_config_extn *conf_extn, const char *pos,
+		char *reply, size_t reply_size)
+{
+	int val = atoi(pos);
+
+	if (val == 0 || val == 1) {
+		conf_extn->qacs_conf.auto_puncture = val;
+		return 0;
+	}
+
+	wpa_printf(MSG_ERROR, "%s: Invalid value", __func__);
+	return -1;
+}
+
+static int hostapd_acs_get_auto_puncture_extn(
+		struct hostapd_config_extn *conf_extn, const char *pos,
+		char *reply, size_t reply_size)
+{
+	int ret = os_snprintf(reply, reply_size,
+			      "ACS auto_puncture: %d\n",
+			      conf_extn->qacs_conf.auto_puncture);
+
+	if (os_snprintf_error(reply_size, ret))
+		return -1;
+
+	return ret;
+}
+
 static int
 hostapd_acs_set_nf_bond_penalty_extn(struct hostapd_config_extn *conf_extn,
 				     const char *pos,
@@ -1302,6 +1333,14 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 	} else if (os_strncmp(pos, "get_rank_en", 11) == 0) {
 		return hostapd_acs_get_rank_en_extn(conf_extn, pos,
 						    buf, buflen);
+
+	} else if (os_strncmp(pos, "auto_puncture ", 14) == 0) {
+		return hostapd_acs_set_auto_puncture_extn(conf_extn, pos + 14,
+							 buf, buflen);
+
+	} else if (os_strncmp(pos, "get_auto_puncture", 17) == 0) {
+		return hostapd_acs_get_auto_puncture_extn(conf_extn, pos,
+							 buf, buflen);
 
 	} else if (os_strncmp(pos, "pri_sec20_penalty ", 18) == 0) {
 		return hostapd_acs_set_pri_sec20_penalty_extn(conf_extn,
