@@ -117,6 +117,8 @@ int _wpa_ctrl_command_large(struct wpa_ctrl *ctrl, const char *cmd, int print);
 		"get_status           : get ACS current status\n" \
 		"rank_en <1|0>        : enable/disable channel ranking\n" \
 		"get_rank_en          : get channel ranking enable state\n" \
+		"auto_puncture <1|0> : enable/disable automatic channel puncturing\n" \
+		"get_auto_puncture   : get automatic channel puncturing state\n" \
 		"pri_sec20_penalty <0-100> : set PRI_SEC20 penalty\n" \
 		"get_pri_sec20_penalty : get PRI_SEC20 penalty\n" \
 		"qacs_enable <1|0>    : enable/disable QACS extension\n" \
