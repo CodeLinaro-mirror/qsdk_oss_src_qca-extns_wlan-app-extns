@@ -1317,7 +1317,7 @@ int wpa_driver_nl80211_dcs_config_extn(void *priv, u8 link_id,
 	attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
 	if (!attr)
 		goto error;
-	if ((link_id != NL80211_DRV_LINK_ID_NA &&
+	if ((bss->valid_links &&
 	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_DCS_LINK_ID, link_id)) ||
 	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_DCS_CMD_TYPE,
 		       params->cmd_type) ||
@@ -1645,7 +1645,7 @@ int wpa_driver_nl80211_dcs_sim_extn(void *priv, u8 link_id,
 	if (!attr)
 		goto error;
 
-	if ((link_id != NL80211_DRV_LINK_ID_NA &&
+	if ((bss->valid_links &&
 	     nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_DCS_SIM_LINK_ID, link_id)) ||
 	     nla_put_u16(msg, QCA_WLAN_VENDOR_ATTR_DCS_SIM_TYPE,
 			 params->type))
