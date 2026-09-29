@@ -761,7 +761,8 @@ bool acs_scan_event_expected_extn(struct hostapd_iface *iface)
 
 	expected = ((iface->state == HAPD_IFACE_ACS) ||
 		    (iface->iface_extn.dynamic_acs_action &&
-		     iface->state == HAPD_IFACE_ENABLED));
+		    (iface->state == HAPD_IFACE_ENABLED ||
+		     iface->state == HAPD_IFACE_DFS)));
 
 	if (expected) {
 #if !defined(WPA_TRACE_BFD) || !defined(CONFIG_TESTING_OPTIONS)

@@ -1963,6 +1963,24 @@ void hostapd_bootup_cac_complete_extn(struct hostapd_iface *iface)
 	wpa_printf(MSG_DEBUG,
 		   "Boot-up CAC complete for %s: state->ENABLED, calling set_beacons for %zu BSS",
 		   iface->bss[0]->conf->iface, iface->num_bss);
+	for (size_t i = 0; i < iface->num_bss; i++) {
+		struct hostapd_data *bss = iface->bss[i];
+
+		if (bss->started)
+			continue;
+
+		if(bss->disabled)
+			continue;
+
+		if (hostapd_setup_bss(bss, false, true)) {
+			wpa_printf(MSG_ERROR,
+				   "Boot-up CAC: failed to set up BSS %s after CAC",
+				   bss->conf->iface);
+			continue;
+		}
+		bss->reenable = REENABLE_NONE;
+	}
+
 	ieee802_11_set_beacons(iface);
 }
 
