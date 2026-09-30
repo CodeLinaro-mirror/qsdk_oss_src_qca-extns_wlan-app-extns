@@ -25,7 +25,6 @@
 #include "ap/sta_info.h"
 #include "mapc_extn.h"
 
-#define DEF_VLP_NON_PRIOR_PENALTY	30
 #define DEF_OBSS_INTERVAL		300
 
 /**
@@ -665,11 +664,10 @@ hostapd_ctrl_iface_get_non_prior_penalty_extn(struct hostapd_data *hapd,
 					      int reply_size)
 {
 	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
-	u8 non_prior_penalty = DEF_VLP_NON_PRIOR_PENALTY;
+	u8 non_prior_penalty;
 	int ret;
 
-	if (iface_extn->vlp_non_prior_penalty)
-		non_prior_penalty = iface_extn->vlp_non_prior_penalty;
+	non_prior_penalty = iface_extn->vlp_non_prior_penalty;
 	ret = os_snprintf(reply, reply_size, "%u\n", non_prior_penalty);
 	if (os_snprintf_error(reply_size, ret))
 		return -1;
