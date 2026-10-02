@@ -36,6 +36,13 @@
 #include "crypto/sha512.h"
 #include "hostapd_if_plugin.h"
 
+extern bool hostapd_if_logging_enabled;
+
+#define HIFLOG(level, ...) \
+	do { if (hostapd_if_logging_enabled) wpa_printf(level, __VA_ARGS__); } while (0)
+#define HIFDBG(hapd, level, ...) \
+	do { if (hostapd_if_logging_enabled) wpa_dbg((hapd)->msg_ctx, level, __VA_ARGS__); } while (0)
+
 #define QUEUE_MAX_SIZE 100
 
 /* frame invoke policy related configuration options */
@@ -306,7 +313,7 @@ static void notify_event(void *hapd_ctx, struct hostapd_if_event *event)
 {
 	struct invoke_plugin_datablock *datablock;
 
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "notifying event of type %s\n ifname = %s\n STA MAC = " MACSTR "\n",
 		   hostapd_if_event_string(event->type),
 		   event->ifname,  MAC2STR(event->sta_mac));
@@ -329,13 +336,13 @@ static void notify_event(void *hapd_ctx, struct hostapd_if_event *event)
 				break;
 			}
 			pthread_mutex_unlock(&datablock_deque_mutex);
-			wpa_printf(MSG_DEBUG,
+			HIFLOG(MSG_DEBUG,
 				   "queued m3 trigger for STA " MACSTR "\n",
 				   MAC2STR(datablock->sta_mac));
 			break;
 
 		case HOSTAPD_IF_EVENT_ASSOC_TX_COMPLETE:
-			wpa_printf(MSG_DEBUG,
+			HIFLOG(MSG_DEBUG,
 				   "ok = %d\nstatus = %d\n",
 				   event->data.assoc_resp_completion.ok,
 				   event->data.assoc_resp_completion.status);
@@ -343,25 +350,25 @@ static void notify_event(void *hapd_ctx, struct hostapd_if_event *event)
 
 		case HOSTAPD_IF_EVENT_DEAUTH:
 		case HOSTAPD_IF_EVENT_DISASSOC:
-			wpa_printf(MSG_DEBUG, "link_id = %d",
+			HIFLOG(MSG_DEBUG, "link_id = %d",
 				   event->data.deauth_disassoc.link_id);
-			wpa_printf(MSG_DEBUG, "is_tx_status = %d",
+			HIFLOG(MSG_DEBUG, "is_tx_status = %d",
 				   event->data.deauth_disassoc.is_tx_status);
-			wpa_printf(MSG_DEBUG, "tx_status_ok = %d",
+			HIFLOG(MSG_DEBUG, "tx_status_ok = %d",
 				   event->data.deauth_disassoc.tx_status_ok);
-			wpa_printf(MSG_DEBUG, "type = %d",
+			HIFLOG(MSG_DEBUG, "type = %d",
 				   event->data.deauth_disassoc.type);
-			wpa_printf(MSG_DEBUG, "reason_code = %d",
+			HIFLOG(MSG_DEBUG, "reason_code = %d",
 				   event->data.deauth_disassoc.reason_code);
 			break;
 
 		case HOSTAPD_IF_EVENT_SA_QUERY_COMPLETION:
-			wpa_printf(MSG_DEBUG, "status = %d",
+			HIFLOG(MSG_DEBUG, "status = %d",
 				   event->data.sa_query.status);
 			break;
 
 		case HOSTAPD_IF_EVENT_AUTHORIZE_COMPLETION:
-			wpa_printf(MSG_DEBUG, "authorized = %d",
+			HIFLOG(MSG_DEBUG, "authorized = %d",
 				   event->data.authorize_completion.authorized);
 			break;
 
@@ -398,7 +405,7 @@ static void invoke_assoc(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 		os_free(datablock);
 		return;
 	}
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "queued assoc request for STA " MACSTR "\n",
 		   MAC2STR(datablock->sta_mac));
 	if (global_conf.assoc.out_of_order &&
@@ -406,7 +413,7 @@ static void invoke_assoc(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 		global_conf.assoc.process_frames = false;
 	else
 		global_conf.assoc.process_frames = true;
-	wpa_printf(MSG_DEBUG, "datablock queue has %d elements",
+	HIFLOG(MSG_DEBUG, "datablock queue has %d elements",
 		   deque_size(datablock_deque));
 	pthread_mutex_unlock(&datablock_deque_mutex);
 	return;
@@ -441,13 +448,13 @@ static void invoke_auth(char *ifname, uint8_t *sta_mac, const uint8_t *frame,
 		os_free(datablock);
 		return;
 	}
-	wpa_printf(MSG_DEBUG, "queued auth request for STA " MACSTR "\n",
+	HIFLOG(MSG_DEBUG, "queued auth request for STA " MACSTR "\n",
 		   MAC2STR(datablock->sta_mac));
 	if (global_conf.auth.out_of_order && (deque_size(datablock_deque) <= 1))
 		global_conf.auth.process_frames = false;
 	else
 		global_conf.auth.process_frames = true;
-	wpa_printf(MSG_DEBUG, "datablock queue has %d elements",
+	HIFLOG(MSG_DEBUG, "datablock queue has %d elements",
 		   deque_size(datablock_deque));
 	pthread_mutex_unlock(&datablock_deque_mutex);
 	return;
@@ -484,7 +491,7 @@ static void invoke_remote_auth(char *ifname, uint8_t *sta_mac,
 		return;
 	}
 	pthread_mutex_unlock(&datablock_deque_mutex);
-	wpa_printf(MSG_DEBUG, "queued remote auth request for STA " MACSTR "\n",
+	HIFLOG(MSG_DEBUG, "queued remote auth request for STA " MACSTR "\n",
 		   MAC2STR(datablock->sta_mac));
 	return;
 }
@@ -493,7 +500,7 @@ static void notify_assoc(void *hapd_ctx, char *ifname, uint8_t *sta_mac, const u
 			 uint16_t frame_len, struct hostapd_if_frame_ctx *ctx)
 {
 	uint16_t notify_status_code;
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "Notified Assoc for STA " MACSTR " on link_id=%d, frame_len=%u\n",
 		   MAC2STR(sta_mac), ctx->rx_link_id,
 		   frame_len);
@@ -510,7 +517,7 @@ static void notify_assoc(void *hapd_ctx, char *ifname, uint8_t *sta_mac, const u
 		 * Use configured notification status code if set,
 		 * otherwise use actual status code
 		 */
-		wpa_printf(MSG_DEBUG, "Assoc notification status_code=%u (%s)\n",
+		HIFLOG(MSG_DEBUG, "Assoc notification status_code=%u (%s)\n",
 			   notify_status_code, notify_status_code == 0 ?
 			   "SUCCESS" : "REJECTED");
 	}
@@ -529,7 +536,7 @@ static void notify_action(char *ifname, const uint8_t *sta_mac, const uint8_t *f
 		rssi = ctx->data.action.rssi;
 	}
 
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "Notified Action for STA " MACSTR " on link_id=%d, frame_len=%u%s category=%d action_code=%d RSSI %d\n",
 		   MAC2STR(sta_mac), link_id, frame_len, ctx ? "" : " Frame ctx null",
 		   category, action_code, rssi);
@@ -548,7 +555,7 @@ static void offload_action(char *ifname, const uint8_t *sta_mac, const uint8_t *
 		rssi = ctx->data.action.rssi;
 	}
 
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "Offload Action for STA " MACSTR " on link_id=%d, frame_len=%u%s category=%d action_code=%d RSSI %d\n",
 		   MAC2STR(sta_mac), link_id, frame_len, ctx ? "" : " Frame ctx null",
 		   category, action_code, rssi);
@@ -568,7 +575,7 @@ static void notify_auth(void *hapd_ctx, char *ifname, uint8_t *sta_mac, const ui
 		rssi = ctx->data.auth_req.rssi;
 	}
 
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "Notified Auth for STA " MACSTR " on link_id=%d, frame_len=%u%s RSSI %d\n",
 		   MAC2STR(sta_mac), rx_link_id, frame_len,
 		   ctx ? "" : " Frame ctx null", rssi);
@@ -584,7 +591,7 @@ static void notify_auth(void *hapd_ctx, char *ifname, uint8_t *sta_mac, const ui
 		auth_alg = frame[24] | (frame[25] << 8);
 		auth_transaction = frame[26] | (frame[27] << 8);
 		notify_status_code = frame[28] | (frame[29] << 8);
-		wpa_printf(MSG_DEBUG,
+		HIFLOG(MSG_DEBUG,
 			   "Auth notification auth_alg=%u, auth_transaction=%u, status_code=%u (%s)\n",
 			   auth_alg, auth_transaction,
 			   notify_status_code,
@@ -596,11 +603,11 @@ static void notify_remote_auth(char *ifname, uint8_t *sta_mac,
 			       const uint8_t *ies, uint16_t ies_len,
 			       struct hostapd_if_frame_ctx *ctx)
 {
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "Notified Remote Auth for STA " MACSTR
 		   " on link_id=%d, ies_len=%u\n",
 		   MAC2STR(sta_mac), ctx->rx_link_id, ies_len);
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "Remote Auth status_code=%u (%s), is_ml_sta=%d\n",
 		   ctx->status_code,
 		   ctx->status_code == 0 ? "SUCCESS" : "REJECTED",
@@ -625,7 +632,7 @@ static void notify_deauth(void *hapd_ctx, char *ifname, uint8_t *sta_mac,
 		reason = (uint16_t)(f[24] | (f[25] << 8));
 	}
 
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "Notified Deauth (%s) for STA " MACSTR " link_id=%d reason=%u frame_len=%zu\n",
 		   dir, MAC2STR(sta_mac), rx_link_id,
 		   reason, frame_len);
@@ -649,7 +656,7 @@ static void notify_disassoc(void *hapd_ctx, char *ifname, uint8_t *sta_mac,
 		reason = (uint16_t)(f[24] | (f[25] << 8));
 	}
 
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "Notified Disassoc (%s) for STA " MACSTR " link_id=%d reason=%u frame_len=%zu\n",
 		   dir, MAC2STR(sta_mac), rx_link_id,
 		   reason, frame_len);
@@ -717,7 +724,7 @@ static int pull_pmk_r1(char *ifname, uint8_t *sta_mac,
 
 	iface = plugin_hapd_iface_get(ifname);
 	if (!iface) {
-		wpa_printf(MSG_DEBUG,
+		HIFLOG(MSG_DEBUG,
 			   "plugin: pull_pmk_r1: no iface found for %s\n",
 			   ifname);
 		pthread_mutex_unlock(&plugin_iface_mutex);
@@ -737,7 +744,7 @@ static int pull_pmk_r1(char *ifname, uint8_t *sta_mac,
 		/* Skip expired entries */
 		if (r1->session_timeout > 0 &&
 		    r1->session_timeout < now.sec) {
-			wpa_printf(MSG_DEBUG,
+			HIFLOG(MSG_DEBUG,
 				   "plugin: pull_pmk_r1: entry expired for "
 				   MACSTR "\n", MAC2STR(sta_mac));
 			continue;
@@ -778,14 +785,14 @@ static int pull_pmk_r1(char *ifname, uint8_t *sta_mac,
 			}
 		}
 
-		wpa_printf(MSG_DEBUG,
+		HIFLOG(MSG_DEBUG,
 			   "plugin: pull_pmk_r1: found entry for " MACSTR
 			   " on iface %s\n", MAC2STR(sta_mac), ifname);
 		pthread_mutex_unlock(&plugin_iface_mutex);
 		return 0;
 	}
 
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "plugin: pull_pmk_r1: no entry found for " MACSTR
 		   " on iface %s\n", MAC2STR(sta_mac), ifname);
 	pthread_mutex_unlock(&plugin_iface_mutex);
@@ -827,11 +834,11 @@ static int interface_create(char *ifname, void *ctx)
 		iface->hapd = hapd;
 		dl_list_init(&iface->ft_pmk_cache.pmk_r1);
 		dl_list_add_tail(&plugin_hapd_iface_list, &iface->list);
-		wpa_printf(MSG_DEBUG,
+		HIFLOG(MSG_DEBUG,
 			   "plugin: created plugin_hapd_iface for %s\n",
 			   ifname);
 	} else {
-		wpa_printf(MSG_DEBUG,
+		HIFLOG(MSG_DEBUG,
 			   "plugin: plugin_hapd_iface for %s already exists\n",
 			   ifname);
 	}
@@ -850,7 +857,7 @@ static int interface_create(char *ifname, void *ctx)
 		memset(&cat, 0, sizeof(cat));
 		cat.type = HOSTAPD_IF_FRAME_TYPE_AUTH;
 		test_plugin.register_frame(ctx, &cat, auth_policy);
-		wpa_printf(MSG_DEBUG, "registered AUTH policy %d\n",
+		HIFLOG(MSG_DEBUG, "registered AUTH policy %d\n",
 			   auth_policy);
 	}
 
@@ -861,7 +868,7 @@ static int interface_create(char *ifname, void *ctx)
 		memset(&cat, 0, sizeof(cat));
 		cat.type = HOSTAPD_IF_FRAME_TYPE_DEAUTH;
 		test_plugin.register_frame(ctx, &cat, deauth_policy);
-		wpa_printf(MSG_DEBUG, "registered DEAUTH policy %d\n",
+		HIFLOG(MSG_DEBUG, "registered DEAUTH policy %d\n",
 			   deauth_policy);
 	}
 
@@ -872,7 +879,7 @@ static int interface_create(char *ifname, void *ctx)
 		memset(&cat, 0, sizeof(cat));
 		cat.type = HOSTAPD_IF_FRAME_TYPE_ASSOC;
 		test_plugin.register_frame(ctx, &cat, assoc_policy);
-		wpa_printf(MSG_DEBUG, "registered ASSOC policy %d\n",
+		HIFLOG(MSG_DEBUG, "registered ASSOC policy %d\n",
 			   assoc_policy);
 	}
 
@@ -883,7 +890,7 @@ static int interface_create(char *ifname, void *ctx)
 		memset(&cat, 0, sizeof(cat));
 		cat.type = HOSTAPD_IF_FRAME_TYPE_DISASSOC;
 		test_plugin.register_frame(ctx, &cat, disassoc_policy);
-		wpa_printf(MSG_DEBUG, "registered DISASSOC policy %d\n",
+		HIFLOG(MSG_DEBUG, "registered DISASSOC policy %d\n",
 			   disassoc_policy);
 	}
 
@@ -894,7 +901,7 @@ static int interface_create(char *ifname, void *ctx)
 		memset(&cat, 0, sizeof(cat));
 		cat.type = HOSTAPD_IF_FRAME_TYPE_REMOTE_AUTH;
 		test_plugin.register_frame(ctx, &cat, remote_auth_policy);
-		wpa_printf(MSG_ERROR, "registered REMOTE-AUTH policy %d\n",
+		HIFLOG(MSG_DEBUG, "registered REMOTE-AUTH policy %d\n",
 			   remote_auth_policy);
 	}
 
@@ -918,7 +925,7 @@ static int interface_create(char *ifname, void *ctx)
 		cat.type = HOSTAPD_IF_FRAME_TYPE_ACTION;
 		cat.u.action_type = hostapd_if_action_policy_map[i].action_type;
 		test_plugin.register_frame(ctx, &cat, action_policy);
-		wpa_printf(MSG_DEBUG, "registered ACTION %s policy %d\n",
+		HIFLOG(MSG_DEBUG, "registered ACTION %s policy %d\n",
 			   hostapd_if_action_policy_map[i].conf_name,
 			   action_policy);
 	}
@@ -957,12 +964,12 @@ static void interface_remove(char *ifname, void *ctx)
 	pthread_mutex_lock(&plugin_iface_mutex);
 
 	iface = plugin_hapd_iface_get(ifname);
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "plugin: removed plugin_hapd_iface for %s %d\n", ifname,
 		   hapd->iface->freq);
 
 	if (!iface) {
-		wpa_printf(MSG_DEBUG,
+		HIFLOG(MSG_DEBUG,
 			   "plugin: interface_remove: no iface found for %s\n",
 			   ifname);
 		pthread_mutex_unlock(&plugin_iface_mutex);
@@ -1478,7 +1485,7 @@ static void hostapd_if_plugin_set_assoc_resp_ies(uint8_t *buf, size_t buf_len)
 		if (assoc_resp_ies) {
 			os_memcpy(assoc_resp_ies, buf, buf_len);
 			assoc_resp_ies_len = buf_len;
-			wpa_printf(MSG_DEBUG,
+			HIFLOG(MSG_DEBUG,
 				   "Stored %zu bytes of association response IEs\n",
 				   buf_len);
 		} else {
@@ -1486,7 +1493,7 @@ static void hostapd_if_plugin_set_assoc_resp_ies(uint8_t *buf, size_t buf_len)
 				   "Failed to allocate memory for association response IEs\n");
 		}
 	} else {
-		wpa_printf(MSG_DEBUG, "Cleared association response IEs\n");
+		HIFLOG(MSG_DEBUG, "Cleared association response IEs\n");
 	}
 }
 
@@ -1505,7 +1512,7 @@ static void hostapd_if_plugin_set_auth_resp_ies(uint8_t *buf, size_t buf_len)
 		if (auth_resp_ies) {
 			os_memcpy(auth_resp_ies, buf, buf_len);
 			auth_resp_ies_len = buf_len;
-			wpa_printf(MSG_DEBUG,
+			HIFLOG(MSG_DEBUG,
 				   "Stored %zu bytes of authentication response IEs\n",
 				   buf_len);
 		} else {
@@ -1513,7 +1520,7 @@ static void hostapd_if_plugin_set_auth_resp_ies(uint8_t *buf, size_t buf_len)
 				   "Failed to allocate memory for authentication response IEs\n");
 		}
 	} else {
-		wpa_printf(MSG_DEBUG,
+		HIFLOG(MSG_DEBUG,
 			   "Cleared authentication response IEs\n");
 	}
 }
@@ -1676,7 +1683,7 @@ static int hostapd_ctrl_iface_send_frame(struct hostapd_data *hapd,
 		link_id = hapd->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
 
-	wpa_printf(MSG_DEBUG, "CTRL_IFACE SEND_FRAME %s", cmd);
+	HIFLOG(MSG_DEBUG, "CTRL_IFACE SEND_FRAME %s", cmd);
 
 	if (!hex)
 		return -1;
@@ -1733,7 +1740,7 @@ static int hostapd_ctrl_iface_start_sa_query_plugin(struct hostapd_data *hapd,
 	int link_id = -1;
 	const char *pos;
 
-	wpa_dbg(hapd->msg_ctx, MSG_DEBUG, "CTRL_IFACE START_SA_QUERY_PLUGIN %s",
+	HIFDBG(hapd, MSG_DEBUG, "CTRL_IFACE START_SA_QUERY_PLUGIN %s",
 		txtaddr);
 
 	if (hwaddr_aton(txtaddr, addr))
@@ -1759,7 +1766,7 @@ static int hostapd_ctrl_iface_disassociate_plugin(struct hostapd_data *hapd,
 	size_t added_data_len = 0;
 	u8 *data_buf = NULL;
 
-	wpa_dbg(hapd->msg_ctx, MSG_DEBUG, "CTRL_IFACE DISASSOCIATE-PLUGIN %s",
+	HIFDBG(hapd, MSG_DEBUG, "CTRL_IFACE DISASSOCIATE-PLUGIN %s",
 		txtaddr);
 
 	if (hwaddr_aton(txtaddr, addr))
@@ -1813,7 +1820,7 @@ static int hostapd_ctrl_iface_deauthenticate_plugin(struct hostapd_data *hapd,
 	size_t added_data_len = 0;
 	u8 *data_buf = NULL;
 
-	wpa_dbg(hapd->msg_ctx, MSG_DEBUG,
+	HIFDBG(hapd, MSG_DEBUG,
 		"CTRL_IFACE DEAUTHENTICATE-PLUGIN %s",
 		txtaddr);
 
@@ -1868,7 +1875,7 @@ static int hostapd_ctrl_iface_get_pmk_plugin(struct hostapd_data *hapd,
 	uint8_t pmkid[PMKID_LEN];
 	int ret, len = 0;
 
-	wpa_printf(MSG_DEBUG, "CTRL_IFACE GET_PMK_PLUGIN %s", txtaddr);
+	HIFLOG(MSG_DEBUG, "CTRL_IFACE GET_PMK_PLUGIN %s", txtaddr);
 
 	if (hwaddr_aton(txtaddr, addr)) {
 		wpa_printf(MSG_ERROR, "GET_PMK_PLUGIN: Invalid MAC address");
@@ -1936,7 +1943,7 @@ static int hostapd_ctrl_iface_get_ptk_plugin(struct hostapd_data *hapd,
 	size_t tk_len = 0;
 	int ret, len = 0;
 
-	wpa_printf(MSG_DEBUG, "CTRL_IFACE GET_PTK_PLUGIN %s", txtaddr);
+	HIFLOG(MSG_DEBUG, "CTRL_IFACE GET_PTK_PLUGIN %s", txtaddr);
 
 	if (hwaddr_aton(txtaddr, addr)) {
 		wpa_printf(MSG_ERROR, "GET_PTK_PLUGIN: Invalid MAC address");
@@ -2028,7 +2035,7 @@ static int hostapd_ctrl_iface_get_gtk_plugin(struct hostapd_data *hapd,
 		link_id = atoi(pos);
 	}
 
-	wpa_printf(MSG_DEBUG, "CTRL_IFACE GET_GTK_PLUGIN %s", txtaddr);
+	HIFLOG(MSG_DEBUG, "CTRL_IFACE GET_GTK_PLUGIN %s", txtaddr);
 
 
 	/* Initialize the GTK data */
@@ -2074,7 +2081,7 @@ static int hostapd_ctrl_iface_configure_plugin_config(struct hostapd_data *hapd,
 	char *pos;
 	int val;
 
-	wpa_printf(MSG_DEBUG, "CTRL_IFACE CONFIGURE_PLUGIN CONFIG %s", cmd);
+	HIFLOG(MSG_DEBUG, "CTRL_IFACE CONFIGURE_PLUGIN CONFIG %s", cmd);
 
 	/* Initialize the global_configuration structure with default values */
 	os_memset(&global_conf, 0, sizeof(global_conf));
@@ -2192,11 +2199,11 @@ static const char *sta_info_band_str(enum hostapd_if_band band)
 static void dump_radio_info(const char *prefix,
 			    const struct hostapd_if_radio_info *r)
 {
-	wpa_printf(MSG_INFO, "%sfreq=%d MHz  channel=%u  band=%s",
+	HIFLOG(MSG_INFO, "%sfreq=%d MHz  channel=%u  band=%s",
 		   prefix, r->freq, r->channel,
 		   sta_info_band_str(r->band));
-	wpa_printf(MSG_INFO, "%srssi=%d dBm", prefix, r->rssi);
-	wpa_printf(MSG_INFO,
+	HIFLOG(MSG_INFO, "%srssi=%d dBm", prefix, r->rssi);
+	HIFLOG(MSG_INFO,
 		   "%scap_flags=0x%08x [%s%s%s%s%s%s%s%s%s%s]",
 		   prefix, r->cap_flags,
 		   (r->cap_flags & HOSTAPD_IF_STA_CAP_OFDM) ? "OFDM "  : "",
@@ -2228,7 +2235,7 @@ static int hostapd_ctrl_iface_get_sta_info_plugin(struct hostapd_data *hapd,
 	int ret;
 	int i;
 
-	wpa_printf(MSG_INFO, "TEST get_sta_info: ifname=%s sta=%s",
+	HIFLOG(MSG_INFO, "TEST get_sta_info: ifname=%s sta=%s",
 		   hapd->conf->iface, txtaddr);
 
 	if (hwaddr_aton(txtaddr, addr)) {
@@ -2254,7 +2261,7 @@ static int hostapd_ctrl_iface_get_sta_info_plugin(struct hostapd_data *hapd,
 		return ret;
 	}
 
-	wpa_printf(MSG_INFO,
+	HIFLOG(MSG_INFO,
 		   "TEST get_sta_info: result for " MACSTR,
 		   MAC2STR(addr));
 
@@ -2263,10 +2270,10 @@ static int hostapd_ctrl_iface_get_sta_info_plugin(struct hostapd_data *hapd,
 		char hex[HOSTAPD_IF_HT_CAP_MAX_LEN * 2 + 1];
 		wpa_snprintf_hex(hex, sizeof(hex),
 				 info.ht_caps, info.ht_caps_len);
-		wpa_printf(MSG_INFO, "  ht_caps(%u bytes): %s",
+		HIFLOG(MSG_INFO, "  ht_caps(%u bytes): %s",
 			   info.ht_caps_len, hex);
 	} else {
-		wpa_printf(MSG_INFO, "  ht_caps: not present");
+		HIFLOG(MSG_INFO, "  ht_caps: not present");
 	}
 
 	/* ---- VHT capabilities ---- */
@@ -2274,10 +2281,10 @@ static int hostapd_ctrl_iface_get_sta_info_plugin(struct hostapd_data *hapd,
 		char hex[HOSTAPD_IF_VHT_CAP_MAX_LEN * 2 + 1];
 		wpa_snprintf_hex(hex, sizeof(hex),
 				 info.vht_caps, info.vht_caps_len);
-		wpa_printf(MSG_INFO, "  vht_caps(%u bytes): %s",
+		HIFLOG(MSG_INFO, "  vht_caps(%u bytes): %s",
 			   info.vht_caps_len, hex);
 	} else {
-		wpa_printf(MSG_INFO, "  vht_caps: not present");
+		HIFLOG(MSG_INFO, "  vht_caps: not present");
 	}
 
 	/* ---- HE capabilities ---- */
@@ -2285,10 +2292,10 @@ static int hostapd_ctrl_iface_get_sta_info_plugin(struct hostapd_data *hapd,
 		char hex[HOSTAPD_IF_HE_CAP_MAX_LEN * 2 + 1];
 		wpa_snprintf_hex(hex, sizeof(hex),
 				 info.he_caps, info.he_caps_len);
-		wpa_printf(MSG_INFO, "  he_caps(%u bytes): %s",
+		HIFLOG(MSG_INFO, "  he_caps(%u bytes): %s",
 			   info.he_caps_len, hex);
 	} else {
-		wpa_printf(MSG_INFO, "  he_caps: not present");
+		HIFLOG(MSG_INFO, "  he_caps: not present");
 	}
 
 	/* ---- EHT capabilities ---- */
@@ -2296,17 +2303,17 @@ static int hostapd_ctrl_iface_get_sta_info_plugin(struct hostapd_data *hapd,
 		char hex[HOSTAPD_IF_EHT_CAP_MAX_LEN * 2 + 1];
 		wpa_snprintf_hex(hex, sizeof(hex),
 				 info.eht_caps, info.eht_caps_len);
-		wpa_printf(MSG_INFO, "  eht_caps(%u bytes): %s",
+		HIFLOG(MSG_INFO, "  eht_caps(%u bytes): %s",
 			   info.eht_caps_len, hex);
 	} else {
-		wpa_printf(MSG_INFO, "  eht_caps: not present");
+		HIFLOG(MSG_INFO, "  eht_caps: not present");
 	}
 
 	/* ---- Radio / MLD information ---- */
 	if (info.is_mld_sta) {
 		const struct hostapd_if_mld_info *m = &info.u.mld_info;
 
-		wpa_printf(MSG_INFO,
+		HIFLOG(MSG_INFO,
 			   "  MLD station: mld_addr=" MACSTR
 			   "  eml_capa=0x%04x  mld_capa=0x%04x  num_links=%u",
 			   MAC2STR(m->mld_addr),
@@ -2320,7 +2327,7 @@ static int hostapd_ctrl_iface_get_sta_info_plugin(struct hostapd_data *hapd,
 			if (!lnk->valid)
 				continue;
 
-			wpa_printf(MSG_INFO,
+			HIFLOG(MSG_INFO,
 				   "  link[%d]: local=" MACSTR
 				   "  peer=" MACSTR,
 				   i,
@@ -2331,7 +2338,7 @@ static int hostapd_ctrl_iface_get_sta_info_plugin(struct hostapd_data *hapd,
 			dump_radio_info(pfx, &lnk->radio);
 		}
 	} else {
-		wpa_printf(MSG_INFO, "  non-MLD station radio info:");
+		HIFLOG(MSG_INFO, "  non-MLD station radio info:");
 		dump_radio_info("  ", &info.u.non_mld);
 	}
 
@@ -2349,7 +2356,7 @@ int hostapd_ctrl_iface_configure_plugin(struct hostapd_data *hapd,
 	const char *pos = cmd;
 	int reply_len = 0;
 
-	wpa_printf(MSG_DEBUG, "CTRL_IFACE CONFIGURE-PLUGIN %s", cmd);
+	HIFLOG(MSG_DEBUG, "CTRL_IFACE CONFIGURE-PLUGIN %s", cmd);
 
 	/* Skip leading whitespace */
 	while (*pos == ' ')
@@ -2465,7 +2472,7 @@ void hostapd_if_plugin_store_pmk_r1(const char *ifname, const u8 *spa,
 	dl_list_add(&iface->ft_pmk_cache.pmk_r1, &r1->list);
 	wpa_ft_clear_pmk_r1(iface->hapd->wpa_auth, spa, pmk_r1_name);
 
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "plugin: stored PMK-R1 in cache for iface %s (pairwise=%d expires_in=%d)\n",
 		   ifname, pairwise, expires_in);
 
