@@ -219,6 +219,7 @@ acs_print_usage_extn(char *reply, int reply_size)
 		"  acs get_6g_only_psc      : get the state of restricting 6 GHz to PSC channels only\n"
 		"  acs invoke <0|1>         : invoke ACS (0=dynamicACS+CSA)|(1=DynamicACS)\n"
 		"  acs show_report          : print last ACS report\n"
+		"  acs show_reject_report   : print ACS channel rejection report\n"
 		"  acs set_block_chan_list  : set the channels to blocked state\n"
 		"  acs get_block_chan_list  : get the blocked channels\n"
 		"  acs clear_block_chan_list: clear the blocked channels \n"
@@ -303,10 +304,19 @@ static void acs_fill_algo_type(struct hostapd_iface *iface)
 	data_extn->acs_algo = acs_algo;
 }
 
+static const char *acs_rejection_code_str(ICM_SELDBG_REJCODE_T rejection_code)
+{
+	if ((unsigned int) rejection_code >= ICM_SELDBG_REJCODE_INVALID)
+		return "Inv";
+
+	return icm_seldbg_rejcode_shortstr[rejection_code];
+}
+
 static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 				   struct hostapd_iface *iface, int nchans,
 				   struct qacs_data_extn *data_extn,
-				   char *reply, size_t reply_size)
+				   char *reply, size_t reply_size,
+				   bool reject_code_cli)
 {
 	int ret;
 	char *pos = reply;
@@ -314,15 +324,23 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 	unsigned int best_center_freq = 0;
 
 	/* ---- Single header ---- */
-	ret = os_snprintf(pos, end - pos,
-			" Freq(chan)          BSS    NF   Load  Sec   SRP  Grade  Radar    Eff   Power   Rank  MaxRSSI  MinRSSI\n");
+	if (reject_code_cli)
+		ret = os_snprintf(pos, end - pos,
+				  " Freq(chan)          Rejection Code\n");
+	else
+		ret = os_snprintf(pos, end - pos,
+				  " Freq(chan)          BSS    NF   Load  Sec   SRP  Grade  Radar    Eff   Power   Rank  MaxRSSI  MinRSSI\n");
 	if (os_snprintf_error(end - pos, ret)) {
 		return (int)(pos - reply);
 	}
 	pos += ret;
 
-	ret = os_snprintf(pos, end - pos,
-			"----------------------------------------------------------------------------------------------------------\n");
+	if (reject_code_cli)
+		ret = os_snprintf(pos, end - pos,
+				  "--------------------------------------------\n");
+	else
+		ret = os_snprintf(pos, end - pos,
+				  "----------------------------------------------------------------------------------------------------------\n");
 	if (os_snprintf_error(end - pos, ret)) {
 		return (int)(pos - reply);
 	}
@@ -338,6 +356,38 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 
 		const int has_plus  = (r->center_freq1 != 0);
 		const int has_minus = (r->center_freq2 != 0);
+
+		if (reject_code_cli) {
+			if (has_plus) {
+				ret = os_snprintf(pos, end - pos,
+						" %4u(%3u %4u)  %-10s\n",
+						r->chan_freq, r->ieee_chan, r->center_freq1,
+						acs_rejection_code_str(r->rejection_code_1));
+				if (os_snprintf_error(end - pos, ret))
+					return (int)(pos - reply);
+				pos += ret;
+			}
+
+			if (has_minus) {
+				ret = os_snprintf(pos, end - pos,
+						" %4u(%3u %4u)  %-10s\n",
+						r->chan_freq, r->ieee_chan, r->center_freq2,
+						acs_rejection_code_str(r->rejection_code));
+				if (os_snprintf_error(end - pos, ret))
+					return (int)(pos - reply);
+				pos += ret;
+			} else if (!has_plus) {
+				ret = os_snprintf(pos, end - pos,
+						" %4u(%3u)       %-10s\n",
+						r->chan_freq, r->ieee_chan,
+						acs_rejection_code_str(r->rejection_code));
+				if (os_snprintf_error(end - pos, ret))
+					return (int)(pos - reply);
+				pos += ret;
+			}
+
+			continue;
+		}
 
 		if (has_plus || has_minus) {
 
@@ -504,9 +554,9 @@ static int print_acs_report_to_buf(const struct qacs_dbg_info_per_band *report,
 	return (int)(pos - reply);
 }
 
-static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
+static int hostapd_acs_show_report_common_extn(struct hostapd_data *hapd,
 		const char *pos,
-		char *reply, size_t reply_size)
+		char *reply, size_t reply_size, bool reject_code_cli)
 {
 	int len = 0;
 	struct hostapd_iface *iface = hapd->iface;
@@ -536,10 +586,25 @@ static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
 	}
 
 	/* Print the report to the reply buffer */
-	len = print_acs_report_to_buf(acs_report, iface, nchans, data_extn ,reply, reply_size);
+	len = print_acs_report_to_buf(acs_report, iface, nchans, data_extn,
+				     reply, reply_size, reject_code_cli);
 
 	free(acs_report);
 	return len;
+}
+
+static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
+		const char *pos, char *reply, size_t reply_size)
+{
+	return hostapd_acs_show_report_common_extn(hapd, pos, reply, reply_size,
+						 false);
+}
+
+static int hostapd_acs_show_reject_report_extn(struct hostapd_data *hapd,
+		const char *pos, char *reply, size_t reply_size)
+{
+	return hostapd_acs_show_report_common_extn(hapd, pos, reply, reply_size,
+						 true);
 }
 
 static int print_buf_neighbor_report(const struct qacs_neighbor_report *report,
@@ -636,6 +701,13 @@ static int hostapd_acs_show_neighbor_report_extn(struct hostapd_data *hapd,
 static int hostapd_acs_show_report_extn(struct hostapd_data *hapd,
 		const char *pos,
 		char *reply, size_t reply_size)
+{
+	return -1;
+}
+
+static int hostapd_acs_show_reject_report_extn(struct hostapd_data *hapd,
+						     const char *pos,
+						     char *reply, size_t reply_size)
 {
 	return -1;
 }
@@ -1453,6 +1525,9 @@ int hostapd_handle_cli_acs_extn(struct hostapd_data *hapd,
 
 	} else if (os_strncmp(pos, "show_report", 11) == 0) {
 		return hostapd_acs_show_report_extn(hapd, pos, buf, buflen);
+
+	} else if (os_strncmp(pos, "show_reject_report", 18) == 0) {
+		return hostapd_acs_show_reject_report_extn(hapd, pos, buf, buflen);
 
 	} else if (os_strncmp(pos, "set_block_chan_list", 19) == 0) {
 		return hostapd_acs_set_block_chanlist(hapd, pos + 19);
