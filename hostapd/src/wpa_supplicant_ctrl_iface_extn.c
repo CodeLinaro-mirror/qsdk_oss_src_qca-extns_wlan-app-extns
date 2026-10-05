@@ -129,6 +129,13 @@ int wpas_ctrl_iface_set_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 	} else if (os_strcasecmp(cmd, "vht_mcs_10_11_supp") == 0) {
 		wpa_s->conf->conf_extn.vht_mcs_10_11_supp = !!atoi(value);
 		ret = 0;
+	} else if (os_strcasecmp(cmd, "vht_11ng") == 0) {
+		bool old = wpa_s->conf->conf_extn.vht_11ng;
+
+		wpa_s->conf->conf_extn.vht_11ng = !!atoi(value);
+		ret = wpas_vht_11ng_sync_driver_extn(wpa_s);
+		if (ret)
+			wpa_s->conf->conf_extn.vht_11ng = old;
 	} else if (os_strcasecmp(cmd, "he_400ns_sgi_supp") == 0) {
 		wpa_s->conf->conf_extn.he_400ns_sgi_supp = !!atoi(value);
 		ret = 0;
@@ -166,6 +173,9 @@ int wpas_ctrl_iface_get_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 	} else if (os_strcasecmp(cmd, "vht_mcs_10_11_supp") == 0) {
 		ret = os_snprintf(buf, buflen, "vht_mcs_10_11_supp = %u\n",
 				  wpa_s->conf->conf_extn.vht_mcs_10_11_supp);
+	} else if (os_strcasecmp(cmd, "vht_11ng") == 0) {
+		ret = os_snprintf(buf, buflen, "vht_11ng = %u\n",
+				  wpa_s->conf->conf_extn.vht_11ng);
 		if (os_snprintf_error(buflen, ret))
 			return -1;
 	} else if (os_strcasecmp(cmd, "he_400ns_sgi_supp") == 0) {

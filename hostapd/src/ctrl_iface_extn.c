@@ -493,6 +493,48 @@ static int hostapd_ctrl_iface_get_pure11ax_extn(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_vht_11ng_extn(struct hostapd_data *hapd,
+						const char *pos)
+{
+	char *end;
+	long value;
+	bool old_value;
+	int ret;
+
+	if (!hapd || !hapd->conf || !pos)
+		return -1;
+
+	value = strtol(pos, &end, 10);
+	if (pos == end || *end != '\0' || value < 0 || value > 1)
+		return -1;
+
+	old_value = hapd->conf->bss_extn.vht_11ng;
+	hapd->conf->bss_extn.vht_11ng = !!value;
+
+	if (hapd->started && !hapd->disabled) {
+		ret = nl80211_set_vht_11ng_extn(
+			hapd->drv_priv, hostapd_is_vht_11ng_enabled_extn(hapd));
+		if (ret)
+			hapd->conf->bss_extn.vht_11ng = old_value;
+		if (ret)
+			return ret;
+	}
+	if (hapd->started && !hapd->disabled)
+		return ieee802_11_update_beacons(hapd->iface);
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_vht_11ng_extn(struct hostapd_data *hapd,
+						char *buf, size_t buflen)
+{
+	if (!hapd || !hapd->conf || !buf)
+		return -1;
+
+	return os_snprintf(buf, buflen, "vht_11ng=%d\n",
+				   hapd->conf->bss_extn.vht_11ng);
+}
+
 static int hostapd_ctrl_iface_set_esp_extn(struct hostapd_data *hapd, char *cmd)
 {
 	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
@@ -2405,6 +2447,12 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 	} else if (os_strcmp(buf, "GET_PURE11AX") == 0) {
 		reply_len_extn = hostapd_ctrl_iface_get_pure11ax_extn(hapd, reply,
 								      reply_size);
+	} else if (os_strncmp(buf, "SET_VHT_11NG ", 13) == 0) {
+		if (hostapd_ctrl_iface_set_vht_11ng_extn(hapd, buf + 13))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_VHT_11NG") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_vht_11ng_extn(hapd, reply,
+								     reply_size);
 	} else if (os_strncmp(buf, "GET_MAPC_PEER_PARAMS ", 21) == 0) {
 		u8 peer_addr[ETH_ALEN];
 
