@@ -1723,7 +1723,7 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
                    settings.freq_params.bandwidth,
                    settings.freq_params.center_freq1);
 
-	if(iface->cac_started || iface->bootup_cac_in_progress) {
+	if(iface->cac_started) {
 		wpa_printf(MSG_DEBUG, "ACS: CAC in progress and ACS invoked - Aborting CAC");
 		return hostapd_abort_cac_for_channel_switch(iface, &settings);
 	}
@@ -1745,7 +1745,7 @@ hostapd_trigger_channel_switch_extn(struct hostapd_iface *iface,
 #endif
     }
 
-	if (iface->cac_started || iface->bootup_cac_in_progress) {
+	if (iface->cac_started) {
 		return hostapd_abort_cac_for_channel_switch(iface, &settings);
 	}
 

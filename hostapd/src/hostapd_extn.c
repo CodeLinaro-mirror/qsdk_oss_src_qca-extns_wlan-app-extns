@@ -1054,7 +1054,7 @@ void hostapd_country_change_post_cac_abort_extn(struct hostapd_iface *iface)
  */
 static int hostapd_country_change_handle(struct hostapd_iface *iface)
 {
-	bool cac_in_progress = iface->cac_started || iface->bootup_cac_in_progress;
+	bool cac_in_progress = iface->cac_started;
 	int ret;
 	struct hostapd_freq_params freq_params;
 	bool apply_new_config = false;
