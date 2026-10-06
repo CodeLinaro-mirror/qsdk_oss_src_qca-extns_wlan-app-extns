@@ -1454,6 +1454,34 @@ static const char *hostapd_dcs_intf_type_str(u16 type)
 	}
 }
 
+#ifdef CONFIG_IEEE80211BN
+static void dcs_handle_npca_auto(struct hostapd_data *link_hapd,
+				 struct hostapd_iface *iface,
+				 struct dcs_intf_event *dcs_intf_event)
+{
+	struct hostapd_uhr_npca_params new_npca;
+	bool enable = !!dcs_intf_event->chan_bw_interference_bitmap;
+
+	wpa_printf(MSG_ERROR, "NPCA auto: received %s signal from driver",
+		   enable ? "ENABLE" : "DISABLE");
+
+	if (!hostapd_dcs_set_in_progress(iface, DCS_NPCA_AUTO))
+		return;
+
+	if (enable) {
+		wpa_printf(MSG_ERROR,
+			   "NPCA auto: driver indicates ENABLE — triggering ACS/ECU");
+		hostapd_acs_npca_retrigger(iface);
+	} else {
+		wpa_printf(MSG_ERROR,
+			   "NPCA auto: driver indicates DISABLE — triggering ECU to disable NPCA");
+		new_npca = link_hapd->conf->uhr_params_update.npca;
+		new_npca.enable = false;
+		hostapd_trigger_npca_ecu(link_hapd, &new_npca);
+	}
+}
+#endif /* CONFIG_IEEE80211BN */
+
 void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 				 union wpa_event_data *data)
 {
@@ -1546,6 +1574,13 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 			   "DCS: interference event ignored (dcs in progress)");
 		return;
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	if (type == DCS_NPCA_AUTO) {
+		dcs_handle_npca_auto(link_hapd, iface, dcs_intf_event);
+		return;
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	if (type == DCS_OBSS_INTF &&
 	    hostapd_is_bh_sta_connecting_or_connected_extn(iface)) {
