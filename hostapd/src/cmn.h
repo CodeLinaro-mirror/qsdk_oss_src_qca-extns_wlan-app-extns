@@ -433,6 +433,7 @@ struct ieee802_11_elems_extn {
 #ifndef CONFIG_QCN_APP_EXTN
 struct qacs_conf_extn {
 	bool rank_en;	/* Channel ranking enable (1) / disable (0) */
+	bool auto_puncture;	/* Automatic channel puncturing enable (1) / disable (0) */
 	u8 acs_pri_sec20_penalty;	/* PRI_SEC20 usability penalty percentage */
 	bool wradar;	/* Wideband radar handling enable (1) / disable (0) */
 	int rep_txpower_policy;/* Report/tx power policy: accepts only 1 or 2 */
@@ -450,6 +451,7 @@ struct qacs_conf_extn {
 	u16 dbg_module_bitmap;
 	u8 dbg_level;
 	bool acs_2g_scan_all;
+	u8 nf_bond_penalty_pct;
 };
 #endif
 
