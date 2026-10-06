@@ -774,7 +774,7 @@ int hostapd_send_rcsa_extn(struct hostapd_iface *iface,
 	if (hostapd_is_rcsa_inprogress(iface)) {
 		wpa_printf(MSG_DEBUG,
 			   "rcsa: inprogress");
-		return -EINVAL;
+		return 0;
 	}
 
 	nol_ie_len = hostapd_build_nol_ie(iface,

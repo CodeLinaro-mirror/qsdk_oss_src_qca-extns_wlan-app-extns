@@ -1351,9 +1351,6 @@ static int wpa_drv_notify_rcsa(struct wpa_supplicant *wpa_s, int freq,
 	wpabuf_put_u8(buf, 36);
 	wpabuf_put_u8(buf, cs_count);
 
-	if (opt_ie && opt_ie_len > 0)
-		wpabuf_put_data(buf, opt_ie, opt_ie_len);
-
 	/*
 	 * hapd and wpa link ids in a repeater may not map to same
 	 * band. Derive the link_id to be used for tx of rcs in wpa side.
@@ -1375,6 +1372,12 @@ static int wpa_drv_notify_rcsa(struct wpa_supplicant *wpa_s, int freq,
 	}
 
 	if (!wpa_s->sta_dfs_en) {
+		/* mac and cfg moved to new csa freq though wpa is in old freq.
+		 * use pending csa freq for tx.
+		 */
+		if ((link_id >= 0) && (link_id < MAX_NUM_MLD_LINKS) &&
+		    wpa_s->links[link_id].pending_ch_switch_freq)
+			tx_freq = wpa_s->links[link_id].pending_ch_switch_freq;
 		/*
 		 * link bitmap in ml info ie is populated by repeater hostapd.
 		 * This can't be mapped to root hostapd, so replace bitmap with
@@ -1386,6 +1389,10 @@ static int wpa_drv_notify_rcsa(struct wpa_supplicant *wpa_s, int freq,
 	} else {
 		tx_freq = freq;
 	}
+
+	if (opt_ie && opt_ie_len > 0)
+		wpabuf_put_data(buf, opt_ie, opt_ie_len);
+
 	wpa_printf(MSG_DEBUG, "rcsa: sending on %d link freq %u",
 		   link_id, tx_freq);
 	wpa_hexdump_buf(MSG_INFO, "rcsa: Action frame payload", buf);
