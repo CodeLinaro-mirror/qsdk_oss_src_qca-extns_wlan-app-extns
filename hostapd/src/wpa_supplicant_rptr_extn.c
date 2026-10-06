@@ -687,6 +687,22 @@ void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 	l->disabled = mld_params[2] & RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
 	l->freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
 
+	/*
+	 * neigh_bss is matched by BSSID only, with no check against the freq
+	 * RNR just reported for this link. A stale entry from another band
+	 * can leak an invalid width here (e.g. CHAN_WIDTH_80 on 2.4 GHz),
+	 * which later makes hostapd's channel lookup fail silently and drop
+	 * this link's PRE_CONNECT ack, stalling pre_connect_cnt forever.
+	 * Discard it instead of trusting its fields.
+	 */
+	if (neigh_bss && l->freq && neigh_bss->freq != l->freq) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: link_id=%u discarding stale neigh_bss freq=%d "
+			   "(RNR reports freq=%d for this link)",
+			   __func__, link_id, neigh_bss->freq, l->freq);
+		neigh_bss = NULL;
+	}
+
 	if (neigh_bss) {
 		l->center_freq1_idx = neigh_bss->center_freq1_idx;
 		l->center_freq2_idx = neigh_bss->center_freq2_idx;
