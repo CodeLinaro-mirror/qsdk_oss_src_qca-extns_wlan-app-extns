@@ -748,6 +748,15 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 		}
 		bss->bss_extn.wds_ie = val;
 		wpa_printf(MSG_DEBUG, "WDS IE: %s wds_ie=%d", bss->iface, val);
+	} else if (os_strcmp(buf, "cck_rx_5g_supp") == 0) {
+		val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid cck_rx_5g_supp value %d (expected 0 or 1)",
+				   val);
+			return -1;
+		}
+		bss->bss_extn.cck_rx_5g_supp = val;
 	} else if (os_strcmp(buf, "allow_3addr_mc") == 0) {
 		val = atoi(pos);
 		if (val != 0 && val != 1) {
