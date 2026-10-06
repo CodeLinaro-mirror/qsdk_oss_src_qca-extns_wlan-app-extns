@@ -784,8 +784,8 @@ int _wpa_ctrl_command_large(struct wpa_ctrl *ctrl, const char *cmd, int print)
 		printf("Not connected to hostapd - command dropped.\n");
 		return -1;
 	}
-	if (hostapd_cli_recovery_in_progress()) {
-		printf("'%s' command dropped: ath12k recovery in progress.\n", cmd);
+	if (hostapd_cli_accept_cmd()) {
+		printf("'%s' command dropped: ath12k recovery/bypass in progress.\n", cmd);
 		return -1;
 	}
 
