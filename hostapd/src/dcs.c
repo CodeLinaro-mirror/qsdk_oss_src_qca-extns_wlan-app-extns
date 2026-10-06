@@ -453,7 +453,8 @@ static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
 
 	if (v & ~ALLOWED_DCS_MASK) {
 		wpa_printf(MSG_ERROR,
-			   "CTRL: DCS_ENABLE: invalid value 0x%lx (allowed bits: 0(CW IM), 1(WLAN IM), 4(OBSS IM))",
+			   "CTRL: DCS_ENABLE: invalid value 0x%lx "
+			   "(allowed bits: 0(CW IM), 1(WLAN IM), 4(OBSS IM), 5(NPCA auto))",
 			   v);
 		return -1;
 	}
@@ -497,7 +498,9 @@ static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
 		DCS_VALID_TXERR_THR |
 		DCS_VALID_SAMPLE_SIZE |
 		DCS_VALID_COCH_THR |
-		DCS_VALID_USER_MAX_CU;
+		DCS_VALID_USER_MAX_CU |
+		DCS_VALID_NPCA_ON_OBSS_CU |
+		DCS_VALID_NPCA_OFF_OBSS_CU;
 
 	drv_dcs_conf.intr_detection_threshold = conf_extn->dcs_conf.intr_detection_threshold;
 	drv_dcs_conf.phyerr_penalty = conf_extn->dcs_conf.phyerr_penalty;
@@ -507,6 +510,8 @@ static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
 	drv_dcs_conf.sample_size = conf_extn->dcs_conf.sample_size;
 	drv_dcs_conf.coch_intr_threshold = conf_extn->dcs_conf.coch_intr_threshold;
 	drv_dcs_conf.user_max_cu = conf_extn->dcs_conf.user_max_cu;
+	drv_dcs_conf.npca_on_obss_cu = DCS_NPCA_AUTO_ON_OBSS_THRESHOLD;
+	drv_dcs_conf.npca_off_obss_cu = DCS_NPCA_AUTO_OFF_OBSS_THRESHOLD;
 
 	return hostapd_drv_dcs_config(hapd, hapd->mld_link_id, &drv_dcs_conf);
 }

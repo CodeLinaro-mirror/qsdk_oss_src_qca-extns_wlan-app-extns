@@ -224,6 +224,8 @@ struct driver_dcs_config {
 	u32 sample_size;
 	u8 coch_intr_threshold;
 	u8 user_max_cu;
+	u8 npca_on_obss_cu;
+	u8 npca_off_obss_cu;
 };
 
 enum dcs_cmd_type {
@@ -248,6 +250,8 @@ enum dcs_cmd_type {
 #define DCS_VALID_SAMPLE_SIZE       BIT(5)
 #define DCS_VALID_COCH_THR          BIT(6)
 #define DCS_VALID_USER_MAX_CU       BIT(7)
+#define DCS_VALID_NPCA_ON_OBSS_CU   BIT(8)
+#define DCS_VALID_NPCA_OFF_OBSS_CU  BIT(9)
 
 #define BASE_6G_FREQ 5950
 #define FREQ_6GHZ_CHAN2             5935
@@ -808,7 +812,7 @@ enum dynamic_acs_action_extn {
 #define HOSTAPD_DCS_MAX_TRIGGERS 3
 #define HOSTAPD_DCS_AGING_TIME_SEC 300
 
-#define ALLOWED_DCS_EVENT_ACTION_MASK (DCS_CW_INTF | DCS_WLAN_INTF | DCS_OBSS_INTF)
+#define ALLOWED_DCS_EVENT_ACTION_MASK (DCS_CW_INTF | DCS_WLAN_INTF | DCS_OBSS_INTF | DCS_NPCA_AUTO)
 
 #define DCS_ENABLE_TIME         (30 * 60)
 #define DCS_ENABLE_TIME_MIN     (5 * 60)
@@ -914,6 +918,7 @@ enum hostapd_dcs_intf_type {
 	DCS_AWGN_INTF   = 0x0004,
 	DCS_AFC_INTF    = 0x0008,
 	DCS_OBSS_INTF   = 0x0010,
+	DCS_NPCA_AUTO   = 0x0020, /* bit 5 — NPCA auto on/off control */
 };
 
 /**
