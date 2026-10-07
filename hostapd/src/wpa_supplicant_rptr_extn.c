@@ -673,7 +673,11 @@ void wpa_bss_update_link_rnr_ap_info_extn(struct wpa_supplicant *wpa_s,
 					  const u8 *mld_params,
 					  u8 link_id)
 {
+#ifdef RDK_ONEWIFI
+	struct mld_link_wpa *l;
+#else
 	struct mld_link *l;
+#endif /* RDK_ONEWIFI */
 	struct wpa_bss *neigh_bss = NULL;
 
 	if (bss)
@@ -1434,10 +1438,18 @@ void wds_ie_process_assoc_resp_extn(struct wpa_supplicant *wpa_s,
 	if (wpa_s->current_ssid)
 		wpa_s->conf->conf_extn.allow_3addr_mc = wpa_s->current_ssid->allow_3addr_mc;
 
+#ifdef RDK_ONEWIFI
+	/* The driver defaults to disallow. Only program an explicit enable. */
+	if (wpa_s->conf->conf_extn.allow_3addr_mc &&
+	    nl80211_set_allow_3addr_mc_extn(wpa_s->drv_priv, 1))
+		wpa_printf(MSG_DEBUG,
+			   "ALLOW_3ADDR_MC: driver enable command failed");
+#else
 	if (nl80211_set_allow_3addr_mc_extn(wpa_s->drv_priv,
 					    (u8)wpa_s->conf->conf_extn.allow_3addr_mc))
 		wpa_printf(MSG_DEBUG,
 			   "ALLOW_3ADDR_MC: driver command failed");
+#endif /* RDK_ONEWIFI */
 
 	/* Only process if the STA profile has wds_ie enabled */
 	if (!wpa_s->current_ssid || !wpa_s->current_ssid->wds_ie)
