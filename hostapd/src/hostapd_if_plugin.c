@@ -986,8 +986,8 @@ void process_assoc_request(struct invoke_plugin_datablock *datablock,
 	 */
 	resp_ctx->rx_link_id = ctx->rx_link_id;
 	resp_ctx->status_code = ctx->status_code;
-	resp_ctx->data.assoc_resp.is_reassoc =
-		ctx->data.assoc_req.is_reassoc;
+	resp_ctx->data.assoc_resp.is_reassoc = ctx->data.assoc_req.is_reassoc;
+	resp_ctx->data.assoc_resp.rssi = ctx->data.assoc_req.rssi;
 	os_memcpy(resp_ctx->data.assoc_resp.sta_assoc_link_mac,
 			ctx->data.assoc_req.sta_assoc_link_mac,
 			sizeof(resp_ctx->data.assoc_resp.sta_assoc_link_mac));
