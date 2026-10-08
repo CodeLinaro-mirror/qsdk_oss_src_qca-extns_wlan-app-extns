@@ -2985,6 +2985,8 @@ int hostapd_get_6g_chan_list_extn(struct hostapd_iface *iface,
 void hostapd_iface_init_extn(struct hostapd_iface *iface);
 void hostapd_iface_deinit_extn(struct hostapd_iface *iface);
 void hostapd_iface_free_extn(struct hostapd_iface *iface);
+u8 hostapd_get_cbs_enable_extn(struct hostapd_config *conf);
+void hostapd_set_cbs_enable_extn(struct hostapd_config *conf, u8 enable);
 void wpas_iface_init_extn(struct wpa_supplicant *wpa_s);
 void wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s);
 /**
