@@ -1515,6 +1515,25 @@ void hostapd_dcs_intf_event_extn(struct hostapd_data *hapd,
 	cf1 = iface->conf->conf_extn.cur_chan_params.cf1;
 	cf2 = iface->conf->conf_extn.cur_chan_params.cf2;
 	ch_width = iface->conf->conf_extn.cur_chan_params.chan_width;
+#ifdef RDK_ONEWIFI
+        if (!cf1 && freq) {
+                u8 seg0 = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+                u8 seg1 = hostapd_get_oper_centr_freq_seg1_idx(iface->conf);
+                int base_freq;
+
+                if (freq >= 5935)
+                     base_freq = 5950;
+                else if (freq >= 4800)
+                     base_freq = 5000;
+                else
+                     base_freq = 2407;
+                    
+                cf1 = seg0 ? (base_freq + seg0 * 5) : freq;
+                cf2 = seg1 ? (base_freq + seg1 * 5) : 0;
+                ch_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
+        }
+#endif /* RDK_ONEWIFI */
+
 	type = dcs_intf_event->type;
 	intf_type_str = hostapd_dcs_intf_type_str(type);
 	report_freq = dcs_intf_event->freq ? dcs_intf_event->freq : freq;
