@@ -2076,6 +2076,118 @@ fail:
 }
 
 /**
+ * hostapd_drv_set_bootup_cac_feature_extn - Send bootup_cac_feature enable value
+ * config value to the driver for this 5 GHz BSS.
+ *
+ * Sends QCA_NL80211_VENDOR_SUBCMD_SET_WIPHY_CONFIGURATION with:
+ *   QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX        = u8(radio_idx)
+ *   QCA_WLAN_VENDOR_ATTR_CONFIG_BOOTUP_CAC_FEATURE = u8(enable_value)
+ *
+ * radio_idx is resolved from iface->current_hw_info (multi-radio) or
+ * defaults to 0 for single-radio platforms.  Called only for 5 GHz VAPs
+ * after iface->freq and current_hw_info have been set.
+ */
+int hostapd_drv_set_bootup_cac_feature_extn(struct hostapd_data *hapd)
+{
+	struct hostapd_iface *iface;
+	struct i802_bss *bss;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	struct nlattr *params;
+	u8 radio_idx = 0;
+	u8 enable_val;
+	int ret;
+
+	if (!hapd || !hapd->conf || !hapd->iconf || !hapd->drv_priv)
+		return -EINVAL;
+
+	iface = hapd->iface;
+	bss = hapd->drv_priv;
+	if (!bss->drv)
+		return -EINVAL;
+
+	drv = bss->drv;
+	enable_val = hapd->iconf->conf_extn.disable_bootup_cac_feature ? 0 : 1;
+
+	if (iface->num_multi_hws) {
+		if (iface->current_hw_info) {
+			radio_idx = iface->current_hw_info->hw_idx;
+		} else if (iface->freq != 0) {
+			struct hostapd_multi_hw_info *hw_info;
+
+			hw_info = hostapd_get_current_hw_info(iface, iface->freq);
+			if (!hw_info) {
+				wpa_printf(MSG_ERROR,
+					   "disable_bootup_cac_feature: no hw_info for freq=%d",
+					   iface->freq);
+				return -EINVAL;
+			}
+			radio_idx = hw_info->hw_idx;
+		} else if (iface->conf->radio_idx >= 0) {
+			unsigned int i;
+
+			for (i = 0; i < iface->num_multi_hws; i++) {
+				if ((int)iface->multi_hw_info[i].hw_idx ==
+				    iface->conf->radio_idx) {
+					radio_idx = iface->multi_hw_info[i].hw_idx;
+					break;
+				}
+			}
+			if (i == iface->num_multi_hws) {
+				wpa_printf(MSG_ERROR,
+					   "disable_bootup_cac_feature: no hw_info for radio_idx=%d",
+					   iface->conf->radio_idx);
+				return -EINVAL;
+			}
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "disable_bootup_cac_feature: no current_hw_info, freq=0, no radio_idx");
+			return -EINVAL;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "set_bootup_cac_feature: sending enable_val=%u radio_idx=%u iface=%s",
+		   enable_val, radio_idx, hapd->conf->iface);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_SET_WIPHY_CONFIGURATION))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX, radio_idx) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_BOOTUP_CAC_FEATURE,
+		       enable_val))
+		goto fail_nest;
+
+	nla_nest_end(msg, params);
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: bootup_cac_feature failed: %d (%s)",
+			   ret, strerror(-ret));
+	else
+		wpa_printf(MSG_INFO,
+			   "nl80211: bootup_cac_feature(enable)=%u radio_idx=%u set for %s",
+			   enable_val, radio_idx, hapd->conf->iface);
+	return ret;
+
+fail_nest:
+	nla_nest_end(msg, params);
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
+/**
  * nl80211_set_allow_scan_on_dfs_chan_extn - Enable/disable scanning on DFS
  *	channels in the mac80211 kernel layer.
  *

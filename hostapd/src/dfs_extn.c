@@ -2169,29 +2169,26 @@ bool bootup_cac_current_channel_has_nol_extn(struct hostapd_iface *iface)
 }
 
 /**
- * hostapd_bootup_cac_enabled_extn - Check whether driver-managed boot-up CAC is enabled
+ * hostapd_bootup_cac_enabled_extn - Check whether boot-up CAC feature is enabled
  *
- * Returns true when the driver advertises
- * WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC and interface teardown during
- * CAC is not requested through disable_iface_during_cac configuration.
+ * Checks whether the boot-up CAC feature needs to be enabled or not
  *
- * Return: true if driver-managed boot-up CAC is enabled, false otherwise.
+ * Return: true if boot-up CAC feature is enabled, false otherwise.
  */
 bool hostapd_bootup_cac_enabled_extn(struct hostapd_iface *iface)
 {
-	return (iface->drv_flags2 & WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC) &&
-	       !iface->conf->conf_extn.disable_iface_during_cac;
+	return !iface->conf->conf_extn.disable_bootup_cac_feature;
 }
 
 /**
- * hostapd_bootup_cac_start_extn - Start boot-up CAC if the driver and config allow it.
+ * hostapd_bootup_cac_start_extn - Start boot-up CAC if config allow it.
  *
- * When the driver advertises WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC and
- * disable_iface_during_cac is not set, bypass hostapd_handle_dfs so that all
- * 5 GHz BSSes are created immediately while the mac80211 CAC timer runs.
+ * When disable_bootup_cac_feature is not set, bypass hostapd_handle_dfs
+ * so that all 5 GHz BSSes are created immediately while the mac80211 CAC
+ * timer runs.
  *
- * Returns true if the boot-up CAC path was taken (caller skips hostapd_handle_dfs),
- * false if the normal DFS path should proceed.
+ * Returns true if the boot-up CAC feature path was taken (caller skips
+ * hostapd_handle_dfs), false if the normal DFS path should proceed.
  */
 bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 {
