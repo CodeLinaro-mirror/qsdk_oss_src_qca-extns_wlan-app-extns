@@ -788,10 +788,20 @@ bool hostapd_is_bh_sta_link_connected_extn(struct hostapd_iface *iface)
 {
 	if (!iface)
 		return false;
+
+#ifndef UCODE_SUPPORT
+	wpa_printf(MSG_DEBUG,
+		   "No UCODE_SUPPORT, skip_cac=%d",
+		   iface->conf ? iface->conf->conf_extn.skip_cac : 0);
+
+	return iface->conf && iface->conf->conf_extn.skip_cac;
+#else
+
 	wpa_printf(MSG_DEBUG, "sta_wpa_state = %s",
 		   iface->iface_extn.sta_wpa_state);
 
 	return !os_strncmp(iface->iface_extn.sta_wpa_state, "COMPLETED", 9);
+#endif /* !UCODE_SUPPORT */
 }
 
 void hostapd_update_bh_sta_connected_extn(struct hostapd_iface *iface,
