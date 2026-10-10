@@ -47,3 +47,19 @@ void hostapd_iface_free_extn(struct hostapd_iface *iface)
 	data_extn->num_neighbor_entries = 0;
 #endif
 }
+
+u8 hostapd_get_cbs_enable_extn(struct hostapd_config *conf)
+{
+	if (!conf)
+		return 0;
+
+	return conf->conf_extn.cbs_params.cbs_enable;
+}
+
+void hostapd_set_cbs_enable_extn(struct hostapd_config *conf, u8 enable)
+{
+	if (!conf)
+		return;
+
+	conf->conf_extn.cbs_params.cbs_enable = enable;
+}
