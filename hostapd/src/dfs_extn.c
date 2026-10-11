@@ -15,6 +15,7 @@
 #include <ap/beacon.h>
 #include <ap/dfs.h>
 #include <ap/hw_features.h>
+#include <ap/sta_info.h>
 #include "utils/wpa_debug.h"
 #include "ucode_extn.h"
 #include "ubus_extn.h"
@@ -663,6 +664,33 @@ int hostapd_send_uplink_csa_extn(struct hostapd_iface *iface,
 	return 0;
 }
 
+static int hostapd_abort_cac_without_csa(struct hostapd_iface *iface)
+{
+	struct hostapd_data *hapd = NULL;
+	int i;
+
+	if (!iface || !iface->num_bss || !iface->bss)
+		return -1;
+
+	if (iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)
+		return -1;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		if (!iface->bss[i]->driver || !iface->bss[i]->drv_priv)
+			continue;
+
+		hapd = iface->bss[i];
+		break;
+	}
+
+	if (!hapd)
+		return -1;
+
+	wpa_printf(MSG_DEBUG,
+		   "Aborting CAC without scheduling local channel switch");
+	return hostapd_drv_abort_cac(hapd);
+}
+
 /**
  * hostapd_handle_missing_nol_ie - Derive full-band NOL info when IE is absent
  * @iface: hostapd interface context
@@ -856,6 +884,7 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 	const u8 *pos, *end;
 	int freq, sec_chan;
 	int link_id = -1;
+	int ret;
 	u8 cf0, cf1;
 	const u8 *vendor_ie = NULL;
 	dfs_nol_ie_info nol_info;
@@ -1030,6 +1059,22 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 	}
 
 	if (iface->cac_started || iface->bootup_cac_in_progress) {
+		if (hostapd_uplink_csa_bh_enabled(iface)) {
+			wpa_printf(MSG_DEBUG,
+				   "uplink_csa: upstream BH link active during CAC, forwarding upstream");
+			ret = hostapd_send_uplink_csa_extn(iface, new_chan, freq,
+							   sec_chan, ch_width,
+							   cf0, cf1, 0);
+			if (!ret) {
+				ret = hostapd_abort_cac_without_csa(iface);
+				if (!ret)
+					goto out;
+			}
+
+			wpa_printf(MSG_WARNING,
+				   "uplink_csa: failed to forward upstream during CAC");
+		}
+
 		wpa_printf(MSG_DEBUG,
 			   "uplink_csa: CSA on iface:%s for link_id=%d, freq:%d aborting CAC before channel switch",
 			   hapd->conf->iface, link_id, freq);
@@ -1043,6 +1088,7 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 						   cf1, 0);
 	}
 
+out:
 	/* Clear the forwarding entry after the uplink CSA has been sent */
 	iface->iface_extn.nol_info_valid = false;
 }
@@ -1085,9 +1131,10 @@ bool hostapd_uplink_csa_hdl(struct hostapd_data *hapd,
 	 *   2. Call dfs_process_nol_ie_bitmap() to mark affected channels
 	 *      as DFS_UNAVAILABLE in the local channel list.
 	 *   3. Store the decoded NOL entry in iface->iface_extn.nol_info.
-	 *   4. Call hostapd_dfs_request_channel_switch() which invokes
-	 *      hostapd_send_uplink_csa_extn() to forward the frame with
-	 *      the NOL IE to the root AP.
+	 *   4. Forward the frame with the NOL IE to the root AP. When a
+	 *      downstream repeater sends uplink CSA during this repeater's
+	 *      CAC, only the CAC is aborted locally and the root AP remains
+	 *      authoritative for the final channel switch.
 	 */
 	hostapd_handle_action_csa(hapd, buf, len);
 	return true;
