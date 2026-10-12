@@ -326,6 +326,10 @@ struct sta_info_extn {
 	 * bit 2: 2xLTF in 160/80+80 MHz
 	 */
 	u32 he_cap_info_internal;
+	/* CCK TX 5 GHz peer capability from QCN IE attr 0x0F (bit 1).
+	 * Set to 1 when the peer advertised CCK TX support on 5 GHz.
+	 */
+	u8 cck_tx_5g_peer_cap;
 	/*
 	 * wds_ie_active - WDS IE active state flag
 	 *
@@ -413,6 +417,10 @@ struct ieee802_11_elems_extn {
 	u8 he_400ns_sgi_peer_cap;
 	/* HE 2xLTF in 160/80+80 MHz peer support from QCN IE attr 0x04. */
 	u8 he_2xltf_160_80p80_peer_cap;
+	/* CCK TX 5 GHz peer capability from QCN IE attr 0x0F.
+	 * Non-zero when the peer advertised CCK TX support on 5 GHz.
+	 */
+	u8 cck_tx_5g_peer_cap;
 
 	/*
 	 * wds_ie / wds_ie_len - WDS vendor IE from received frames
@@ -748,6 +756,14 @@ struct hostapd_bss_config_extn {
 	 * true = enabled (default when HW supports it), false = disabled.
 	 */
 	bool he_2xltf_160_80p80_supp;
+	/* Enable CCK RX support for 5 GHz via QCN IE advertisement.
+	 * When true the AP includes QCN_ATTRIB_CCK_SUPPORT (0x0F) in its
+	 * Beacon and Probe Response QCN IE to signal that it can receive
+	 * CCK-modulated frames on the 5 GHz band.  Only meaningful on a
+	 * 5 GHz radio; the SET handler rejects the command on other bands.
+	 * Default: false (disabled).
+	 */
+	bool cck_rx_5g_supp;
 	/*
 	 * When set to true, the BSS operates in pure IEEE 802.11n mode.
 	 *
@@ -1087,6 +1103,14 @@ wpas_modify_buflen_for_qcn_ie_extn(struct wpa_supplicant *wpa_s)
 static inline u8 *
 hostapd_eid_qcn_vendor_ie_extn(struct hostapd_data *hapd, u8 *eid,
 				int opmode)
+{
+	return eid;
+}
+
+static inline u8 *
+hostapd_eid_qcn_vendor_ie_assocresp_extn(struct hostapd_data *hapd,
+					 u8 *eid, int opmode,
+					 struct sta_info *sta)
 {
 	return eid;
 }
@@ -2220,6 +2244,10 @@ size_t wpas_modify_buflen_for_qcn_ie_extn(struct wpa_supplicant *wpa_s);
  */
 u8 * hostapd_eid_qcn_vendor_ie_extn(struct hostapd_data *hapd, u8 *eid,
 				    enum ieee80211_op_mode opmode);
+u8 * hostapd_eid_qcn_vendor_ie_assocresp_extn(struct hostapd_data *hapd,
+						  u8 *eid,
+						  enum ieee80211_op_mode opmode,
+						  struct sta_info *sta);
 
 /**
  * wpas_eid_qcn_vendor_ie_extn - Encode the QCN Vendor IE

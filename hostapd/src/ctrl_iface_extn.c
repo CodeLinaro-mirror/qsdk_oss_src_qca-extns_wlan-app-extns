@@ -267,6 +267,41 @@ static int hostapd_ctrl_iface_get_tpe_punct_channel_tx_pwr_extn(struct hostapd_d
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_cck_rx_5g_extn(struct hostapd_data *hapd,
+					      char *pos)
+{
+	char *end;
+	long user_input;
+
+	if (!hapd || !hapd->conf || !hapd->iface || !pos)
+		return -1;
+
+	user_input = strtol(pos, &end, 10);
+	if (pos == end || *end != '\0' || user_input < 0 || user_input > 1) {
+		wpa_printf(MSG_ERROR, "SET_CCK_RX_5G: invalid value '%s' (0 or 1)", pos);
+		return -1;
+	}
+
+	if (!is_5ghz_freq(hapd->iface->freq)) {
+		wpa_printf(MSG_ERROR, "SET_CCK_RX_5G: applicable only on 5 GHz radio");
+		return -1;
+	}
+
+	hapd->conf->bss_extn.cck_rx_5g_supp = (user_input == 1);
+	ieee802_11_update_beacons(hapd->iface);
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_cck_rx_5g_extn(struct hostapd_data *hapd,
+					      char *buf, size_t buflen)
+{
+	if (!hapd || !hapd->conf || !buf)
+		return -1;
+
+	return os_snprintf(buf, buflen, "cck_rx_5g_supp %d\n",
+			   hapd->conf->bss_extn.cck_rx_5g_supp);
+}
+
 static int hostapd_ctrl_iface_set_pureg_extn(struct hostapd_data *hapd, char *pos)
 {
 	char *end;
@@ -2333,6 +2368,12 @@ hostapd_ctrl_iface_receive_process_extn(struct hostapd_data *hapd,
 			hostapd_ctrl_iface_get_tpe_punct_channel_tx_pwr_extn(hapd,
 									     reply,
 									     reply_size);
+	} else if (os_strncmp(buf, "SET_CCK_RX_5G ", 14) == 0) {
+		if (hostapd_ctrl_iface_set_cck_rx_5g_extn(hapd, buf + 14))
+			reply_len_extn = -1;
+	} else if (os_strcmp(buf, "GET_CCK_RX_5G") == 0) {
+		reply_len_extn = hostapd_ctrl_iface_get_cck_rx_5g_extn(hapd, reply,
+								    reply_size);
 	} else if (os_strncmp(buf, "SET_PUREG ", 10) == 0) {
 		if (hostapd_ctrl_iface_set_pureg_extn(hapd, buf + 10))
 			reply_len_extn = -1;
