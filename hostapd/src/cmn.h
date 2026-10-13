@@ -294,6 +294,8 @@ struct  hostapd_sta_add_params_extn {
 	u8 higher_vhtmcs_supp;
 	/* QCA-internal HE capability bitmap negotiated via QCN IE attrs 0x03/0x04. */
 	u32 he_cap_info_internal;
+	/* True when the peer advertised a valid QCN vendor IE. */
+	bool qcn_node;
 };
 
 struct sta_info_extn {
@@ -334,6 +336,8 @@ struct sta_info_extn {
 	 * Set to 1 when the peer advertised CCK TX support on 5 GHz.
 	 */
 	u8 cck_tx_5g_peer_cap;
+	/* True when the peer advertised a valid QCN vendor IE. */
+	bool qcn_node;
 	/*
 	 * wds_ie_active - WDS IE active state flag
 	 *
@@ -406,6 +410,8 @@ struct hostapd_extn_block_chan_list {
 struct ieee802_11_elems_extn {
 	const u8 *eht_240mhz_capab;
 	u8 eht_240mhz_capab_len;
+	/* True when the peer advertised a valid QCN vendor IE. */
+	bool qcn_node;
 
 	/* HE MCS 12/13 (4K-QAM) peer capability from QCN IE */
 	u16 he_mcs_12_13_peer_cap;
@@ -2376,8 +2382,10 @@ void hostapd_drv_set_peer_he_mcs_12_13_cap_extn(struct hostapd_data *hapd,
  * Returns: none
  */
 void hostapd_drv_set_vht_mcs_10_11_supp_extn(struct hostapd_data *hapd,
-					     struct sta_info *sta,
-					     struct ieee802_11_elems_extn *elems_extn);
+						     struct sta_info *sta,
+						     struct ieee802_11_elems_extn *elems_extn);
+void hostapd_set_qcn_node_extn(struct sta_info *sta,
+				       struct ieee802_11_elems_extn *elems_extn);
 
 /**
  * hostapd_drv_set_he_400ns_sig_2xltf_160_supp_extn - Stores HE 400ns SIG and 2x LTF
@@ -2600,7 +2608,8 @@ int nl80211_set_he_mcs_12_13_peer_cap_extn(void *priv, u8 radio_idx, u16 peer_ca
 int nl80211_set_vht_mcs10_11_and_he_cap_internal_extn(void *priv,
 						      const u8 *peer_addr,
 						      u8 vht_mcs10_11,
-						      u32 he_cap_internal);
+						      u32 he_cap_internal,
+						      bool qcn_node);
 int nl80211_set_allow_scan_on_dfs_chan_extn(void *priv, bool enable);
 int wpas_ctrl_iface_set_extn(struct wpa_supplicant *wpa_s, const char *cmd,
 			     const char *value, bool *is_extn_cmd);

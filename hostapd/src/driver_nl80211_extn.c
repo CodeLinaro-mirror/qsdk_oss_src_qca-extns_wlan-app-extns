@@ -1925,7 +1925,8 @@ fail:
 int nl80211_set_vht_mcs10_11_and_he_cap_internal_extn(void *priv,
 						      const u8 *peer_addr,
 						      u8 vht_mcs10_11,
-						      u32 he_cap_internal)
+						      u32 he_cap_internal,
+						      bool qcn_node)
 {
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv;
@@ -1971,6 +1972,9 @@ int nl80211_set_vht_mcs10_11_and_he_cap_internal_extn(void *priv,
 	if (he_cap_internal &&
 	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_HE_CAP_INFO_INTERNAL,
 			he_cap_internal))
+		goto fail_nest;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_QCN_NODE, qcn_node))
 		goto fail_nest;
 
 	nla_nest_end(msg, params);

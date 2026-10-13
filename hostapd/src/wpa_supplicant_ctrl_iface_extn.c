@@ -211,6 +211,7 @@ void wpas_drv_set_peer_vht_mcs10_11_and_he_cap_internal_extn(
 	struct ieee802_11_elems elems;
 	u8 vht_supp = 0;
 	u32 he_cap_internal = 0;
+	bool qcn_node;
 	const u8 *bssid;
 
 	if (!ies || !ies_len || !wpa_s || !wpa_s->conf)
@@ -224,6 +225,8 @@ void wpas_drv_set_peer_vht_mcs10_11_and_he_cap_internal_extn(
 	if (ieee802_11_parse_elems(ies, ies_len, &elems, 0) == ParseFailed)
 		return;
 
+	qcn_node = elems.elems_extn.qcn_node;
+
 	if (wpa_s->conf->conf_extn.vht_mcs_10_11_supp &&
 	    elems.elems_extn.vht_mcs10_11_peer_cap)
 		vht_supp = 1;
@@ -235,16 +238,19 @@ void wpas_drv_set_peer_vht_mcs10_11_and_he_cap_internal_extn(
 	    elems.elems_extn.he_2xltf_160_80p80_peer_cap)
 		he_cap_internal |= BIT(2);
 
-	if (!vht_supp && !he_cap_internal)
-		return;
-
 	bssid = wpa_s->bssid;
 	wpa_printf(MSG_DEBUG,
-		   "QCN: STA assoc VHT MCS10/11 supp=%u he_cap_internal=0x%08x for "
-		   MACSTR, vht_supp, he_cap_internal, MAC2STR(bssid));
+		   "QCN: STA assoc node=%u VHT MCS10/11 supp=%u "
+		   "he_cap_internal=0x%08x for " MACSTR,
+		   qcn_node, vht_supp, he_cap_internal, MAC2STR(bssid));
 
+#define nl80211_set_vht_mcs10_11_and_he_cap_internal_extn( \
+		priv, peer_addr, vht_mcs10_11, he_cap_internal) \
+	nl80211_set_vht_mcs10_11_and_he_cap_internal_extn( \
+		priv, peer_addr, vht_mcs10_11, he_cap_internal, qcn_node)
 	nl80211_set_vht_mcs10_11_and_he_cap_internal_extn(wpa_s->drv_priv,
-							  bssid,
-							  vht_supp,
-							  he_cap_internal);
+								  bssid,
+								  vht_supp,
+								  he_cap_internal);
+#undef nl80211_set_vht_mcs10_11_and_he_cap_internal_extn
 }
