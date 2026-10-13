@@ -151,6 +151,9 @@ int ieee802_11_parse_vendor_specific_elems_extn(struct ieee802_11_elems *elems,
 	int ret = -1;
 	switch (oui_flag) {
 	case OUI_QCN:
+		if (elen < 4 || pos[3] != QCN_OUI_TYPE)
+			return -1;
+		elems->elems_extn.qcn_node = true;
 		ret = ieee802_11_parse_vendor_specific_eht_240mhz_cap_extn(
 				elems, oui_flag, pos, elen);
 		ret = ieee802_11_parse_qcn_he_mcs_12_13_ie(&elems->elems_extn, pos, elen);
@@ -492,7 +495,12 @@ void hostapd_drv_set_vht_mcs_10_11_supp_extn(struct hostapd_data *hapd,
 					     struct sta_info *sta,
 					     struct ieee802_11_elems_extn *elems_extn)
 {
-	if (!sta || !sta->vht_capabilities || !elems_extn)
+	if (!sta || !elems_extn)
+		return;
+
+	sta->sta_extn.qcn_node = elems_extn->qcn_node;
+
+	if (!sta->vht_capabilities)
 		return;
 
 	if (hapd->conf->bss_extn.vht_mcs_10_11_supp &&
@@ -509,6 +517,15 @@ void hostapd_drv_set_vht_mcs_10_11_supp_extn(struct hostapd_data *hapd,
 		       elems_extn->vht_mcs10_11_peer_cap,
 		       hapd->conf->bss_extn.vht_mcs_10_11_nq2q_peer_supp,
 		       sta->sta_extn.higher_vhtmcs_supp);
+}
+
+void hostapd_set_qcn_node_extn(struct sta_info *sta,
+				       struct ieee802_11_elems_extn *elems_extn)
+{
+	if (!sta || !elems_extn)
+		return;
+
+	sta->sta_extn.qcn_node = elems_extn->qcn_node;
 }
 
 /* HE 400ns SGI and 2xLTF 160/80+80 MHz: copy_sta_he_capab() has
@@ -564,13 +581,11 @@ void hostapd_set_sta_vht_mcs10_11_and_he_cap_internal_extn(struct hostapd_data *
 	supp = sta->sta_extn.higher_vhtmcs_supp ? 1 : 0;
 	he_cap_internal = sta->sta_extn.he_cap_info_internal;
 
-	if (!supp && !he_cap_internal)
-		return;
-
 	wpa_printf(MSG_DEBUG,
-		   "VHT MCS10/11: sending vendor cmd for " MACSTR
-		   " supp=%d he_cap_internal=0x%08x",
-		   MAC2STR(sta->addr), supp, he_cap_internal);
+			   "QCN: sending vendor cmd for " MACSTR
+			   " node=%u VHT MCS10/11 supp=%d he_cap_internal=0x%08x",
+			   MAC2STR(sta->addr), sta->sta_extn.qcn_node,
+			   supp, he_cap_internal);
 
 #ifdef RDK_ONEWIFI
 	if (hapd->driver &&
@@ -579,8 +594,9 @@ void hostapd_set_sta_vht_mcs10_11_and_he_cap_internal_extn(struct hostapd_data *
 			hapd->drv_priv, sta->addr, supp, he_cap_internal);
 #else /* RDK_ONEWIFI */
 	nl80211_set_vht_mcs10_11_and_he_cap_internal_extn(hapd->drv_priv,
-							  sta->addr,
-							  supp,
-							  he_cap_internal);
+								  sta->addr,
+								  supp,
+								  he_cap_internal,
+								  sta->sta_extn.qcn_node);
 #endif /* RDK_ONEWIFI */
 }
