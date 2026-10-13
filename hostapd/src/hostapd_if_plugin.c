@@ -1293,10 +1293,10 @@ void *invoke_loop()
 
 	while(test_harness_thread_running) {
 
-		usleep(4000);
 		pthread_mutex_lock(&datablock_deque_mutex);
 		if ((is_empty(datablock_deque))) {
 			pthread_mutex_unlock(&datablock_deque_mutex);
+			usleep(4000);
 			continue;
 		}
 		/*
