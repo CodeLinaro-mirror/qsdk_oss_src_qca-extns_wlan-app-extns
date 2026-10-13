@@ -15,6 +15,7 @@
 #include "ap/ap_drv_ops.h"
 #include "ap/acs.h"
 #include "ap/hw_features.h"
+#include "ap/neighbor_db.h"
 #include "utils/eloop.h"
 #include "cbs.h"
 #include "dcs.h"
@@ -386,6 +387,9 @@ int hostapd_cbs_handle_scan_complete(struct hostapd_data *hapd,
 			   conf_extn->cbs_params.cbs_scan_complete_ts.usec,
 			   cbs_evt->scan_complete_freq, cbs_evt->link_id);
 		hostapd_cbs_find_acs_ideal_chan(link_hapd, iface, conf_extn);
+
+		/* Refresh OCE channel indication bits from CBS BSS results. */
+		hostapd_oce_update_channel_info_all(iface);
 	}
 
 	return 0;
