@@ -308,6 +308,13 @@ int hostapd_cbs_handle_single_channel_survey(struct hostapd_iface *iface,
 					     struct freq_survey *survey)
 {
 	if (iface->conf->conf_extn.cbs_params.cbs_enable) {
+		if (!(chan->flag & HOSTAPD_CHAN_SURVEY_LIST_INITIALIZED)) {
+			wpa_printf(MSG_DEBUG,
+				   "CBS: survey list is not initialized for freq %d "
+				   "(flags=0x%x)", chan->freq, chan->flag);
+			return -1;
+		}
+
 		dl_list_del(&survey->list);
 		dl_list_add_tail(&chan->survey_list, &survey->list);
 		hostapd_update_nf(iface, chan, survey);
