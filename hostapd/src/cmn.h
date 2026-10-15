@@ -3166,6 +3166,7 @@ void dcs_enable_init(struct hostapd_data *hapd, u16 enable_bitmap);
 int hostapd_validate_mbssid_configuration_extn(struct hostapd_data *hapd);
 
 bool hostapd_is_mesh_vap_extn(struct hostapd_bss_config *conf);
+bool hostapd_is_managed_mesh_vap_extn(struct hostapd_bss_config *conf);
 struct hostapd_multi_mbssid_group *
 hostapd_get_mesh_group_extn(struct hostapd_multi_mbssid *multi_mbssid);
 bool hostapd_has_mesh_vap_in_group_extn(struct hostapd_data *hapd,

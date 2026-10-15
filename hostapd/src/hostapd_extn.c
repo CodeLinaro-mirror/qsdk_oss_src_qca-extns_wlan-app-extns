@@ -222,6 +222,11 @@ bool hostapd_is_mesh_vap_extn(struct hostapd_bss_config *conf)
 		conf->bss_extn.vap_submode == QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_RAW_MODE_MESH);
 }
 
+bool hostapd_is_managed_mesh_vap_extn(struct hostapd_bss_config *conf)
+{
+	return conf->bss_extn.vap_submode == QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH;
+}
+
 /* Returns the reserved trailing mesh MBSSID group, if any. The slot is
  * retained (and its is_mesh_group marker stays set) across mesh VAP
  * remove so it can be reused on the next mesh VAP add instead of
