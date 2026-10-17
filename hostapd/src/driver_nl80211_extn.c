@@ -2897,3 +2897,185 @@ fail:
 	nlmsg_free(msg);
 	return -ENOBUFS;
 }
+
+int nl80211_wnm_tfs_ap_enable(void *priv, int enable)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	struct nlattr *params;
+	int ret;
+
+	if (!bss)
+		return -EINVAL;
+
+	drv = bss->drv;
+	if (!drv)
+		return -ENODEV;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_WNM))
+		goto fail;
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto fail;
+
+	/* No PEER attribute — BSS-level enable/disable */
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_WNM_TFS_CAPAB, (u8) enable))
+		goto fail;
+
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_resp(drv, msg, NULL, NULL);
+	if (ret)
+		wpa_printf(MSG_DEBUG,
+			   "WNM: TFS AP %s vendor cmd failed: %d",
+			   enable ? "enable" : "disable", ret);
+	return ret;
+
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
+
+static int nl80211_wnm_tfs_results_handler(struct nl_msg *msg, void *arg)
+{
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct nlattr *vdata[QCA_WLAN_VENDOR_ATTR_WNM_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct nl80211_wnm_tfs_results *res = arg;
+	int len;
+	u16 results_len;
+
+	if (nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		      genlmsg_attrlen(gnlh, 0), NULL)) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to parse netlink attributes");
+		*res->len = 0;
+		return NL_SKIP;
+	}
+
+	if (!tb[NL80211_ATTR_VENDOR_DATA]) {
+		*res->len = 0;
+		return NL_SKIP;
+	}
+
+	if (nla_parse_nested(vdata, QCA_WLAN_VENDOR_ATTR_WNM_MAX,
+			     tb[NL80211_ATTR_VENDOR_DATA], NULL)) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to parse netlink attributes");
+		*res->len = 0;
+		return NL_SKIP;
+	}
+
+	if (!vdata[QCA_WLAN_VENDOR_ATTR_WNM_TFS_RESULTS]) {
+		*res->len = 0;
+		return NL_OK;
+	}
+
+	len = nla_len(vdata[QCA_WLAN_VENDOR_ATTR_WNM_TFS_RESULTS]);
+	if (len < 0 || len > *res->len) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: WNM TFS results too large (%d > %u)",
+			   len, *res->len);
+		*res->len = 0;
+		return NL_SKIP;
+	}
+	results_len = (u16) len;
+
+	os_memcpy(res->buf,
+		  nla_data(vdata[QCA_WLAN_VENDOR_ATTR_WNM_TFS_RESULTS]),
+		  results_len);
+	*res->len = results_len;
+
+	return NL_OK;
+}
+
+
+int nl80211_wnm_oper(void *priv, enum wnm_oper oper,
+		     const u8 *peer, u8 *buf, u16 *buf_len)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv;
+	struct nl_msg *msg;
+	struct nlattr *nl_data;
+	struct nl80211_wnm_tfs_results res;
+	int ret;
+
+	if (!bss || !peer)
+		return -EINVAL;
+
+	drv = bss->drv;
+	if (!drv)
+		return -ENODEV;
+
+	wpa_printf(MSG_DEBUG, "nl80211: WNM oper=%d " MACSTR,
+		   oper, MAC2STR(peer));
+
+	switch (oper) {
+	case WNM_SLEEP_ENTER_CONFIRM:
+	case WNM_SLEEP_ENTER_FAIL:
+	case WNM_SLEEP_EXIT_CONFIRM:
+	case WNM_SLEEP_EXIT_FAIL:
+	case WNM_SLEEP_TFS_REQ_IE_SET:
+	case WNM_SLEEP_TFS_IE_DEL:
+		break;
+	case WNM_SLEEP_TFS_RESP_IE_NONE:
+		/* WNM Sleep EXIT — no TFS IEs in response */
+		if (buf_len)
+			*buf_len = 0;
+		return 0;
+	default:
+		wpa_printf(MSG_DEBUG, "nl80211: Unsupported WNM oper %d", oper);
+		return -EOPNOTSUPP;
+	}
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_WNM))
+		goto fail;
+
+	nl_data = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!nl_data)
+		goto fail;
+
+	if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_WNM_OPER, oper) ||
+	    nla_put(msg, QCA_WLAN_VENDOR_ATTR_WNM_PEER, ETH_ALEN, peer))
+		goto fail;
+
+	if (oper == WNM_SLEEP_TFS_REQ_IE_SET &&
+	    buf && buf_len && *buf_len) {
+		if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_WNM_IE, *buf_len, buf))
+			goto fail;
+	}
+
+	nla_nest_end(msg, nl_data);
+
+	if (oper == WNM_SLEEP_TFS_REQ_IE_SET && buf && buf_len) {
+		/* REQ_IE_SET returns per-rule results; hostapd builds TFS Response IEs */
+		res.buf = buf;
+		res.len = buf_len;
+
+		ret = send_and_recv_resp(drv, msg,
+					 nl80211_wnm_tfs_results_handler, &res);
+	} else {
+		ret = send_and_recv_cmd(drv, msg);
+	}
+	if (ret)
+		wpa_printf(MSG_DEBUG, "nl80211: WNM oper=%d failed: %d",
+			   oper, ret);
+	return ret;
+
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}

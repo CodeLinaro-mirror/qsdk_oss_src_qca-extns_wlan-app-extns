@@ -3479,5 +3479,13 @@ int nl80211_wnm_tim_bcast_set(void *priv, const u8 *peer,
 
 int nl80211_wnm_tim_bcast_ap_enable(void *priv, int enable);
 
+int nl80211_wnm_tfs_ap_enable(void *priv, int enable);
+
+/* Binary [tfs_id][status] pairs from WNM_SLEEP_TFS_REQ_IE_SET reply. */
+struct nl80211_wnm_tfs_results {
+	u8 *buf;
+	u16 *len;
+};
+
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CMN_H */
