@@ -478,8 +478,21 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 	if (csa->freq_params.skip_cac)
 		iface->mcst = csa->freq_params.mcst;
 
+	wpa_printf(MSG_INFO,
+		   "CSA: phy=%s is_dfs=%d pre_connect=%d skip_cac=%d mcst=%u TU "
+		   "cs_time=%u ms freq=%d channel=%d cf1=%d cf2=%d link_id=%d",
+		   iface->phy, is_dfs, pre_connect, csa->freq_params.skip_cac,
+		   csa->freq_params.mcst, iface->cs_time, csa->freq_params.freq,
+		   csa->freq_params.channel, csa->freq_params.center_freq1,
+		   csa->freq_params.center_freq2, csa->link_id);
+
 	if (is_dfs && IS_CSH_IGNORE_CSA_DFS_ENABLED(conf->conf_extn.cswopts) &&
 	    !pre_connect) {
+		wpa_printf(MSG_INFO,
+			   "CSwOpts %s: uplink CSA target freq=%d is DFS;"
+			   " selecting local non-DFS channel for repeater AP vap",
+			   convert_cswopts_to_str(CSH_OPT_IGNORE_CSA_DFS),
+			   csa->freq_params.freq);
 #ifdef CONFIG_HOSTAPD_SRC_DIR
 		for (i = 0; i < iface->num_bss; i++) {
 			ret = hostapd_dfs_start_channel_switch(iface);
@@ -498,6 +511,11 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 		return ret;
 	}
 
+	wpa_printf(MSG_INFO,
+		   "CSA: cac_started=%d bootup_cac=%d is_dfs=%d skip_cac=%d",
+		   iface->cac_started, iface->bootup_cac_in_progress, is_dfs,
+		   csa->freq_params.skip_cac);
+
 	/* If channel params differ, perform CSA and track per-BSS completion */
 	if (!uc_hostapd_compare_channel_params_extn(conf, csa->freq_params, iface->freq) ||
 	     iface->conf->conf_extn.rpt_max_phy) {
@@ -509,6 +527,12 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 		}
 
 		for (i = 0; i < iface->num_bss; i++) {
+			wpa_printf(MSG_DEBUG,
+				   "CSA: switch_channel bss[%d]=%s mld_link_id=%d beacon_set_done=%d",
+				   i, iface->bss[i]->conf->iface,
+				   iface->bss[i]->mld_link_id,
+				   iface->bss[i]->beacon_set_done);
+
 			/*
 			 * NL80211_CMD_CHANNEL_SWITCH returns -ENOTCONN on a
 			 * non-beaconing BSS (see the identical WAR in
