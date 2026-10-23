@@ -27,6 +27,44 @@
 
 #define DEF_OBSS_INTERVAL		300
 
+int hostapd_ctrl_iface_validate_repeater_pwr_mode_extn(
+	struct hostapd_iface *iface, int power_mode)
+{
+	bool repeater, dependent_repeater, independent_repeater;
+	bool retail_repeater;
+
+	if (!iface || !iface->conf)
+		return 0;
+
+	repeater = iface->conf->conf_extn.repeater;
+	dependent_repeater =
+		repeater && iface->conf->conf_extn.ind_rptr == 0;
+	independent_repeater =
+		repeater && iface->conf->conf_extn.ind_rptr != 0;
+	retail_repeater =
+		repeater && iface->bss && iface->bss[0] &&
+		hostapd_drv_is_retail_afc_supported(iface->bss[0]);
+
+	if (retail_repeater &&
+	    (dependent_repeater ||
+	     (independent_repeater &&
+	      hostapd_iface_has_connected_backhaul_sta(iface)))) {
+		wpa_printf(MSG_ERROR,
+			   "SET_6GHZ_PWR_MODE is not allowed for retail AFC repeater iface=%s",
+			   iface->phy);
+		return -1;
+	}
+
+	if (repeater && power_mode != HE_REG_INFO_6GHZ_AP_TYPE_SP) {
+		wpa_printf(MSG_ERROR,
+			   "Only Standard Power mode is allowed for repeater iface=%s",
+			   iface->phy);
+		return -1;
+	}
+
+	return 0;
+}
+
 /**
  * hostapd_ctrl_get_hw_info_extn - Return current hardware info
  * @hapd: Pointer to the hostapd instance
