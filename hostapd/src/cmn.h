@@ -1426,6 +1426,13 @@ hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *value)
 }
 
 static inline int
+hostapd_ctrl_iface_validate_repeater_pwr_mode_extn(
+	struct hostapd_iface *iface, int power_mode)
+{
+	return 0;
+}
+
+static inline int
 hostapd_ctrl_iface_status_extn(struct hostapd_data *hapd, char *buf,
 			       size_t buflen, size_t curr_len)
 {
@@ -2579,6 +2586,20 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 				  u32 subcmd, u8 *data, size_t len);
 int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *value);
+
+/**
+ * hostapd_ctrl_iface_validate_repeater_pwr_mode_extn - Validate repeater power mode
+ * @iface: Hostapd interface receiving the request
+ * @power_mode: Requested 6 GHz power mode
+ *
+ * Reject all requests from retail dependent repeaters and retail independent
+ * repeaters with a connected backhaul STA. Restrict every other repeater to
+ * Standard Power mode.
+ *
+ * Return: 0 if core validation may continue, or -1 if the request is rejected
+ */
+int hostapd_ctrl_iface_validate_repeater_pwr_mode_extn(
+	struct hostapd_iface *iface, int power_mode);
 int hostapd_wpa_event_extn(void *ctx, enum wpa_event_type event,
 			   union wpa_event_data *data);
 int wpa_supplicant_event_extn(struct wpa_supplicant *wpa_s,
