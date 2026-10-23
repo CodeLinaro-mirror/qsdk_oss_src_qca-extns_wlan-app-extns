@@ -1408,6 +1408,16 @@ int wpa_driver_nl80211_dcs_config_extn(void *priv, u8 link_id,
 			if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_DCS_MAX_CU,
 			    params->user_max_cu))
 				goto error;
+		if (params->valid_mask & DCS_VALID_NPCA_ON_OBSS_CU)
+			if (nla_put_u8(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_NPCA_ON_OBSS_CU,
+			    params->npca_on_obss_cu))
+				goto error;
+		if (params->valid_mask & DCS_VALID_NPCA_OFF_OBSS_CU)
+			if (nla_put_u8(msg,
+			    QCA_WLAN_VENDOR_ATTR_DCS_NPCA_OFF_OBSS_CU,
+			    params->npca_off_obss_cu))
+				goto error;
 	}
 	nla_nest_end(msg, attr);
 

@@ -10,7 +10,7 @@
 #define BASE_5G_FREQ 5000
 #define BASE_49G_FREQ 4000
 
-#define ALLOWED_DCS_MASK 0x0013
+#define ALLOWED_DCS_MASK  0x0033  /* bits 0(CW), 1(WLAN), 4(OBSS), 5(NPCA auto) */
 
 enum hostapd_dcs_chan_seg {
        DCS_SEG_PRI20       = 0x0001,
@@ -42,6 +42,9 @@ enum hostapd_dcs_chan_seg {
 #define DCS_USER_MAX_CU		50
 #define DCS_INTR_DETECTION_THR		6
 #define DCS_SAMPLE_SIZE		50
+
+#define DCS_NPCA_AUTO_ON_OBSS_THRESHOLD 50
+#define DCS_NPCA_AUTO_OFF_OBSS_THRESHOLD 20
 
 int hostapd_drv_dcs_config(struct hostapd_data *hapd, u8 link_id,
 			   struct driver_dcs_config *params);
