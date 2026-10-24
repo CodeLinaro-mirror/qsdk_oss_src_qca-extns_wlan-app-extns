@@ -181,6 +181,7 @@ int ieee802_11_parse_vendor_specific_elems_extn(struct ieee802_11_elems *elems,
 	}
 }
 
+#ifdef QCN_IE
 static size_t hostapd_qcn_buflen_add_he_mcs_12_13_attr(struct hostapd_data *hapd)
 {
 	if (!hapd->iconf->conf_extn.he_mcs_12_13_enabled ||
@@ -474,6 +475,7 @@ u8 * hostapd_eid_qcn_vendor_ie_assocresp_extn(struct hostapd_data *hapd,
 	qcn_ie_end(len_ptr, pos);
 	return pos;
 }
+#endif /* QCN_IE */
 
 void hostapd_drv_set_peer_he_mcs_12_13_cap_extn(struct hostapd_data *hapd,
 						struct ieee802_11_elems_extn *elems_extn)

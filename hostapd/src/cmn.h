@@ -2288,6 +2288,56 @@ hostapd_modify_supported_op_class_for_240mhz_extn(int freq,
 
 int hostapd_is_usable_chan(struct hostapd_iface *iface, int frequency, int primary);
 
+#ifndef QCN_IE
+static inline size_t
+hostapd_modify_buflen_for_qcn_ie_extn(struct hostapd_data *hapd)
+{
+	return 0;
+}
+
+static inline size_t
+wpas_modify_buflen_for_qcn_ie_extn(struct wpa_supplicant *wpa_s)
+{
+	return 0;
+}
+
+static inline u8 *
+hostapd_eid_qcn_vendor_ie_extn(struct hostapd_data *hapd, u8 *eid,
+				       int opmode)
+{
+	return eid;
+}
+
+static inline u8 *
+hostapd_eid_qcn_vendor_ie_assocresp_extn(struct hostapd_data *hapd,
+						 u8 *eid,
+						 int opmode,
+						 struct sta_info *sta)
+{
+	return eid;
+}
+
+static inline u8 *
+wpas_eid_qcn_vendor_ie_extn(struct wpa_supplicant *wpa_s, u8 *eid)
+{
+	return eid;
+}
+
+#ifdef CONFIG_SME
+static inline void
+wpas_add_qcn_ie_probe_req_extn(struct wpa_supplicant *wpa_s,
+				       struct wpabuf **extra_ie)
+{
+	return;
+}
+
+static inline void
+wpas_add_qcn_ie_assoc_req_extn(struct wpa_supplicant *wpa_s)
+{
+	return;
+}
+#endif /* CONFIG_SME */
+#else
 /**
  * hostapd_modify_buflen_for_qcn_ie_extn - Compute QCN Vendor IE byte count
  * @hapd: per-BSS hostapd context
@@ -2356,6 +2406,7 @@ void wpas_add_qcn_ie_probe_req_extn(struct wpa_supplicant *wpa_s,
  */
 void wpas_add_qcn_ie_assoc_req_extn(struct wpa_supplicant *wpa_s);
 #endif /* CONFIG_SME */
+#endif /* QCN_IE */
 
 int nl80211_set_vht_11ng_extn(void *priv, bool enable);
 

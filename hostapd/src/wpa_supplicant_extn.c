@@ -1191,6 +1191,7 @@ bool wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
 						bw, pwr_mode, bss->punc_bitmap);
 }
 
+#ifdef QCN_IE
 static size_t wpas_qcn_buflen_add_vht_mcs10_11_attr(struct wpa_supplicant *wpa_s)
 {
 	if (!wpa_s || !wpa_s->conf || !wpa_s->conf->conf_extn.vht_mcs_10_11_supp ||
@@ -1321,6 +1322,7 @@ void wpas_add_qcn_ie_assoc_req_extn(struct wpa_supplicant *wpa_s)
 	wpa_s->sme.assoc_req_ie_len += eid_end - eid;
 }
 #endif /* CONFIG_SME */
+#endif /* QCN_IE */
 
 static u32 get_mcst_from_bss_extn(struct wpa_bss *bss, int link_id)
 {
