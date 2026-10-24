@@ -180,6 +180,76 @@ uc_hostapd_compare_channel_params_extn(struct hostapd_config *conf,
 	}
 }
 
+static int
+uc_hostapd_prepare_6ghz_csa_power_mode(struct hostapd_iface *iface,
+					struct csa_settings *csa)
+{
+	u8 best_power_mode;
+	int requested_power_mode;
+	bool valid;
+
+	if (!iface || !iface->conf || !csa ||
+	    !is_6ghz_freq(csa->freq_params.freq))
+		return 0;
+
+	requested_power_mode = csa->power_mode;
+	if (requested_power_mode < 0)
+		requested_power_mode = iface->conf->he_6ghz_reg_pwr_type;
+
+	valid = requested_power_mode >= 0 &&
+		requested_power_mode < NL80211_REG_NUM_POWER_MODES &&
+		hostapd_validate_chan_bw_in_pwr_mode(iface,
+						     csa->freq_params.freq,
+						     csa->freq_params.center_freq1,
+						     csa->freq_params.bandwidth,
+						     csa->freq_params.punct_bitmap,
+						     requested_power_mode);
+
+	wpa_printf(MSG_INFO,
+		   "CSA-TRACE power_prepare freq=%d bw=%d cf1=%d "
+		   "requested_mode=%d target_pp=0x%x "
+		   "valid=%d bpm=%d",
+		   csa->freq_params.freq, csa->freq_params.bandwidth,
+		   csa->freq_params.center_freq1, requested_power_mode,
+		   (unsigned int)csa->freq_params.punct_bitmap, valid,
+		   iface->conf->enable_best_power_mode);
+
+	if (valid) {
+		csa->power_mode = requested_power_mode;
+		return 0;
+	}
+
+	best_power_mode = hostapd_get_best_ap_6ghz_power_mode(
+		iface, csa->freq_params.freq, csa->freq_params.center_freq1,
+		csa->freq_params.bandwidth, csa->freq_params.punct_bitmap);
+	if (best_power_mode >= NL80211_REG_NUM_POWER_MODES) {
+		wpa_printf(MSG_INFO,
+			   "CSA-TRACE power_fallback_failed freq=%d bw=%d "
+			   "cf1=%d pp=0x%x requested_mode=%d",
+			   csa->freq_params.freq, csa->freq_params.bandwidth,
+			   csa->freq_params.center_freq1,
+			   (unsigned int)csa->freq_params.punct_bitmap,
+			   requested_power_mode);
+		return -EOPNOTSUPP;
+	}
+
+	valid = hostapd_validate_chan_bw_in_pwr_mode(
+		iface, csa->freq_params.freq, csa->freq_params.center_freq1,
+		csa->freq_params.bandwidth, csa->freq_params.punct_bitmap,
+		best_power_mode);
+	wpa_printf(MSG_INFO,
+		   "CSA-TRACE power_fallback freq=%d bw=%d cf1=%d "
+		   "fallback_mode=%u pp=0x%x valid=%d",
+		   csa->freq_params.freq, csa->freq_params.bandwidth,
+		   csa->freq_params.center_freq1, best_power_mode,
+		   (unsigned int)csa->freq_params.punct_bitmap, valid);
+	if (!valid)
+		return -EOPNOTSUPP;
+
+	csa->power_mode = best_power_mode;
+	return 0;
+}
+
 enum chan_width
 hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
 				       int sec_channel_offset)
@@ -341,6 +411,22 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 
 	pre_connect = (wpa_state && os_strcmp(wpa_state, "PRE_CONNECT") == 0);
 
+	if (uc_hostapd_prepare_6ghz_csa_power_mode(iface, csa)) {
+		wpa_printf(MSG_INFO,
+			   "CSA-TRACE rejected_before_ap_switch freq=%d bw=%d "
+			   "cf1=%d pp=0x%x",
+			   csa->freq_params.freq, csa->freq_params.bandwidth,
+			   csa->freq_params.center_freq1,
+			   (unsigned int)csa->freq_params.punct_bitmap);
+#ifdef CONFIG_HOSTAPD_SRC_DIR
+		if (pre_connect)
+			hostapd_ucode_chsw_result_ev_notify(iface->bss[0],
+							    csa->freq_params.freq,
+							    -EOPNOTSUPP);
+#endif
+		return -EOPNOTSUPP;
+	}
+
 #ifdef CONFIG_HOSTAPD_SRC_DIR
 	/* Apply skip_cac only in PRE_CONNECT when conf->skip_cac is enabled */
 	if (conf->conf_extn.skip_cac && pre_connect)
@@ -392,21 +478,8 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 	if (csa->freq_params.skip_cac)
 		iface->mcst = csa->freq_params.mcst;
 
-	wpa_printf(MSG_INFO,
-		   "CSA: phy=%s is_dfs=%d pre_connect=%d skip_cac=%d mcst=%u TU "
-		   "cs_time=%u ms freq=%d channel=%d cf1=%d cf2=%d link_id=%d",
-		   iface->phy, is_dfs, pre_connect, csa->freq_params.skip_cac,
-		   csa->freq_params.mcst, iface->cs_time, csa->freq_params.freq,
-		   csa->freq_params.channel, csa->freq_params.center_freq1,
-		   csa->freq_params.center_freq2, csa->link_id);
-
 	if (is_dfs && IS_CSH_IGNORE_CSA_DFS_ENABLED(conf->conf_extn.cswopts) &&
 	    !pre_connect) {
-		wpa_printf(MSG_INFO,
-			   "CSwOpts %s: uplink CSA target freq=%d is DFS;"
-			   " selecting local non-DFS channel for repeater AP vap",
-			   convert_cswopts_to_str(CSH_OPT_IGNORE_CSA_DFS),
-			   csa->freq_params.freq);
 #ifdef CONFIG_HOSTAPD_SRC_DIR
 		for (i = 0; i < iface->num_bss; i++) {
 			ret = hostapd_dfs_start_channel_switch(iface);
@@ -425,11 +498,6 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 		return ret;
 	}
 
-	wpa_printf(MSG_INFO,
-		   "CSA: cac_started=%d bootup_cac=%d is_dfs=%d skip_cac=%d",
-		   iface->cac_started, iface->bootup_cac_in_progress, is_dfs,
-		   csa->freq_params.skip_cac);
-
 	/* If channel params differ, perform CSA and track per-BSS completion */
 	if (!uc_hostapd_compare_channel_params_extn(conf, csa->freq_params, iface->freq) ||
 	     iface->conf->conf_extn.rpt_max_phy) {
@@ -441,12 +509,6 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 		}
 
 		for (i = 0; i < iface->num_bss; i++) {
-			wpa_printf(MSG_DEBUG,
-				   "CSA: switch_channel bss[%d]=%s mld_link_id=%d beacon_set_done=%d",
-				   i, iface->bss[i]->conf->iface,
-				   iface->bss[i]->mld_link_id,
-				   iface->bss[i]->beacon_set_done);
-
 			/*
 			 * NL80211_CMD_CHANNEL_SWITCH returns -ENOTCONN on a
 			 * non-beaconing BSS (see the identical WAR in
@@ -458,10 +520,14 @@ int uc_hostapd_iface_switch_channel_extn(struct hostapd_iface *iface,
 			 * reconnecting bSTA actually depends on.
 			 */
 			if (!iface->bss[i]->beacon_set_done) {
-				wpa_printf(MSG_DEBUG,
-					   "CSA skip bss[%d]=%s mld_link_id=%d: not beaconing",
+				wpa_printf(MSG_INFO,
+					   "CSA-TRACE bss_skip reason=beacon_not_set bss[%d]=%s "
+					   "mld_link_id=%d started=%d disabled=%d "
+					   "beacon_set_done=%d",
 					   i, iface->bss[i]->conf->iface,
-					   iface->bss[i]->mld_link_id);
+					   iface->bss[i]->mld_link_id,
+					   iface->bss[i]->started, iface->bss[i]->disabled,
+					   iface->bss[i]->beacon_set_done);
 				continue;
 			}
 
