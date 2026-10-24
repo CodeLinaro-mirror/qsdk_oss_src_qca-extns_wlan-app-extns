@@ -81,9 +81,11 @@ u8 *qcn_eid_add_he_2xltf_160_attr(bool is_enabled, u8 *pos);
 
 u8 *qcn_eid_add_cck_rx_5g_attr(struct hostapd_data *hapd,
 				struct sta_info *sta, u8 *pos);
+#ifdef QCN_IE
 u8 * hostapd_eid_qcn_vendor_ie_assocresp_extn(struct hostapd_data *hapd,
 						  u8 *eid,
 						  enum ieee80211_op_mode opmode,
 						  struct sta_info *sta);
+#endif /* QCN_IE */
 
 #endif /* QCN_IE_EXTN_H */
