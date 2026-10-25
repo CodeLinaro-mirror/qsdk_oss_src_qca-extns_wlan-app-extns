@@ -419,6 +419,7 @@ static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
 	struct hostapd_config_extn *conf_extn = &hapd->iconf->conf_extn;
 	struct hostapd_iface_extn *iface_extn = &hapd->iface->iface_extn;
 	struct driver_dcs_config drv_dcs_conf;
+	struct uhr_npca_info *npca_info;
 	char *end;
 	unsigned long v;
 	u16 cur_enable;
@@ -457,6 +458,21 @@ static int hostapd_ctrl_iface_dcs_config(struct hostapd_data *hapd,
 			   "(allowed bits: 0(CW IM), 1(WLAN IM), 4(OBSS IM), 5(NPCA auto))",
 			   v);
 		return -1;
+	}
+
+	if (v & DCS_NPCA_AUTO) {
+		struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+
+		npca_info = mode ?
+			&mode->npca_info[IEEE80211_MODE_AP] : NULL;
+		if (!hostapd_is_uhr_enabled(hapd) ||
+				!npca_info ||
+				!npca_info->npca_supported) {
+			wpa_printf(MSG_ERROR,
+					"CTRL: DCS_ENABLE: NPCA auto is unsupported "
+					"(UHR disabled or NPCA unsupported)");
+			return -1;
+		}
 	}
 
 	cur_enable = conf_extn->dcs_conf.enable_bitmap;
