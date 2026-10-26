@@ -832,6 +832,8 @@ int hostapd_dfs_prepare_channel_switch_settings(struct hostapd_iface *iface,
 		return err;
 	}
 
+	hostapd_get_channel_switch_time(iface, &settings->freq_params);
+
 	return 0;
 }
 
