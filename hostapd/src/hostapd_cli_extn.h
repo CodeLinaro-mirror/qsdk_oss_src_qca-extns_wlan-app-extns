@@ -89,6 +89,8 @@ int hostapd_cli_cmd_set_pure11ac(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_pure11ac(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_set_pure11ax(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int hostapd_cli_cmd_get_pure11ax(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_set_vht_11ng(struct wpa_ctrl *ctrl, int argc, char *argv[]);
+int hostapd_cli_cmd_get_vht_11ng(struct wpa_ctrl *ctrl, int argc, char *argv[]);
 int _wpa_ctrl_command_large(struct wpa_ctrl *ctrl, const char *cmd, int print);
 
 #define HOSTAPD_CLI_CMDS_EXTN \
@@ -256,6 +258,10 @@ int _wpa_ctrl_command_large(struct wpa_ctrl *ctrl, const char *cmd, int print);
 		"<value 0|1> :Enable/disable pure11ax mode" }, \
 	{ "get_pure11ax", hostapd_cli_cmd_get_pure11ax, NULL, \
 		"Get pure11ax mode config" }, \
+	{ "set_vht_11ng", hostapd_cli_cmd_set_vht_11ng, NULL, \
+		"<0|1> = enable/disable standard VHT on 2.4 GHz 11ng" }, \
+	{ "get_vht_11ng", hostapd_cli_cmd_get_vht_11ng, NULL, \
+		"= get standard VHT on 2.4 GHz 11ng state" }, \
 	{ "get_mapc_peer_params", hostapd_cli_cmd_get_mapc_peer_params_extn, NULL, \
 		"<bssid> = retrieve cached MAPC params for the named peer" }, \
 

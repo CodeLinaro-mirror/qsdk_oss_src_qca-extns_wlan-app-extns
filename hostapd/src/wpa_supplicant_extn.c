@@ -816,6 +816,15 @@ void wpas_iface_init_extn(struct wpa_supplicant *wpa_s)
 	wpa_s->wpas_extn.check_hw_blocklist = true;
 }
 
+int wpas_vht_11ng_sync_driver_extn(struct wpa_supplicant *wpa_s)
+{
+	if (!wpa_s || !wpa_s->conf || !wpa_s->drv_priv)
+		return -EINVAL;
+
+	return nl80211_set_vht_11ng_extn(wpa_s->drv_priv,
+					 wpa_s->conf->conf_extn.vht_11ng);
+}
+
 /*
  * wpas_country_change_init_active_alpha2_extn - Prime active_alpha2 from
  * the driver's current regulatory domain.

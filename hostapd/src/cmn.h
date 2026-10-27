@@ -839,6 +839,14 @@ struct hostapd_bss_config_extn {
 	 */
 	int wds_ie;
 	int allow_3addr_mc;
+	/*
+	 * vht_11ng - VHT on 11ng AP
+	 *
+	 * When set to true, BSS advertises VHT capability and VHT operation IEs
+	 * in Beacon, Probe response and Assoc Response frames. If capable STA can
+	 * joins the BSS then 256QAM modulation scheme can be used for data transfer.
+	 */
+	bool vht_11ng;
 };
 
 struct esp_extn {
@@ -999,6 +1007,7 @@ struct wpa_supplicant_extn {
  * @he_400ns_sgi_supp: Enable 400ns SGI in HE mode using QCN IE
  * @he_2xltf_160_80p80_supp: Enable 2x LTF in HE mode using QCN IE for
  *                           160/80+80 BW
+ * @vht_11ng: Enable 11ng 256QAM support in STA mode
  */
 struct wpa_config_extn {
 	bool he_mcs_12_13_enabled;
@@ -1006,6 +1015,7 @@ struct wpa_config_extn {
 	bool vht_mcs_10_11_supp;
 	bool he_400ns_sgi_supp;
 	bool he_2xltf_160_80p80_supp;
+	bool vht_11ng;
 };
 
 int get_centre_freq_6g(int chan_idx, int chan_width, int *centre_freq);
@@ -1882,6 +1892,12 @@ wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s)
 }
 
 static inline int
+wpas_vht_11ng_sync_driver_extn(struct wpa_supplicant *wpa_s)
+{
+	return 0;
+}
+
+static inline int
 intf_chan_range_available_5g(struct hostapd_hw_modes *mode,
 			     int first_chan_idx, int num_chans)
 {
@@ -2324,6 +2340,8 @@ void wpas_add_qcn_ie_probe_req_extn(struct wpa_supplicant *wpa_s,
  */
 void wpas_add_qcn_ie_assoc_req_extn(struct wpa_supplicant *wpa_s);
 #endif /* CONFIG_SME */
+
+int nl80211_set_vht_11ng_extn(void *priv, bool enable);
 
 /**
  * hostapd_qcn_buflen_add_240mhz_attr - Compute 240 MHz QCN IE attribute byte count
@@ -3085,6 +3103,7 @@ u8 hostapd_get_cbs_enable_extn(struct hostapd_config *conf);
 void hostapd_set_cbs_enable_extn(struct hostapd_config *conf, u8 enable);
 void wpas_iface_init_extn(struct wpa_supplicant *wpa_s);
 void wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s);
+int wpas_vht_11ng_sync_driver_extn(struct wpa_supplicant *wpa_s);
 /**
  * hostapd_get_6ghz_thresh_priority_freq_extn() - Helper function to fetch the
  * VLP priority threshold frequency from driver
@@ -3447,6 +3466,7 @@ void wpas_dfs_nop_finished_sta_mode(struct wpa_supplicant *wpa_s,
  */
 void hostapd_override_ht_capabilities_extn(const struct hostapd_data *hapd,
 					   struct ieee80211_ht_capabilities *cap);
+bool hostapd_is_vht_11ng_enabled_extn(struct hostapd_data *hapd);
 /* ------------------------------------------------------------------ */
 /* WDS vendor IE APIs (CONFIG_QCN_EXTN set)                            */
 /* ------------------------------------------------------------------ */
