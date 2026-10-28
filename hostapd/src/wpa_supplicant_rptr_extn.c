@@ -11,6 +11,7 @@
 #include "utils/common.h"
 #include "utils/os.h"
 #include "utils/eloop.h"
+#include "common/hw_features_common.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
 #include "common/wpa_ctrl.h"
@@ -340,12 +341,51 @@ bool compute_dfs_for_chanwidth_extn(int freq, int chanwidth)
 	return is_dfs;
 }
 
+static bool wpas_parse_ht_operation_extn(struct wpa_supplicant *wpa_s,
+					 struct wpa_bss *bss)
+{
+	const u8 *ie;
+	const struct ieee80211_ht_operation *ht_oper;
+	u8 secondary_offset;
+	u8 center_chan;
+	int center_freq;
+
+	ie = wpa_bss_get_ie(bss, WLAN_EID_HT_OPERATION);
+	if (!ie || ie[1] < 2)
+		return false;
+
+	ht_oper = (const struct ieee80211_ht_operation *) (ie + 2);
+	bss->max_cw = CHAN_WIDTH_20;
+	secondary_offset = ht_oper->ht_param & HT_INFO_HT_PARAM_SECONDARY_CHNL_OFF_MASK;
+	center_freq = 0;
+
+	if (ht_oper->ht_param & HT_INFO_HT_PARAM_STA_CHNL_WIDTH) {
+		if (secondary_offset == HT_INFO_HT_PARAM_SECONDARY_CHNL_ABOVE)
+			center_freq = bss->freq + 10;
+		else if (secondary_offset == HT_INFO_HT_PARAM_SECONDARY_CHNL_BELOW)
+			center_freq = bss->freq - 10;
+
+		if (center_freq) {
+			if (ieee80211_freq_to_chan(center_freq, &center_chan) != NUM_HOSTAPD_MODES) {
+				bss->max_cw = CHAN_WIDTH_40;
+				bss->center_freq1_idx = center_chan;
+			}
+		}
+	}
+
+	wpa_dbg(wpa_s, MSG_DEBUG, "WLAN_EID_HT_OPERATION: width=%d "
+		"center_freq1_idx=%d center_freq2_idx=%d ht_param=0x%02x",
+		bss->max_cw, bss->center_freq1_idx,
+		bss->center_freq2_idx, ht_oper->ht_param);
+	return true;
+}
+
 /**
  * wpa_get_bss_channel_oper_info_extn - Extract BSS channel operating info
  * @wpa_s: Pointer to wpa_supplicant interface
  * @bss: BSS entry whose IEs are parsed
  *
- * Parse EHT, HE and VHT operation IEs to derive maximum channel width,
+ * Parse EHT, HE, VHT and HT operation IEs to derive maximum channel width,
  * center frequency indices and puncturing bitmap, updating the BSS fields
  * used by repeater and channel selection logic.
  */
@@ -354,6 +394,12 @@ void wpa_get_bss_channel_oper_info_extn(struct wpa_supplicant *wpa_s,
 {
 	const u8 *ie;
 
+	/* Operation IEs are reparsed when a cached BSS is updated. */
+	bss->max_cw = CHAN_WIDTH_20;
+	bss->center_freq1_idx = 0;
+	bss->center_freq2_idx = 0;
+	bss->punc_bitmap = 0;
+
 	/* Parse EHT Operation first:
 	 * Ensures punctured channel bitmap (disabled_chan_bitmap) and EHT-specific
 	 * params are captured before VHT/HE to avoid missing or being overwritten. */
@@ -361,11 +407,6 @@ void wpa_get_bss_channel_oper_info_extn(struct wpa_supplicant *wpa_s,
 	if (ie && ie[1] >= 1) {
 		const struct ieee80211_eht_operation *eht_oper =
 			(const struct ieee80211_eht_operation *) (ie + 3);
-
-		/* Clear stale puncturing bitmap. VHT IEs do not define puncturing,
-		 * so if this BSS has no EHT Operation, drop any leftover bitmap. */
-		if (bss->punc_bitmap > 0)
-			bss->punc_bitmap = 0;
 
 		if (eht_oper->oper_params & EHT_OPER_INFO_PRESENT) {
 			switch(eht_oper->oper_info.control) {
@@ -427,25 +468,33 @@ void wpa_get_bss_channel_oper_info_extn(struct wpa_supplicant *wpa_s,
 		case CHANWIDTH_80P80MHZ:
 			bss->max_cw = CHAN_WIDTH_80P80;
 			break;
-		default:
+		case CHANWIDTH_USE_HT:
 			/* VHT fallback width via HT Capabilities:
 			 * If VHT width is inconclusive, use HT 'Supported Channel
 			 * Width Set' to choose 40 MHz vs 20 MHz instead of
 			 * defaulting to 20 MHz. */
-			ie = wpa_bss_get_ie(bss, WLAN_EID_HT_CAP);
-			if (ie && ie[1] >= 1) {
-				if(WPA_GET_LE16(ie + 2) &
-					HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET) {
-					bss->max_cw = CHAN_WIDTH_40;
-				} else {
-					bss->max_cw = CHAN_WIDTH_20;
+			if (!wpas_parse_ht_operation_extn(wpa_s, bss)) {
+				ie = wpa_bss_get_ie(bss, WLAN_EID_HT_CAP);
+				if (ie && ie[1] >= 1) {
+					if (WPA_GET_LE16(ie + 2) &
+					    HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET)
+						bss->max_cw = CHAN_WIDTH_40;
+					else
+						bss->max_cw = CHAN_WIDTH_20;
 				}
 			}
 			break;
+		default:
+			bss->max_cw = CHAN_WIDTH_20;
+			break;
 		}
 
-		bss->center_freq1_idx = vht_oper->vht_op_info_chan_center_freq_seg0_idx;
-		bss->center_freq2_idx = vht_oper->vht_op_info_chan_center_freq_seg1_idx;
+		if (vht_oper->vht_op_info_chwidth != CHANWIDTH_USE_HT) {
+			bss->center_freq1_idx =
+				vht_oper->vht_op_info_chan_center_freq_seg0_idx;
+			bss->center_freq2_idx =
+				vht_oper->vht_op_info_chan_center_freq_seg1_idx;
+		}
 
 		wpa_bss_check_5g_320mhz_vendor_ie_extn(wpa_s, bss);
 
@@ -496,17 +545,16 @@ void wpa_get_bss_channel_oper_info_extn(struct wpa_supplicant *wpa_s,
 			bss->center_freq2_idx =
 				oper_info->chan_center_freq_seg1;
 
-			/* Clear stale puncturing bitmap. HE IEs do not define puncturing,
-			 * so if this BSS has no EHT Operation, drop any leftover bitmap. */
-			if (bss->punc_bitmap > 0)
-				bss->punc_bitmap = 0;
-
 			wpa_dbg(wpa_s, MSG_DEBUG, "WLAN_EID_EXT_HE_OPERATION:"
 				"width = %d *center_freq1_idx = %d *center_freq2_idx = %d",
 				bss->max_cw, bss->center_freq1_idx, bss->center_freq2_idx);
 			return;
 		}
 	}
+
+	/* Legacy HT operation without VHT/HE/EHT operation information. */
+	wpas_parse_ht_operation_extn(wpa_s, bss);
+
 	return;
 }
 
@@ -1125,40 +1173,175 @@ static bool wpas_is_chan_nol_extn(struct wpa_supplicant *wpa_s, int freq)
 	return false;
 }
 
-/**
- * wpas_freq_range_uses_nol_extn - Check if any 20 MHz sub-channel in a
- *   contiguous bandwidth block is in the NOL.
- * @wpa_s: wpa_supplicant context
- * @center_freq: Center frequency of the block in MHz
- * @bandwidth: Bandwidth in MHz (20, 40, 80, 160, 320)
- * Returns: true if any channel in the range is in NOL, false otherwise
- *
- * 20 MHz channel centers within a block of bandwidth @bandwidth centered
- * at @center_freq are at:
- *   center - bw/2 + 10,  center - bw/2 + 30,  ...,  center + bw/2 - 10
- * i.e. start = center - bw/2 + 10,  end = center + bw/2 - 10.
- */
-static bool wpas_freq_range_uses_nol_extn(struct wpa_supplicant *wpa_s,
-					  int center_freq, int bandwidth)
+static bool wpas_check_channel_range_extn(struct wpa_supplicant *wpa_s,
+					  int start_freq, int num_channels,
+					  bool check_nol, u16 punct_bitmap)
 {
-	int start_freq, end_freq, freq;
+	int i;
 
-	if (bandwidth <= 20)
-		return wpas_is_chan_nol_extn(wpa_s, center_freq);
+	if (num_channels <= 0 || start_freq <= 0)
+		return true;
 
-	start_freq = center_freq - (bandwidth / 2) + 10;
-	end_freq = center_freq + (bandwidth / 2) - 10;
+	for (i = 0; i < num_channels; i++) {
+		int freq = start_freq + i * 20;
+		bool hit;
 
-	for (freq = start_freq; freq <= end_freq; freq += 20) {
-		if (wpas_is_chan_nol_extn(wpa_s, freq)) {
+		if (punct_bitmap & BIT(i))
+			continue;
+
+		if (check_nol)
+			hit = wpas_is_chan_nol_extn(wpa_s, freq);
+		else
+			hit = disabled_freq(wpa_s, freq);
+
+		if (hit) {
 			wpa_printf(MSG_DEBUG,
-				   "NOL: Freq %d in range [%d-%d] (bw=%d, cf=%d) is in NOL",
-				   freq, start_freq, end_freq, bandwidth, center_freq);
+				   "%s: Freq %d in range [%d-%d] (n20=%d)",
+				   check_nol ? "NOL" : "REGDOM",
+				   freq, start_freq,
+				   start_freq + (num_channels - 1) * 20,
+				   num_channels);
 			return true;
 		}
 	}
 
 	return false;
+}
+
+static bool wpas_primary_freq_in_range_extn(int freq, int start_freq,
+					    int num_channels)
+{
+	if (freq <= 0 || start_freq <= 0 || num_channels <= 0 ||
+	    freq < start_freq ||
+	    freq > start_freq + (num_channels - 1) * 20)
+		return false;
+
+	return (freq - start_freq) % 20 == 0;
+}
+
+/**
+ * wpas_check_link_ranges_extn - Check all active 20 MHz channels of a link
+ * @wpa_s: wpa_supplicant context
+ * @freq: primary 20 MHz channel frequency in MHz
+ * @width: operating channel width
+ * @cf1: first center frequency in MHz
+ * @cf2: second center or full bonded center frequency in MHz
+ * @check_nol: check DFS NOL state when true, regulatory state otherwise
+ * @punct_bitmap: bitmap of punctured 20 MHz channels
+ *
+ * The center-frequency fields depend on the operation encoding. For 20 MHz,
+ * cf1 and cf2 are unused. For 40/80 MHz, cf1 is the contiguous operating
+ * center. For native VHT 160 MHz, cf1 is the full center and cf2 is zero.
+ * QSDK's VHT compatibility encoding uses cf1 for the primary-side 80 MHz
+ * center and cf2 for the full 160 MHz center. EHT 160/320 MHz and QCN
+ * 5 GHz 240 MHz layouts also use cf2 as the full bonded center, with cf1
+ * identifying the primary-side segment. For 80+80, cf1 and cf2 are the
+ * centers of the two 80 MHz segments. 6 GHz uses the separate
+ * power-mode-aware validator below.
+ *
+ * Return: true if any active subchannel is unavailable or the link state is
+ *         incomplete, false otherwise
+ */
+static bool wpas_check_link_ranges_extn(struct wpa_supplicant *wpa_s,
+					int freq, enum chan_width width,
+					int cf1, int cf2, bool check_nol,
+					u16 punct_bitmap)
+{
+	int bw;
+	int start_freq, num_channels;
+
+	bw = channel_width_to_int(width);
+	if (bw <= 0)
+		return true;
+
+	if (freq <= 0)
+		return true;
+
+	if (check_nol) {
+		if (wpas_is_chan_nol_extn(wpa_s, freq))
+			return true;
+	} else {
+		if (disabled_freq(wpa_s, freq))
+			return true;
+	}
+
+	if (bw <= 20)
+		return false;
+
+	/* Two independent 80 MHz segments. */
+	if (width == CHAN_WIDTH_80P80) {
+		if (cf1 <= 0)
+			return true;
+		if (cf2 <= 0)
+			return true;
+		if (!wpas_primary_freq_in_range_extn(freq, cf1 - 30, 4)) {
+			if (!wpas_primary_freq_in_range_extn(freq, cf2 - 30, 4)) {
+				wpa_printf(MSG_DEBUG,
+					   "REGDOM/NOL: primary freq %d is outside "
+					   "80 MHz segments cf1=%d cf2=%d",
+					   freq, cf1, cf2);
+				return true;
+			}
+		}
+		if (wpas_check_channel_range_extn(wpa_s, cf1 - 30, 4,
+						  check_nol, punct_bitmap))
+			return true;
+
+		if (wpas_check_channel_range_extn(wpa_s, cf2 - 30, 4,
+						  check_nol, punct_bitmap))
+			return true;
+
+		return false;
+	}
+
+	/* QCN 5 GHz 240 MHz uses the bonded-channel table, not cf2 - 150. */
+	if (width == CHAN_WIDTH_320 && is_5ghz_freq(freq) && cf2 > 0) {
+		if (hostapd_get_n_chans_and_frequency_extn(CONF_OPER_CHWIDTH_320MHZ, cf2,
+							   &num_channels, &start_freq))
+			return true;
+		if (!wpas_primary_freq_in_range_extn(freq, start_freq,
+						     num_channels)) {
+			wpa_printf(MSG_DEBUG,
+				   "REGDOM/NOL: primary freq %d is outside "
+				   "QCN 240 MHz range [%d-%d]",
+				   freq, start_freq,
+				   start_freq + (num_channels - 1) * 20);
+			return true;
+		}
+		return wpas_check_channel_range_extn(wpa_s, start_freq, num_channels,
+						     check_nol, punct_bitmap);
+	}
+
+	/* cf2 is the full contiguous 160 MHz center. */
+	if (width == CHAN_WIDTH_160 && cf2 > 0) {
+		if (!wpas_primary_freq_in_range_extn(freq, cf2 - 70, 8)) {
+			wpa_printf(MSG_DEBUG,
+				   "REGDOM/NOL: primary freq %d is outside "
+				   "160 MHz range centered at %d",
+				   freq, cf2);
+			return true;
+		}
+		return wpas_check_channel_range_extn(wpa_s, cf2 - 70, 8,
+						     check_nol, punct_bitmap);
+	}
+
+	if (cf1 <= 0)
+		return true;
+
+	start_freq = cf1 - (bw / 2) + 10;
+	num_channels = bw / 20;
+	if (!wpas_primary_freq_in_range_extn(freq, start_freq,
+					      num_channels)) {
+		wpa_printf(MSG_DEBUG,
+				   "REGDOM/NOL: primary freq %d is outside "
+				   "%d MHz range [%d-%d]",
+				   freq, bw, start_freq,
+				   start_freq + (num_channels - 1) * 20);
+		return true;
+	}
+
+	return wpas_check_channel_range_extn(wpa_s, start_freq, num_channels,
+					     check_nol, punct_bitmap);
 }
 
 /**
@@ -1167,120 +1350,71 @@ static bool wpas_freq_range_uses_nol_extn(struct wpa_supplicant *wpa_s,
  * @width: Channel width enum
  * @center_freq1_idx: Center frequency 1 index
  * @center_freq2_idx: Center frequency 2 index
- * @center_freq1: Output for center frequency 1 in MHz
- * @center_freq2: Output for center frequency 2 in MHz (80+80 only)
- * Returns: Bandwidth in MHz (20, 40, 80, 160, 320), or -1 on error
+ * @center_freq1: Output for CCFS0 in MHz. For EHT 160/320 MHz this is the
+ *                segment center containing the primary channel.
+ * @center_freq2: Output for CCFS1 in MHz. This is the second 80 MHz center
+ *                for 80+80 MHz and the full bonded center for EHT 160/320
+ *                MHz and QCN 5 GHz 240 MHz operation.
+ * Returns: channel width, or CHAN_WIDTH_UNKNOWN on error
  *
  * Common helper function to extract bandwidth and center frequencies from
  * pre-parsed channel information. Used for both BSS and MLO link processing.
  */
-static int wpas_get_channel_info_extn(int freq, enum chan_width width,
-				      u8 center_freq1_idx, u8 center_freq2_idx,
-				      int *center_freq1, int *center_freq2)
+static enum chan_width
+wpas_get_channel_info_extn(int freq, enum chan_width width,
+			   u8 center_freq1_idx, u8 center_freq2_idx,
+			   int *center_freq1, int *center_freq2)
 {
-	int bw;
-	u8 op_class, channel;
-
 	if (!center_freq1 || !center_freq2)
-		return -1;
+		return CHAN_WIDTH_UNKNOWN;
 
 	*center_freq1 = 0;
 	*center_freq2 = 0;
 
-	/* Convert channel width enum to MHz */
-	bw = channel_width_to_int(width);
+	if (channel_width_to_int(width) <= 0)
+		return CHAN_WIDTH_UNKNOWN;
 
 	/* Calculate center frequencies from indices if available */
 	if (center_freq1_idx) {
-		ieee80211_freq_to_channel_ext(freq, 0, 1, &op_class, &channel);
-		*center_freq1 = ieee80211_chan_to_freq(NULL, op_class, center_freq1_idx);
+		*center_freq1 = wpas_center_idx_to_freq_extn(freq,
+							     center_freq1_idx);
+		if (*center_freq1 <= 0)
+			return CHAN_WIDTH_UNKNOWN;
 	}
 
 	if (center_freq2_idx) {
-		ieee80211_freq_to_channel_ext(freq, 0, 1, &op_class, &channel);
-		*center_freq2 = ieee80211_chan_to_freq(NULL, op_class, center_freq2_idx);
+		*center_freq2 = wpas_center_idx_to_freq_extn(freq,
+							     center_freq2_idx);
+		if (*center_freq2 <= 0)
+			return CHAN_WIDTH_UNKNOWN;
 	}
 
 	/* If no center freq calculated, use primary freq */
 	if (*center_freq1 == 0)
 		*center_freq1 = freq;
 
-	return bw;
+	return width;
 }
 
 /**
  * wpas_check_link_nol_extn - Check if a single link uses NOL channels
  * @wpa_s: wpa_supplicant context
  * @freq: Primary channel frequency in MHz
- * @bw: Bandwidth in MHz (20, 40, 80, 160, 320)
- * @cf1: Center frequency 1 in MHz
- *       - 20/40/80/160/320 MHz contiguous: center of the full channel
- *       - 80+80 MHz: center of the first 80 MHz segment
- *       - 5G 240 MHz (320-2): center of the 160 MHz segment
- * @cf2: Center frequency 2 in MHz (0 if not applicable)
- *       - 80+80 MHz: center of the second 80 MHz segment
- *       - 160 MHz (VHT): center of the upper 80 MHz segment
- *         (cf1 is the 160 MHz center; cf2 is NOT needed for the range check)
- *       - 5G 240 MHz (320-2): center of the 80 MHz segment
+ * @width: Channel width
+ * @cf1: CCFS0 in MHz. For EHT 160/320 MHz this identifies the segment
+ *       containing the primary channel.
+ * @cf2: CCFS1 in MHz. For 80+80 MHz this identifies the second 80 MHz
+ *       segment; for EHT 160/320 MHz and 5 GHz 240 MHz it identifies the
+ *       full bonded-channel center.
  * Returns: true if link uses any NOL channel, false otherwise
  */
 static bool wpas_check_link_nol_extn(struct wpa_supplicant *wpa_s,
-				     int freq, int bw, int cf1, int cf2)
+				     int freq, enum chan_width width,
+				     int cf1, int cf2,
+				     u16 punct_bitmap)
 {
-	/* Check primary channel */
-	if (wpas_is_chan_nol_extn(wpa_s, freq)) {
-		wpa_printf(MSG_DEBUG, "NOL: Primary freq %d is in NOL", freq);
-		return true;
-	}
-
-	/* For 20 MHz, only primary matters */
-	if (bw <= 20)
-		return false;
-
-	if (bw == 80 && cf2 > 0) {
-		/*
-		 * 80+80 MHz: two independent 80 MHz segments.
-		 * cf1 = center of first segment, cf2 = center of second.
-		 */
-		wpa_dbg(wpa_s, MSG_DEBUG,
-				"NOL: 80+80 MHz (cf1=%d, cf2=%d)", cf1, cf2);
-		if (cf1 > 0 && wpas_freq_range_uses_nol_extn(wpa_s, cf1, 80))
-			return true;
-		if (wpas_freq_range_uses_nol_extn(wpa_s, cf2, 80))
-			return true;
-	} else if (bw == 320 && cf2 > 0) {
-		/*
-		 * 5G 320MHz-2 (240 MHz): non-contiguous 160 MHz + 80 MHz.
-		 * cf1 = center of 160 MHz segment, cf2 = center of 80 MHz segment.
-		 */
-		wpa_dbg(wpa_s, MSG_DEBUG,
-				"NOL: 5G 240MHz (cf1=%d 160MHz, cf2=%d 80MHz)",
-				cf1, cf2);
-		if (cf1 > 0 && wpas_freq_range_uses_nol_extn(wpa_s, cf1, 160))
-			return true;
-		if (wpas_freq_range_uses_nol_extn(wpa_s, cf2, 80))
-			return true;
-	} else if (bw == 160 && cf2 > 0) {
-		/* 160 MHz: cf2 is the actual center frequency */
-		wpa_printf(MSG_DEBUG,
-				   "NOL: Checking 160 MHz MHz (cf1=%d, cf2=%d)",
-				   cf1, cf2);
-		if (wpas_freq_range_uses_nol_extn(wpa_s, cf2, 160))
-			return true;
-	} else {
-		/*
-		 * Standard contiguous bandwidths: 40, 80, 160, 320 MHz.
-		 * cf1 is the center of the full channel.
-		 *
-		 * For VHT 160 MHz: cf1 = center of the 160 MHz band (seg0),
-		 * cf2 = center of the upper 80 MHz segment (seg1).  cf2 is
-		 * NOT needed here because cf1 already covers the full range.
-		 */
-		if (cf1 > 0 && wpas_freq_range_uses_nol_extn(wpa_s, cf1, bw))
-			return true;
-	}
-
-	return false;
+	return wpas_check_link_ranges_extn(wpa_s, freq, width, cf1, cf2, true,
+					   punct_bitmap);
 }
 
 /**
@@ -1297,7 +1431,8 @@ static bool wpas_check_link_nol_extn(struct wpa_supplicant *wpa_s,
 bool wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s,
 				    struct wpa_bss *bss)
 {
-	int bw, cf1, cf2;
+	enum chan_width width;
+	int cf1, cf2;
 
 	if (!bss)
 		return false;
@@ -1309,14 +1444,233 @@ bool wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s,
 	if (!is_5ghz_freq(bss->freq))
 		return false;
 
-	bw = wpas_get_channel_info_extn(bss->freq, bss->max_cw,
-					bss->center_freq1_idx,
-					bss->center_freq2_idx, &cf1, &cf2);
-	if (bw < 0) {
+	width = wpas_get_channel_info_extn(bss->freq, bss->max_cw,
+					   bss->center_freq1_idx,
+					   bss->center_freq2_idx, &cf1, &cf2);
+	if (width == CHAN_WIDTH_UNKNOWN) {
 		wpa_printf(MSG_DEBUG, "NOL: Failed to get bandwidth info");
 		return false;
 	}
-	return wpas_check_link_nol_extn(wpa_s, bss->freq, bw, cf1, cf2);
+
+	wpa_printf(MSG_DEBUG,
+		   "NOL: validate BSS " MACSTR
+		   " freq=%d max_cw=%d bw=%d cf1_idx=%u cf2_idx=%u "
+		   "cf1=%d cf2=%d punc=0x%04x",
+		   MAC2STR(bss->bssid), bss->freq, bss->max_cw,
+		   channel_width_to_int(width),
+		   bss->center_freq1_idx, bss->center_freq2_idx,
+		   cf1, cf2, bss->punc_bitmap);
+
+	return wpas_check_link_nol_extn(wpa_s, bss->freq, width, cf1, cf2,
+					bss->punc_bitmap);
+}
+
+static bool wpas_6ghz_segment_uses_disabled_extn(struct wpa_supplicant *wpa_s,
+						 const struct wpa_bss *bss,
+						 int start_freq, int num_subchannels,
+						 u16 punct_bitmap, int punct_offset)
+{
+	struct hostapd_hw_modes *mode = NULL;
+	struct hostapd_channel_data *start_chan;
+	u8 pwr_mode;
+	u8 chan_idx, num_channels;
+	int i, j;
+
+	if (!wpa_s || start_freq <= 0 || num_subchannels <= 0)
+		return true;
+
+	pwr_mode = wpas_get_6ghz_link_pwr_mode_extn(wpa_s, bss);
+	if (pwr_mode >= NL80211_REG_NUM_POWER_MODES) {
+		wpa_printf(MSG_DEBUG,
+			   "REGDOM: no 6 GHz power mode for freq=%d n20=%d",
+			   bss ? bss->freq : start_freq, num_subchannels);
+		return true;
+	}
+
+	for (i = 0; i < wpa_s->hw.num_modes; i++) {
+		if (wpa_s->hw.modes[i].is_6ghz) {
+			mode = &wpa_s->hw.modes[i];
+			break;
+		}
+	}
+	if (!mode)
+		return true;
+
+	start_chan = hw_mode_get_6ghz_power_mode_channel(wpa_s->hw.modes,
+							 wpa_s->hw.num_modes,
+							 start_freq, pwr_mode,
+							 &num_channels, &chan_idx,
+							 true);
+	if (!start_chan || (size_t)chan_idx + num_subchannels > num_channels) {
+		wpa_printf(MSG_DEBUG,
+			   "REGDOM: 6 GHz segment not found "
+			   "(start=%d n20=%d pwr=%d)", start_freq,
+			   num_subchannels, pwr_mode);
+		return true;
+	}
+
+	for (j = 0; j < num_subchannels; j++) {
+		if (punct_bitmap & BIT(punct_offset + j))
+			continue;
+
+		if (start_chan[j].flag & HOSTAPD_CHAN_DISABLED) {
+			wpa_printf(MSG_DEBUG,
+				   "REGDOM: 6 GHz freq %d disabled "
+				   "(start=%d n20=%d pwr=%d)",
+				   start_chan[j].freq, start_freq,
+				   num_subchannels, pwr_mode);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static bool wpas_check_6ghz_link_disabled_extn(struct wpa_supplicant *wpa_s,
+					       const struct wpa_bss *bss,
+					       int freq, enum chan_width width,
+					       int cf1, int cf2,
+					       u16 punct_bitmap)
+{
+	int bw;
+	int start_freq, num_channels;
+
+	bw = channel_width_to_int(width);
+	if (!bw)
+		return true;
+
+	if (bw <= 20)
+		return disabled_freq(wpa_s, freq);
+
+	if (width == CHAN_WIDTH_80P80) {
+		if (cf1 <= 0)
+			return true;
+		if (cf2 <= 0)
+			return true;
+
+		if (wpas_6ghz_segment_uses_disabled_extn(wpa_s, bss, cf1 - 30, 4,
+							 punct_bitmap, 0))
+			return true;
+
+		return wpas_6ghz_segment_uses_disabled_extn(wpa_s, bss, cf2 - 30,
+							    4, punct_bitmap, 0);
+	}
+
+	if ((width == CHAN_WIDTH_160 || width == CHAN_WIDTH_320) && cf2 > 0) {
+		start_freq = cf2 - (bw == 320 ? 150 : 70);
+		num_channels = bw / 20;
+	} else {
+		if (cf1 <= 0)
+			return true;
+		start_freq = cf1 - (bw / 2) + 10;
+		num_channels = bw / 20;
+	}
+
+	return wpas_6ghz_segment_uses_disabled_extn(wpa_s, bss, start_freq,
+						    num_channels, punct_bitmap, 0);
+}
+
+/**
+ * wpas_check_link_disabled_extn - Check whether a link uses disabled
+ *   channels, including all sub-channels in a bonded operating bandwidth.
+ */
+static bool wpas_check_link_disabled_extn(struct wpa_supplicant *wpa_s,
+					  int freq, enum chan_width width,
+					  int cf1, int cf2,
+					  u16 punct_bitmap)
+{
+	return wpas_check_link_ranges_extn(wpa_s, freq, width, cf1, cf2, false,
+					   punct_bitmap);
+}
+
+static bool wpas_check_disabled_channel_extn(struct wpa_supplicant *wpa_s,
+					     const struct wpa_bss *bss,
+					     int freq, enum chan_width width,
+					     int cf1, int cf2,
+					     u16 punct_bitmap)
+{
+	if (is_6ghz_freq(freq))
+		return wpas_check_6ghz_link_disabled_extn(wpa_s, bss, freq, width,
+							  cf1, cf2, punct_bitmap);
+
+	return wpas_check_link_disabled_extn(wpa_s, freq, width, cf1, cf2,
+					     punct_bitmap);
+}
+
+static bool wpas_get_signal_channel_info_extn(int freq,
+					      const struct wpa_signal_info *si,
+					      enum chan_width *width,
+					      int *cf1, int *cf2,
+					      u16 *punct_bitmap)
+{
+	int bw;
+
+	if (!si || freq <= 0 || si->chanwidth == CHAN_WIDTH_UNKNOWN ||
+		!width || !cf1 || !cf2 || !punct_bitmap)
+		return false;
+
+	*width = si->chanwidth;
+	bw = channel_width_to_int(*width);
+	if (!bw)
+		return false;
+
+	/* A 20 MHz link does not need a bonded center; wider links do. */
+	if (bw <= 20) {
+		*cf1 = freq;
+	} else {
+		if (si->center_frq1 <= 0)
+			return false;
+		*cf1 = si->center_frq1;
+	}
+	*cf2 = 0;
+
+	/* center_freq2 is used for the second segment of 80+80 only. */
+	if (si->chanwidth == CHAN_WIDTH_80P80) {
+		if (si->center_frq2 > 0)
+			*cf2 = si->center_frq2;
+	}
+
+	*punct_bitmap = (u16)si->punct_bitmap;
+
+	return true;
+}
+
+bool wpas_link_uses_nol_channel_signal_extn(struct wpa_supplicant *wpa_s,
+					    int freq,
+					    const struct wpa_signal_info *si)
+{
+	enum chan_width width;
+	int cf1, cf2;
+	u16 punct_bitmap;
+
+	if (!is_5ghz_freq(freq))
+		return false;
+
+	if (!wpas_get_signal_channel_info_extn(freq, si, &width, &cf1, &cf2,
+					       &punct_bitmap))
+		return true;
+
+	return wpas_check_link_nol_extn(wpa_s, freq, width, cf1, cf2,
+					punct_bitmap);
+}
+
+bool wpas_link_uses_disabled_channel_signal_extn(struct wpa_supplicant *wpa_s,
+						 struct wpa_bss *bss, int freq,
+						 const struct wpa_signal_info *si)
+{
+	enum chan_width width;
+	int cf1, cf2;
+	u16 punct_bitmap;
+
+	if (!wpa_s)
+		return true;
+
+	if (!wpas_get_signal_channel_info_extn(freq, si, &width, &cf1, &cf2,
+					       &punct_bitmap))
+		return true;
+
+	return wpas_check_disabled_channel_extn(wpa_s, bss, freq, width, cf1,
+						cf2, punct_bitmap);
 }
 
 /**
@@ -1341,7 +1695,10 @@ bool wpas_link_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, int freq,
 		return false;
 
 	bw = channel_width_to_int(width);
-	return wpas_check_link_nol_extn(wpa_s, freq, bw, cf1, cf2);
+	wpa_printf(MSG_DEBUG,
+		   "NOL: validate link freq=%d width=%d bw=%d cf1=%d cf2=%d",
+		   freq, width, bw, cf1, cf2);
+	return wpas_check_link_nol_extn(wpa_s, freq, width, cf1, cf2, 0);
 }
 
 #include "wds_ie.h"

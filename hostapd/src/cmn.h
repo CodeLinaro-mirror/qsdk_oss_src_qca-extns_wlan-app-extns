@@ -74,6 +74,7 @@ struct hostapd_hw_modes;
 struct wpa_driver_nl80211_data;
 struct nl80211_vendor_cmd_info;
 struct wpa_scan_res;
+struct wpa_signal_info;
 struct wpabuf;
 struct wpa_config;
 struct freq_survey;
@@ -1036,6 +1037,8 @@ static inline bool hostapd_mcst_allows_skip_cac_extn(u32 mcst,
 		(mcst <= HOSTAPD_NON_CAC_SWITCH_TIME_TU_EXTN(beacon_int)));
 }
 
+u16 wpas_center_idx_to_freq_extn(int freq, u8 center_idx);
+
 #ifndef CONFIG_QCN_EXTN
 
 static inline void
@@ -1644,6 +1647,19 @@ wpas_query_hw_blocklist_extn(struct wpa_supplicant *wpa_s)
 static inline void
 wpas_country_change_init_active_alpha2_extn(struct wpa_supplicant *wpa_s)
 {
+}
+
+static inline u8
+wpas_get_6ghz_bss_pwr_mode_extn(const struct wpa_bss *bss)
+{
+	return NL80211_REG_NUM_POWER_MODES;
+}
+
+static inline u8
+wpas_get_6ghz_link_pwr_mode_extn(struct wpa_supplicant *wpa_s,
+					 const struct wpa_bss *bss)
+{
+	return NL80211_REG_NUM_POWER_MODES;
 }
 
 static inline bool
@@ -3146,6 +3162,9 @@ hostapd_afc_find_iface(struct hostapd_data *hapd, int hw_idx)
 void wpas_country_change_init_active_alpha2_extn(struct wpa_supplicant *wpa_s);
 void wpas_country_change_check_current_bss(struct wpa_supplicant *wpa_s,
 					   struct channel_list_changed *info);
+u8 wpas_get_6ghz_bss_pwr_mode_extn(const struct wpa_bss *bss);
+u8 wpas_get_6ghz_link_pwr_mode_extn(struct wpa_supplicant *wpa_s,
+					 const struct wpa_bss *bss);
 bool wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
 				     const struct wpa_bss *bss);
 int intf_chan_range_available_5g(struct hostapd_hw_modes *mode,
@@ -3449,6 +3468,12 @@ enum chan_width
 hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
 				       int sec_channel_offset);
 bool wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, struct wpa_bss *bss);
+bool wpas_link_uses_nol_channel_signal_extn(struct wpa_supplicant *wpa_s,
+					    int freq,
+					    const struct wpa_signal_info *si);
+bool wpas_link_uses_disabled_channel_signal_extn(struct wpa_supplicant *wpa_s,
+						 struct wpa_bss *bss, int freq,
+						 const struct wpa_signal_info *si);
 bool wpas_link_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, int freq,
 				     enum chan_width width, int cf1, int cf2);
 void wpas_dfs_radar_detected_sta_mode(struct wpa_supplicant *wpa_s,
