@@ -1071,7 +1071,7 @@ void hostapd_handle_action_csa(struct hostapd_data *hapd,
 		hostapd_handle_missing_nol_ie(iface, &nol_info);
 	}
 
-	if (iface->cac_started || iface->bootup_cac_in_progress) {
+	if (iface->cac_started) {
 		if (hostapd_uplink_csa_bh_enabled(iface)) {
 			wpa_printf(MSG_DEBUG,
 				   "uplink_csa: upstream BH link active during CAC, forwarding upstream");
@@ -1994,7 +1994,6 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
  */
 void hostapd_bootup_cac_complete_extn(struct hostapd_iface *iface)
 {
-	iface->bootup_cac_in_progress = 0;
 	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
 
@@ -2044,7 +2043,8 @@ void hostapd_bootup_cac_complete_extn(struct hostapd_iface *iface)
  */
 bool hostapd_bss_rnr_eligible_extn(struct hostapd_data *bss)
 {
-	if (bss->iface && bss->iface->bootup_cac_in_progress)
+	if (bss->iface && bss->iface->cac_started &&
+	    bss->iface->cac_type == HAPD_CAC_COMPLETE_AFTER_BSS)
 		return true;
 	return false;
 }
@@ -2242,7 +2242,7 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 	if (!iface || !iface->conf)
 		return false;
 
-	if (iface->bootup_cac_in_progress)
+	if (iface->cac_started && iface->cac_type == HAPD_CAC_COMPLETE_AFTER_BSS)
 		return true;
 
 	if (!is_5ghz_freq(iface->freq))
@@ -2299,7 +2299,8 @@ bool hostapd_bootup_cac_start_extn(struct hostapd_iface *iface)
 		   iface->freq);
 
 	hostapd_set_state(iface, HAPD_IFACE_DFS);
-	iface->bootup_cac_in_progress = 1;
+	iface->cac_started = 1;
+	iface->cac_type = HAPD_CAC_COMPLETE_AFTER_BSS;
 	os_get_reltime(&iface->dfs_cac_start);
 
 	wpa_printf(MSG_DEBUG, "DFS start CAC on %d MHz%s", iface->freq,

@@ -16,7 +16,6 @@
 #include "common/wpa_ctrl.h"
 #include "ap/sta_info.h"
 #include "ap/dfs.h"
-#include "ap/acs.h"
 #include "ap/ap_drv_ops.h"
 
 /**
@@ -546,59 +545,31 @@ static bool regdom_chan_allowed_bw(struct hostapd_iface *iface,
  * regdom_chan_seg0 - Validate bonded channel group and compute seg0 center
  * channel index.
  *
- * Uses acs_get_bw_center_chan() (ACS table) for the center channel index,
- * then checks that the selected bonded group exists.
+ * Uses the core bonded-channel table to obtain the center frequency and
+ * converts it to a center channel index.
  *
  * @secondary: secondary channel offset for HT40+/-.
- * @bw320: 320 MHz layout to try; ignored for other widths.
+ * @center_freq_320: 320 MHz center frequency to try; zero selects the first
+ *                    matching core bonded-channel entry.
  * @out_center: set to the center channel index on success.
  * @out_center_freq: set to the center frequency in MHz on success.
  * Return: true if seg0 could be determined; false to skip channel.
  */
 static bool regdom_chan_seg0(const struct hostapd_channel_data *chan,
 			     enum oper_chan_width try_width,
-			     int secondary, enum bw_type bw320,
+			     int secondary, u16 center_freq_320,
 			     int *out_center, int *out_center_freq)
 {
 	u16 bw_mhz = hostapd_get_width_from_oper_chwidth_extn(try_width,
 							      secondary);
-	int center = 0, center_freq;
+	u16 center_freq;
+	u8 center;
 
-	switch (try_width) {
-	case CONF_OPER_CHWIDTH_USE_HT:
-		if (secondary && chan->freq >= 2400 && chan->freq < 2500) {
-			center = chan->chan + 2 * secondary; /* 2.4 GHz HT40 */
-		} else if (secondary) {
-			center = acs_get_bw_center_chan(chan->freq, ACS_BW40);
-			if (!center)
-				return false;
-		} else {
-			center = chan->chan; /* HT20 */
-		}
-		break;
-	case CONF_OPER_CHWIDTH_80MHZ:
-		center = acs_get_bw_center_chan(chan->freq, ACS_BW80);
-		break;
-	case CONF_OPER_CHWIDTH_160MHZ:
-		center = acs_get_bw_center_chan(chan->freq, ACS_BW160);
-		break;
-	case CONF_OPER_CHWIDTH_320MHZ:
-		center = acs_get_bw_center_chan(chan->freq, bw320);
-		break;
-	default:
-		center = chan->chan;
-		break;
-	}
-
-	if (!center)
-		return false;
-
-	center_freq = chan->freq + 5 * (center - chan->chan);
-
-	if (bw_mhz > 20 &&
-	    !hostapd_get_bonded_chan_center_freq(chan->freq, bw_mhz,
-						 center_freq,
-						 (s8)secondary))
+	center_freq = hostapd_get_bonded_chan_center_freq(chan->freq, bw_mhz,
+							  center_freq_320,
+							  (s8)secondary);
+	if (!center_freq ||
+	    ieee80211_freq_to_chan(center_freq, &center) == NUM_HOSTAPD_MODES)
 		return false;
 
 	*out_center = center;
@@ -685,17 +656,16 @@ regdom_select_channel_from_mode(struct hostapd_iface *iface, struct hostapd_hw_m
 				enum oper_chan_width try_width, int secondary,
 				struct hostapd_freq_params *freq_params)
 {
-	static const enum bw_type bw320[] = { ACS_BW320_1, ACS_BW320_2 };
 	int num_centers = (mode->is_6ghz &&
-			   try_width == CONF_OPER_CHWIDTH_320MHZ) ?
-		ARRAY_SIZE(bw320) : 1;
+			   try_width == CONF_OPER_CHWIDTH_320MHZ) ? 2 : 1;
 	int j, k;
 
 	for (j = 0; j < mode->num_channels; j++) {
 		struct hostapd_channel_data *chan = &mode->channels[j];
-		int center = 0, center_freq;
+		int center = 0, center_freq = 0;
 		int sec = secondary;
 		u16 pp = 0;
+		u16 first_320mhz_cfreq = 0;
 
 		if (!chan_in_current_hw_info(iface->current_hw_info, chan))
 			continue;
@@ -708,9 +678,19 @@ regdom_select_channel_from_mode(struct hostapd_iface *iface, struct hostapd_hw_m
 
 		/* Only 6 GHz has two overlapping 320 MHz layouts. */
 		for (k = 0; k < num_centers; k++) {
-			if (!regdom_chan_seg0(chan, try_width, sec, bw320[k],
+			u16 center_freq_320;
+
+			if (k && !first_320mhz_cfreq)
+				continue;
+
+			center_freq_320 = k ? first_320mhz_cfreq + 160 : 0;
+
+			if (!regdom_chan_seg0(chan, try_width, sec, center_freq_320,
 					      &center, &center_freq))
 				continue;
+
+			if (!k)
+				first_320mhz_cfreq = center_freq;
 
 			/* Validate the same segment that will be applied. */
 			if (!regdom_is_chan_bw_valid(iface, chan->freq,
@@ -1054,7 +1034,7 @@ void hostapd_country_change_post_cac_abort_extn(struct hostapd_iface *iface)
  */
 static int hostapd_country_change_handle(struct hostapd_iface *iface)
 {
-	bool cac_in_progress = iface->cac_started || iface->bootup_cac_in_progress;
+	bool cac_in_progress = iface->cac_started;
 	int ret;
 	struct hostapd_freq_params freq_params;
 	bool apply_new_config = false;
