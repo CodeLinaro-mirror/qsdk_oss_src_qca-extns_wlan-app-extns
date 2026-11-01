@@ -777,6 +777,28 @@ int hostapd_cli_cmd_get_pure11ax(struct wpa_ctrl *ctrl, int argc, char *argv[])
 	return wpa_ctrl_command(ctrl, "GET_PURE11AX");
 }
 
+int hostapd_cli_cmd_set_vht_11ng(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1 || (strcmp(argv[0], "0") && strcmp(argv[0], "1"))) {
+		printf("Usage: set_vht_11ng <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_VHT_11NG %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+int hostapd_cli_cmd_get_vht_11ng(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_VHT_11NG");
+}
+
 int hostapd_cli_cmd_get_mapc_peer_params_extn(struct wpa_ctrl *ctrl,
 					      int argc, char *argv[])
 {
@@ -834,4 +856,3 @@ int _wpa_ctrl_command_large(struct wpa_ctrl *ctrl, const char *cmd, int print)
 	os_free(buf);
 	return 0;
 }
-

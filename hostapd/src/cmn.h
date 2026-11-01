@@ -74,6 +74,7 @@ struct hostapd_hw_modes;
 struct wpa_driver_nl80211_data;
 struct nl80211_vendor_cmd_info;
 struct wpa_scan_res;
+struct wpa_signal_info;
 struct wpabuf;
 struct wpa_config;
 struct freq_survey;
@@ -839,6 +840,14 @@ struct hostapd_bss_config_extn {
 	 */
 	int wds_ie;
 	int allow_3addr_mc;
+	/*
+	 * vht_11ng - VHT on 11ng AP
+	 *
+	 * When set to true, BSS advertises VHT capability and VHT operation IEs
+	 * in Beacon, Probe response and Assoc Response frames. If capable STA can
+	 * joins the BSS then 256QAM modulation scheme can be used for data transfer.
+	 */
+	bool vht_11ng;
 };
 
 struct esp_extn {
@@ -999,6 +1008,7 @@ struct wpa_supplicant_extn {
  * @he_400ns_sgi_supp: Enable 400ns SGI in HE mode using QCN IE
  * @he_2xltf_160_80p80_supp: Enable 2x LTF in HE mode using QCN IE for
  *                           160/80+80 BW
+ * @vht_11ng: Enable 11ng 256QAM support in STA mode
  */
 struct wpa_config_extn {
 	bool he_mcs_12_13_enabled;
@@ -1006,6 +1016,7 @@ struct wpa_config_extn {
 	bool vht_mcs_10_11_supp;
 	bool he_400ns_sgi_supp;
 	bool he_2xltf_160_80p80_supp;
+	bool vht_11ng;
 };
 
 int get_centre_freq_6g(int chan_idx, int chan_width, int *centre_freq);
@@ -1025,6 +1036,8 @@ static inline bool hostapd_mcst_allows_skip_cac_extn(u32 mcst,
 	return (is_dfs && mcst &&
 		(mcst <= HOSTAPD_NON_CAC_SWITCH_TIME_TU_EXTN(beacon_int)));
 }
+
+u16 wpas_center_idx_to_freq_extn(int freq, u8 center_idx);
 
 #ifndef CONFIG_QCN_EXTN
 
@@ -1636,6 +1649,19 @@ wpas_country_change_init_active_alpha2_extn(struct wpa_supplicant *wpa_s)
 {
 }
 
+static inline u8
+wpas_get_6ghz_bss_pwr_mode_extn(const struct wpa_bss *bss)
+{
+	return NL80211_REG_NUM_POWER_MODES;
+}
+
+static inline u8
+wpas_get_6ghz_link_pwr_mode_extn(struct wpa_supplicant *wpa_s,
+					 const struct wpa_bss *bss)
+{
+	return NL80211_REG_NUM_POWER_MODES;
+}
+
 static inline bool
 wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
 				const struct wpa_bss *bss)
@@ -1879,6 +1905,12 @@ wpas_iface_init_extn(struct wpa_supplicant *wpa_s)
 static inline void
 wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s)
 {
+}
+
+static inline int
+wpas_vht_11ng_sync_driver_extn(struct wpa_supplicant *wpa_s)
+{
+	return 0;
 }
 
 static inline int
@@ -2324,6 +2356,8 @@ void wpas_add_qcn_ie_probe_req_extn(struct wpa_supplicant *wpa_s,
  */
 void wpas_add_qcn_ie_assoc_req_extn(struct wpa_supplicant *wpa_s);
 #endif /* CONFIG_SME */
+
+int nl80211_set_vht_11ng_extn(void *priv, bool enable);
 
 /**
  * hostapd_qcn_buflen_add_240mhz_attr - Compute 240 MHz QCN IE attribute byte count
@@ -3085,6 +3119,7 @@ u8 hostapd_get_cbs_enable_extn(struct hostapd_config *conf);
 void hostapd_set_cbs_enable_extn(struct hostapd_config *conf, u8 enable);
 void wpas_iface_init_extn(struct wpa_supplicant *wpa_s);
 void wpas_iface_deinit_extn(struct wpa_supplicant *wpa_s);
+int wpas_vht_11ng_sync_driver_extn(struct wpa_supplicant *wpa_s);
 /**
  * hostapd_get_6ghz_thresh_priority_freq_extn() - Helper function to fetch the
  * VLP priority threshold frequency from driver
@@ -3127,6 +3162,9 @@ hostapd_afc_find_iface(struct hostapd_data *hapd, int hw_idx)
 void wpas_country_change_init_active_alpha2_extn(struct wpa_supplicant *wpa_s);
 void wpas_country_change_check_current_bss(struct wpa_supplicant *wpa_s,
 					   struct channel_list_changed *info);
+u8 wpas_get_6ghz_bss_pwr_mode_extn(const struct wpa_bss *bss);
+u8 wpas_get_6ghz_link_pwr_mode_extn(struct wpa_supplicant *wpa_s,
+					 const struct wpa_bss *bss);
 bool wpas_is_6ghz_hwbl_link_ok_extn(struct wpa_supplicant *wpa_s,
 				     const struct wpa_bss *bss);
 int intf_chan_range_available_5g(struct hostapd_hw_modes *mode,
@@ -3430,6 +3468,12 @@ enum chan_width
 hostapd_oper_chwidth_to_chanwidth_extn(int oper_chwidth,
 				       int sec_channel_offset);
 bool wpas_bss_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, struct wpa_bss *bss);
+bool wpas_link_uses_nol_channel_signal_extn(struct wpa_supplicant *wpa_s,
+					    int freq,
+					    const struct wpa_signal_info *si);
+bool wpas_link_uses_disabled_channel_signal_extn(struct wpa_supplicant *wpa_s,
+						 struct wpa_bss *bss, int freq,
+						 const struct wpa_signal_info *si);
 bool wpas_link_uses_nol_channel_extn(struct wpa_supplicant *wpa_s, int freq,
 				     enum chan_width width, int cf1, int cf2);
 void wpas_dfs_radar_detected_sta_mode(struct wpa_supplicant *wpa_s,
@@ -3447,6 +3491,7 @@ void wpas_dfs_nop_finished_sta_mode(struct wpa_supplicant *wpa_s,
  */
 void hostapd_override_ht_capabilities_extn(const struct hostapd_data *hapd,
 					   struct ieee80211_ht_capabilities *cap);
+bool hostapd_is_vht_11ng_enabled_extn(struct hostapd_data *hapd);
 /* ------------------------------------------------------------------ */
 /* WDS vendor IE APIs (CONFIG_QCN_EXTN set)                            */
 /* ------------------------------------------------------------------ */

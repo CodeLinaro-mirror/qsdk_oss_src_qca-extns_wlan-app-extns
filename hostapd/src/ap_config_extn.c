@@ -22,6 +22,18 @@
 #include "dcs.h"
 #include "block_channel.h"
 
+bool hostapd_is_vht_11ng_enabled_extn(struct hostapd_data *hapd)
+{
+	if (!hapd || !hapd->conf || !hapd->iface || !hapd->iconf ||
+	    !hapd->iface->current_mode)
+		return false;
+
+	return hapd->conf->bss_extn.vht_11ng &&
+		hapd->iface->current_mode->mode == HOSTAPD_MODE_IEEE80211G &&
+		hapd->iconf->ieee80211ac &&
+		!hapd->conf->disable_11ac;
+}
+
 static char *hostapd_config_trim_extn(char *str)
 {
 	char *end;
@@ -249,6 +261,7 @@ hostapd_config_defaults_bss_extn(struct hostapd_bss_config *bss)
 	memset(&bss_extn->puren_bss, 0, sizeof(bss_extn->puren_bss));
 	memset(&bss_extn->pure11ac_bss, 0, sizeof(bss_extn->pure11ac_bss));
 	memset(&bss_extn->pure11ax_bss, 0, sizeof(bss_extn->pure11ax_bss));
+	bss_extn->vht_11ng = false;
 	/* WDS vendor IE: disabled by default */
 	bss_extn->wds_ie = 0;
 	bss_extn->vht_mcs_10_11_supp = DEFAULT_VHT_MCS_10_11_SUPPORT;
@@ -757,6 +770,14 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			return -1;
 		}
 		bss->bss_extn.cck_rx_5g_supp = val;
+	} else if (os_strcmp(buf, "vht_11ng") == 0) {
+		val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid vht_11ng value %d (expected 0 or 1)", val);
+			return -1;
+		}
+		bss->bss_extn.vht_11ng = !!val;
 	} else if (os_strcmp(buf, "allow_3addr_mc") == 0) {
 		val = atoi(pos);
 		if (val != 0 && val != 1) {
