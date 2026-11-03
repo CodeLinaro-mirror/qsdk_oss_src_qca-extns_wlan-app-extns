@@ -469,20 +469,8 @@ void wpa_get_bss_channel_oper_info_extn(struct wpa_supplicant *wpa_s,
 			bss->max_cw = CHAN_WIDTH_80P80;
 			break;
 		case CHANWIDTH_USE_HT:
-			/* VHT fallback width via HT Capabilities:
-			 * If VHT width is inconclusive, use HT 'Supported Channel
-			 * Width Set' to choose 40 MHz vs 20 MHz instead of
-			 * defaulting to 20 MHz. */
-			if (!wpas_parse_ht_operation_extn(wpa_s, bss)) {
-				ie = wpa_bss_get_ie(bss, WLAN_EID_HT_CAP);
-				if (ie && ie[1] >= 1) {
-					if (WPA_GET_LE16(ie + 2) &
-					    HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET)
-						bss->max_cw = CHAN_WIDTH_40;
-					else
-						bss->max_cw = CHAN_WIDTH_20;
-				}
-			}
+			if (!wpas_parse_ht_operation_extn(wpa_s, bss))
+				bss->max_cw = CHAN_WIDTH_20;
 			break;
 		default:
 			bss->max_cw = CHAN_WIDTH_20;
@@ -507,7 +495,7 @@ void wpa_get_bss_channel_oper_info_extn(struct wpa_supplicant *wpa_s,
 	ie = get_ie_ext(bss->ies, bss->ie_len, WLAN_EID_EXT_HE_OPERATION);
 	if (ie && ie[1] >= 1) {
 		const struct ieee80211_he_operation *he_oper =
-			(const struct ieee80211_he_operation *) (ie + 2);
+			(const struct ieee80211_he_operation *) (ie + 3);
 		int offset = 0;
 		u8 he_oper_chwidth;
 
@@ -518,7 +506,7 @@ void wpa_get_bss_channel_oper_info_extn(struct wpa_supplicant *wpa_s,
 		if (he_oper->he_oper_params & HE_OPERATION_6GHZ_OPER_INFO) {
 			const struct ieee80211_he_6ghz_oper_info *oper_info =
 				(const struct ieee80211_he_6ghz_oper_info *)
-				(ie + 2 + sizeof(struct ieee80211_he_operation) + 1);
+				(ie + 3 + sizeof(struct ieee80211_he_operation) + offset);
 
 			he_oper_chwidth = (oper_info->control &
 					HE_6GHZ_OPER_INFO_CTRL_CHAN_WIDTH_MASK);
