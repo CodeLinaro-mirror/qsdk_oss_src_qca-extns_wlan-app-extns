@@ -799,6 +799,7 @@ int hostapd_dfs_prepare_channel_switch_settings(struct hostapd_iface *iface,
 						struct csa_settings *settings)
 {
 	struct hostapd_hw_modes *cmode = iface->current_mode;
+	struct hostapd_channel_info info;
 	int ieee80211_mode = IEEE80211_MODE_AP;
 	int err;
 
@@ -815,29 +816,32 @@ int hostapd_dfs_prepare_channel_switch_settings(struct hostapd_iface *iface,
 		ieee80211_mode = IEEE80211_MODE_MESH;
 #endif /* CONFIG_MESH */
 
-	err = hostapd_set_freq_params(&settings->freq_params,
-				      iface->conf->hw_mode,
-				      freq, channel,
-				      iface->conf->enable_edmg,
-				      iface->conf->edmg_channel,
-				      iface->conf->ieee80211n,
-				      iface->conf->ieee80211ac,
-				      iface->conf->ieee80211ax,
-				      iface->conf->ieee80211be,
-				      iface->conf->ieee80211bn,
-				      secondary_channel,
-				      oper_chwidth,
-				      oper_centr_freq_seg0_idx,
-				      oper_centr_freq_seg1_idx,
-				      cmode->vht_capab,
-				      &cmode->he_capab[ieee80211_mode],
-				      &cmode->eht_capab[ieee80211_mode],
-				      &cmode->uhr_capab[ieee80211_mode],
-				      punct_bitmap | iface->radar_bit_pattern,
-				      iface->conf->he_6ghz_reg_pwr_type,
-				      0, 0,
-				      iface->conf->bandwidth_device,
-				      iface->conf->center_freq_device);
+	info = (struct hostapd_channel_info) {
+		.mode = iface->conf->hw_mode,
+		.freq = freq,
+		.channel = channel,
+		.edmg.enabled = iface->conf->enable_edmg,
+		.edmg.channel = iface->conf->edmg_channel,
+		.ht.enabled = iface->conf->ieee80211n,
+		.vht.enabled = iface->conf->ieee80211ac,
+		.he.enabled = iface->conf->ieee80211ax,
+		.eht.enabled = iface->conf->ieee80211be,
+		.uhr.enabled = iface->conf->ieee80211bn,
+		.ht.sec_channel_offset = secondary_channel,
+		.oper_chwidth = oper_chwidth,
+		.center_segment0 = oper_centr_freq_seg0_idx,
+		.center_segment1 = oper_centr_freq_seg1_idx,
+		.vht.caps = cmode->vht_capab,
+		.he.cap = &cmode->he_capab[ieee80211_mode],
+		.eht.cap = &cmode->eht_capab[ieee80211_mode],
+		.uhr.cap = &cmode->uhr_capab[ieee80211_mode],
+		.eht.punct_bitmap = punct_bitmap | iface->radar_bit_pattern,
+		.he_6ghz_reg_pwr_type = iface->conf->he_6ghz_reg_pwr_type,
+		.bandwidth_device = iface->conf->bandwidth_device,
+		.center_freq_device = iface->conf->center_freq_device,
+	};
+
+	err = hostapd_set_freq_params(&settings->freq_params, &info);
 	if (err) {
 		wpa_printf(MSG_ERROR,
 			   "DFS failed to calculate CSA freq params");
@@ -1471,6 +1475,7 @@ dfs_build_notify_freq_params(struct hostapd_data *hapd,
 	struct hostapd_iface *iface;
 	struct hostapd_config *iconf;
 	struct hostapd_hw_modes *mode;
+	struct hostapd_channel_info info;
 	enum oper_chan_width oper_chwidth;
 
 	if (!hapd || !hapd->iface || !hapd->iconf || !freq_params ||
@@ -1484,30 +1489,37 @@ dfs_build_notify_freq_params(struct hostapd_data *hapd,
 		return -1;
 	oper_chwidth = hostapd_get_oper_chwidth(iconf);
 
-	if (hostapd_set_freq_params(freq_params, iconf->hw_mode, iface->freq,
-				    iconf->channel, iconf->enable_edmg,
-				    iconf->edmg_channel, iconf->ieee80211n,
-				    iconf->ieee80211ac, iconf->ieee80211ax,
-				    iconf->ieee80211be, iconf->ieee80211bn,
-				    iconf->secondary_channel,
-				    oper_chwidth,
-				    hostapd_get_oper_centr_freq_seg0_idx(iconf),
-				    hostapd_get_oper_centr_freq_seg1_idx(iconf),
-				    mode->vht_capab,
-				    &mode->he_capab[IEEE80211_MODE_AP],
-				    &mode->eht_capab[IEEE80211_MODE_AP],
-				    &mode->uhr_capab[IEEE80211_MODE_AP],
-				    hostapd_get_punct_bitmap(hapd),
-				    iconf->he_6ghz_reg_pwr_type,
+	info = (struct hostapd_channel_info) {
+		.mode = iconf->hw_mode,
+		.freq = iface->freq,
+		.channel = iconf->channel,
+		.edmg.enabled = iconf->enable_edmg,
+		.edmg.channel = iconf->edmg_channel,
+		.ht.enabled = iconf->ieee80211n,
+		.vht.enabled = iconf->ieee80211ac,
+		.he.enabled = iconf->ieee80211ax,
+		.eht.enabled = iconf->ieee80211be,
+		.uhr.enabled = iconf->ieee80211bn,
+		.ht.sec_channel_offset = iconf->secondary_channel,
+		.oper_chwidth = oper_chwidth,
+		.center_segment0 = hostapd_get_oper_centr_freq_seg0_idx(iconf),
+		.center_segment1 = hostapd_get_oper_centr_freq_seg1_idx(iconf),
+		.vht.caps = mode->vht_capab,
+		.he.cap = &mode->he_capab[IEEE80211_MODE_AP],
+		.eht.cap = &mode->eht_capab[IEEE80211_MODE_AP],
+		.uhr.cap = &mode->uhr_capab[IEEE80211_MODE_AP],
+		.eht.punct_bitmap = hostapd_get_punct_bitmap(hapd),
+		.he_6ghz_reg_pwr_type = iconf->he_6ghz_reg_pwr_type,
 #ifdef CONFIG_IEEE80211BN
-				    hostapd_hw_get_freq(hapd,
-							iconf->npca_primary_channel),
-				    iconf->npca_punct_bitmap,
-#else
-				    0, 0,
+		.uhr.npca_freq = hostapd_hw_get_freq(
+			hapd, iconf->npca_primary_channel),
+		.uhr.npca_punct_bitmap = iconf->npca_punct_bitmap,
 #endif /* CONFIG_IEEE80211BN */
-				    iconf->bandwidth_device,
-				    iconf->center_freq_device))
+		.bandwidth_device = iconf->bandwidth_device,
+		.center_freq_device = iconf->center_freq_device,
+	};
+
+	if (hostapd_set_freq_params(freq_params, &info))
 		return -1;
 
 	freq_params->link_id = -1;
@@ -1908,6 +1920,7 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 	struct hostapd_channel_data *channel;
 	struct hostapd_hw_modes *cmode = iface->current_mode;
 	struct hostapd_freq_params freq_params;
+	struct hostapd_channel_info info;
 	int secondary_channel;
 	int ieee80211_mode = IEEE80211_MODE_AP;
 	int err;
@@ -1952,29 +1965,32 @@ int hostapd_dfs_restart_channel_extn(struct hostapd_iface *iface)
 
 	os_memset(&freq_params, 0, sizeof(freq_params));
 	iface->radar_bit_pattern = 0;
-	err = hostapd_set_freq_params(&freq_params,
-				      iface->conf->hw_mode,
-				      channel->freq, channel->chan,
-				      iface->conf->enable_edmg,
-				      iface->conf->edmg_channel,
-				      iface->conf->ieee80211n,
-				      iface->conf->ieee80211ac,
-				      iface->conf->ieee80211ax,
-				      iface->conf->ieee80211be,
-				      iface->conf->ieee80211bn,
-				      secondary_channel,
-				      current_vht_oper_chwidth,
-				      oper_centr_freq_seg0_idx,
-				      oper_centr_freq_seg1_idx,
-				      cmode->vht_capab,
-				      &cmode->he_capab[ieee80211_mode],
-				      &cmode->eht_capab[ieee80211_mode],
-				      &cmode->uhr_capab[ieee80211_mode],
-				      iface->radar_bit_pattern,
-				      iface->conf->he_6ghz_reg_pwr_type,
-				      0, 0,
-				      iface->conf->bandwidth_device,
-				      iface->conf->center_freq_device);
+	info = (struct hostapd_channel_info) {
+		.mode = iface->conf->hw_mode,
+		.freq = channel->freq,
+		.channel = channel->chan,
+		.edmg.enabled = iface->conf->enable_edmg,
+		.edmg.channel = iface->conf->edmg_channel,
+		.ht.enabled = iface->conf->ieee80211n,
+		.vht.enabled = iface->conf->ieee80211ac,
+		.he.enabled = iface->conf->ieee80211ax,
+		.eht.enabled = iface->conf->ieee80211be,
+		.uhr.enabled = iface->conf->ieee80211bn,
+		.ht.sec_channel_offset = secondary_channel,
+		.oper_chwidth = current_vht_oper_chwidth,
+		.center_segment0 = oper_centr_freq_seg0_idx,
+		.center_segment1 = oper_centr_freq_seg1_idx,
+		.vht.caps = cmode->vht_capab,
+		.he.cap = &cmode->he_capab[ieee80211_mode],
+		.eht.cap = &cmode->eht_capab[ieee80211_mode],
+		.uhr.cap = &cmode->uhr_capab[ieee80211_mode],
+		.eht.punct_bitmap = iface->radar_bit_pattern,
+		.he_6ghz_reg_pwr_type = iface->conf->he_6ghz_reg_pwr_type,
+		.bandwidth_device = iface->conf->bandwidth_device,
+		.center_freq_device = iface->conf->center_freq_device,
+	};
+
+	err = hostapd_set_freq_params(&freq_params, &info);
 	if (err) {
 		wpa_printf(MSG_ERROR,
 			   "DFS failed to calculate restart freq params");

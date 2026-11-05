@@ -593,6 +593,7 @@ static int regdom_apply_channel(struct hostapd_iface *iface,
 				u16 pp)
 {
 	struct hostapd_hw_modes *mode = iface->current_mode;
+	struct hostapd_channel_info info;
 	int ret;
 
 	if (!mode)
@@ -605,29 +606,34 @@ static int regdom_apply_channel(struct hostapd_iface *iface,
 		return -1;
 	}
 
-	ret = hostapd_set_freq_params(freq_params,
-				      iface->conf->hw_mode,
-				      chan->freq, chan->chan,
-				      iface->conf->enable_edmg,
-				      iface->conf->edmg_channel,
-				      iface->conf->ieee80211n,
-				      iface->conf->ieee80211ac,
-				      iface->conf->ieee80211ax,
-				      iface->conf->ieee80211be,
-				      iface->conf->ieee80211bn,
-				      secondary,
-				      try_width,
-				      center,
-				      0, /* Does not support 80P80 */
-				      iface->conf->vht_capab,
-				      mode ? &mode->he_capab[IEEE80211_MODE_AP] : NULL,
-				      mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
-				      mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
-				      pp,
-				      iface->conf->he_6ghz_reg_pwr_type, /* BPM would override later */
-				      0, 0,
-				      iface->conf->bandwidth_device,
-				      iface->conf->center_freq_device);
+	info = (struct hostapd_channel_info) {
+		.mode = iface->conf->hw_mode,
+		.freq = chan->freq,
+		.channel = chan->chan,
+		.edmg.enabled = iface->conf->enable_edmg,
+		.edmg.channel = iface->conf->edmg_channel,
+		.ht.enabled = iface->conf->ieee80211n,
+		.vht.enabled = iface->conf->ieee80211ac,
+		.he.enabled = iface->conf->ieee80211ax,
+		.eht.enabled = iface->conf->ieee80211be,
+		.uhr.enabled = iface->conf->ieee80211bn,
+		.ht.sec_channel_offset = secondary,
+		.oper_chwidth = try_width,
+		.center_segment0 = center,
+		/* Does not support 80P80 */
+		.center_segment1 = 0,
+		.vht.caps = iface->conf->vht_capab,
+		.he.cap = &mode->he_capab[IEEE80211_MODE_AP],
+		.eht.cap = &mode->eht_capab[IEEE80211_MODE_AP],
+		.uhr.cap = &mode->uhr_capab[IEEE80211_MODE_AP],
+		.eht.punct_bitmap = pp,
+		/* BPM would override later */
+		.he_6ghz_reg_pwr_type = iface->conf->he_6ghz_reg_pwr_type,
+		.bandwidth_device = iface->conf->bandwidth_device,
+		.center_freq_device = iface->conf->center_freq_device,
+	};
+
+	ret = hostapd_set_freq_params(freq_params, &info);
 	if (ret) {
 		wpa_printf(MSG_ERROR,
 			   "REGDOM: Failed to build freq parameters");

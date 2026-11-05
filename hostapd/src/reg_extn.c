@@ -648,6 +648,7 @@ int hostapd_validate_current_6ghz_hw_blocklist_extn(
 	u8 pwr_mode_id, const char *op_name)
 {
 	struct hostapd_freq_params freq_params;
+	struct hostapd_channel_info info;
 	struct hostapd_hw_modes *mode;
 	struct hostapd_data *hapd;
 
@@ -658,30 +659,34 @@ int hostapd_validate_current_6ghz_hw_blocklist_extn(
 	hapd = iface->bss[0];
 	mode = iface->current_mode;
 
-	if (hostapd_set_freq_params(&freq_params, iface->conf->hw_mode,
-				    iface->freq, iface->conf->channel,
-				    iface->conf->enable_edmg,
-				    iface->conf->edmg_channel,
-				    iface->conf->ieee80211n,
-				    iface->conf->ieee80211ac,
-				    iface->conf->ieee80211ax,
-				    iface->conf->ieee80211be,
-				    iface->conf->ieee80211bn,
-				    iface->conf->secondary_channel,
-				    hostapd_get_oper_chwidth(iface->conf),
-				    hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
-				    hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
-				    iface->conf->vht_capab,
-				    mode ? &mode->he_capab[IEEE80211_MODE_AP] :
-				    NULL,
-				    mode ? &mode->eht_capab[IEEE80211_MODE_AP] :
-				    NULL,
-				    mode ? &mode->uhr_capab[IEEE80211_MODE_AP] :
-				    NULL,
-				    hostapd_get_punct_bitmap(hapd),
-				    pwr_mode_id, 0, 0,
-				    iface->conf->bandwidth_device,
-				    iface->conf->center_freq_device)) {
+	info = (struct hostapd_channel_info) {
+		.mode = iface->conf->hw_mode,
+		.freq = iface->freq,
+		.channel = iface->conf->channel,
+		.edmg.enabled = iface->conf->enable_edmg,
+		.edmg.channel = iface->conf->edmg_channel,
+		.ht.enabled = iface->conf->ieee80211n,
+		.vht.enabled = iface->conf->ieee80211ac,
+		.he.enabled = iface->conf->ieee80211ax,
+		.eht.enabled = iface->conf->ieee80211be,
+		.uhr.enabled = iface->conf->ieee80211bn,
+		.ht.sec_channel_offset = iface->conf->secondary_channel,
+		.oper_chwidth = hostapd_get_oper_chwidth(iface->conf),
+		.center_segment0 =
+			hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
+		.center_segment1 =
+			hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
+		.vht.caps = iface->conf->vht_capab,
+		.he.cap = mode ? &mode->he_capab[IEEE80211_MODE_AP] : NULL,
+		.eht.cap = mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
+		.uhr.cap = mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
+		.eht.punct_bitmap = hostapd_get_punct_bitmap(hapd),
+		.he_6ghz_reg_pwr_type = pwr_mode_id,
+		.bandwidth_device = iface->conf->bandwidth_device,
+		.center_freq_device = iface->conf->center_freq_device,
+	};
+
+	if (hostapd_set_freq_params(&freq_params, &info)) {
 		wpa_printf(MSG_ERROR,
 			   "Reject %s: failed to build current 6 GHz frequency params",
 			   op_name ? op_name : "operation");
@@ -691,4 +696,3 @@ int hostapd_validate_current_6ghz_hw_blocklist_extn(
 	return hostapd_validate_hw_blocklist_for_freq_params_extn(
 		iface, &freq_params, pwr_mode_id, op_name);
 }
-

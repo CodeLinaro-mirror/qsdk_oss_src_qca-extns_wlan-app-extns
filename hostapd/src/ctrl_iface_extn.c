@@ -1117,6 +1117,7 @@ static int hostapd_ctrl_iface_set_channel_extn(struct hostapd_data *hapd,
 	struct hostapd_hw_modes *mode;
 	struct hostapd_channel_data *chan;
 	struct hostapd_freq_params freq_params;
+	struct hostapd_channel_info info;
 	enum oper_chan_width oper_chwidth;
 	int sec_offset, old_sec_offset, bandwidth, seg0_calc;
 	u8 seg0_idx, seg1_idx;
@@ -1195,29 +1196,31 @@ static int hostapd_ctrl_iface_set_channel_extn(struct hostapd_data *hapd,
 	seg1_idx = oper_chwidth == CONF_OPER_CHWIDTH_80P80MHZ ?
 		   hostapd_get_oper_centr_freq_seg1_idx(iface->conf) : 0;
 	punct_bitmap = hostapd_get_punct_bitmap(hapd);
-	ret = hostapd_set_freq_params(&freq_params,
-				      iface->conf->hw_mode,
-				      freq, channel,
-				      iface->conf->enable_edmg,
-				      iface->conf->edmg_channel,
-				      iface->conf->ieee80211n,
-				      iface->conf->ieee80211ac,
-				      iface->conf->ieee80211ax,
-				      iface->conf->ieee80211be,
-				      iface->conf->ieee80211bn,
-				      sec_offset,
-				      oper_chwidth,
-				      seg0_idx,
-				      seg1_idx,
-				      iface->conf->vht_capab,
-				      mode ? &mode->he_capab[IEEE80211_MODE_AP] : NULL,
-				      mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
-				      mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
-				      punct_bitmap,
-				      hapd->iconf->he_6ghz_reg_pwr_type,
-				      0, 0,
-				      iface->conf->bandwidth_device,
-				      iface->conf->center_freq_device);
+	info = (struct hostapd_channel_info) {
+		.mode = iface->conf->hw_mode,
+		.freq = freq,
+		.channel = channel,
+		.edmg.enabled = iface->conf->enable_edmg,
+		.edmg.channel = iface->conf->edmg_channel,
+		.ht.enabled = iface->conf->ieee80211n,
+		.vht.enabled = iface->conf->ieee80211ac,
+		.he.enabled = iface->conf->ieee80211ax,
+		.eht.enabled = iface->conf->ieee80211be,
+		.uhr.enabled = iface->conf->ieee80211bn,
+		.ht.sec_channel_offset = sec_offset,
+		.oper_chwidth = oper_chwidth,
+		.center_segment0 = seg0_idx,
+		.center_segment1 = seg1_idx,
+		.vht.caps = iface->conf->vht_capab,
+		.he.cap = mode ? &mode->he_capab[IEEE80211_MODE_AP] : NULL,
+		.eht.cap = mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
+		.uhr.cap = mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
+		.eht.punct_bitmap = punct_bitmap,
+		.he_6ghz_reg_pwr_type = hapd->iconf->he_6ghz_reg_pwr_type,
+		.bandwidth_device = iface->conf->bandwidth_device,
+		.center_freq_device = iface->conf->center_freq_device,
+	};
+	ret = hostapd_set_freq_params(&freq_params, &info);
 	if (ret) {
 		wpa_printf(MSG_ERROR,
 			   "CTRL: SET_CHANNEL: Failed to build freq parameters");
@@ -1940,6 +1943,7 @@ hostapd_ctrl_iface_build_target_freq_params_extn(struct hostapd_data *hapd,
 {
 	struct hostapd_iface *iface;
 	struct hostapd_hw_modes *mode;
+	struct hostapd_channel_info info;
 
 	if (!hapd || !hapd->iface || !chan || !freq_params)
 		return -1;
@@ -1948,29 +1952,27 @@ hostapd_ctrl_iface_build_target_freq_params_extn(struct hostapd_data *hapd,
 	mode = iface->current_mode;
 
 	os_memset(freq_params, 0, sizeof(*freq_params));
-	return hostapd_set_freq_params(freq_params,
-				       iface->conf->hw_mode,
-				       chan->freq, chan->chan,
-				       iface->conf->enable_edmg,
-				       iface->conf->edmg_channel,
-				       iface->conf->ieee80211n,
-				       iface->conf->ieee80211ac,
-				       iface->conf->ieee80211ax,
-				       iface->conf->ieee80211be,
-				       iface->conf->ieee80211bn,
-				       0,
-				       CONF_OPER_CHWIDTH_USE_HT,
-				       0,
-				       0,
-				       iface->conf->vht_capab,
-				       mode ? &mode->he_capab[IEEE80211_MODE_AP] : NULL,
-				       mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
-				       mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
-				       0,
-                                       hapd->iconf->he_6ghz_reg_pwr_type,
-                                       0, 0,
-                                       iface->conf->bandwidth_device,
-				       iface->conf->center_freq_device);
+	info = (struct hostapd_channel_info) {
+		.mode = iface->conf->hw_mode,
+		.freq = chan->freq,
+		.channel = chan->chan,
+		.edmg.enabled = iface->conf->enable_edmg,
+		.edmg.channel = iface->conf->edmg_channel,
+		.ht.enabled = iface->conf->ieee80211n,
+		.vht.enabled = iface->conf->ieee80211ac,
+		.he.enabled = iface->conf->ieee80211ax,
+		.eht.enabled = iface->conf->ieee80211be,
+		.uhr.enabled = iface->conf->ieee80211bn,
+		.oper_chwidth = CONF_OPER_CHWIDTH_USE_HT,
+		.vht.caps = iface->conf->vht_capab,
+		.he.cap = mode ? &mode->he_capab[IEEE80211_MODE_AP] : NULL,
+		.eht.cap = mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
+		.uhr.cap = mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
+		.he_6ghz_reg_pwr_type = hapd->iconf->he_6ghz_reg_pwr_type,
+		.bandwidth_device = iface->conf->bandwidth_device,
+		.center_freq_device = iface->conf->center_freq_device,
+	};
+	return hostapd_set_freq_params(freq_params, &info);
 }
 
 /**
