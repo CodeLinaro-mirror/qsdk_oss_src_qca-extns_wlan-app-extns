@@ -2034,9 +2034,9 @@ void hostapd_acs_npca_retrigger(struct hostapd_iface *iface)
 	new_npca.enable = true;
 
 	new_npca.params =
-		(new_npca.params & ~UHR_OPER_PARAMS_NPCA_PRIMARY_CHAN) |
+		(new_npca.params & ~UHR_OPER_PARAMS_NPCA_PRI_CHAN) |
 		((u32) npca_channel <<
-		 UHR_OPER_PARAMS_NPCA_PRIMARY_CHAN_SHIFT);
+		 UHR_OPER_PARAMS_NPCA_PRI_CHAN_SHIFT);
 
 	new_npca.disabled_subchan_bitmap = npca_punct_bitmap;
 
