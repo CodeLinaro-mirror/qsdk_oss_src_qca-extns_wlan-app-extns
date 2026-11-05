@@ -287,16 +287,16 @@ void handle_assoc_cb_wds_ie_extn(struct hostapd_data *hapd,
 
 	/*
 	 * Determine AID once — needed for both the teardown and enable paths.
-	 * For MLD the wds_mld_uid is used; for non-MLD, sta->aid.
+	 * For MLD the WDS interface-name ID is used; for non-MLD, sta->aid.
 	 */
 	if (hapd->conf->mld_ap) {
-		if (hostapd_get_wds_mld_sta_uid(hapd, sta) < 0) {
-			wpa_printf(MSG_DEBUG, "WDS IE: No room for uid "
+		if (hostapd_get_wds_mld_ifname_id(hapd, sta) < 0) {
+			wpa_printf(MSG_DEBUG, "WDS IE: No room for ifname id "
 				   "to enable 4-address WDS mode for STA "
 				   MACSTR, MAC2STR(sta->addr));
 			return;
 		}
-		aid = sta->wds_mld_uid;
+		aid = sta->wds_ifname_id;
 	} else {
 		aid = sta->aid;
 	}
@@ -399,7 +399,7 @@ void ap_free_sta_wds_ie_extn(struct hostapd_data *hapd, struct sta_info *sta)
 	}
 
 	if (hapd->conf->mld_ap)
-		aid = sta->wds_mld_uid;
+		aid = sta->wds_ifname_id;
 	else
 		aid = sta->aid;
 
