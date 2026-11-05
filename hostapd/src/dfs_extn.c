@@ -1635,7 +1635,11 @@ static int dfs_notify_nol_bitmap_to_driver(struct hostapd_data *hapd,
 		   oper_bitmap, oper_start_freq, freq_params.bandwidth,
 		   freq_params.center_freq1);
 
-	return hostapd_drv_notify_radar(hapd, &freq_params, oper_bitmap);
+	if (!hapd->driver || !hapd->driver->notify_radar || !hapd->drv_priv)
+		return -1;
+
+	return hapd->driver->notify_radar(hapd->drv_priv, &freq_params,
+					  oper_bitmap);
 }
 
 /**
