@@ -737,6 +737,14 @@ void hostapd_iface_set_supplicant_channel_extn(struct hostapd_iface *hapd_iface)
 		return;
 	}
 
+#ifdef CONFIG_HOSTAPD_SRC_DIR
+	os_strlcpy(hapd_iface->iface_extn.sta_wpa_state, "COMPLETED",
+		   sizeof(hapd_iface->iface_extn.sta_wpa_state));
+	hostapd_update_bh_sta_connected_extn(hapd_iface, "COMPLETED");
+	wpa_printf(MSG_INFO, "%s: Restored backhaul STA state to COMPLETED",
+		   __func__);
+#endif
+
 	/* Mark DFS availability via STA if this is a DFS channel/sub-channel */
 	hapd_iface->iface_extn.dfs_available_from_sta =
 		(ieee80211_is_dfs(sta_freq.freq, hapd_iface->hw_features,
