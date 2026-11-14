@@ -981,6 +981,7 @@ static int qca_nl80211_handle_wiphy_config_evt_extn(struct i802_bss *bss,
 }
 
 static void qca_nl80211_fw_recovery_event_extn(struct i802_bss *bss,
+					       bool *event_handled,
 					       u8 *data, size_t len)
 {
 	struct nlattr *tb[QCA_VENDOR_ATTR_FW_RECOVERY_MAX + 1];
@@ -1007,6 +1008,8 @@ static void qca_nl80211_fw_recovery_event_extn(struct i802_bss *bss,
 		   "nl80211: FW recovery done, DFS iface freq=%d, re-arming CAC",
 		   iface->freq);
 
+	*event_handled = true;
+
 	if (hostapd_disable_iface(iface) < 0) {
 		wpa_printf(MSG_WARNING,
 			   "nl80211: FW recovery: disable_iface failed");
@@ -1018,6 +1021,7 @@ static void qca_nl80211_fw_recovery_event_extn(struct i802_bss *bss,
 }
 
 int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
+				  bool *event_handled,
 				  u32 subcmd, u8 *data, size_t len)
 {
 	switch (subcmd) {
@@ -1040,7 +1044,8 @@ int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
 		break;
 #endif
 	case QCA_NL80211_VENDOR_SUBCMD_WLAN_FW_RECOVERY_EVENT:
-		qca_nl80211_fw_recovery_event_extn(bss, data, len);
+		qca_nl80211_fw_recovery_event_extn(bss, event_handled,
+						   data, len);
 		break;
 	default:
 		return -EINVAL;

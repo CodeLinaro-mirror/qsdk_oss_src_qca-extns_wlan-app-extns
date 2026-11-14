@@ -1534,6 +1534,7 @@ hostapd_iface_set_supplicant_channel_extn(struct hostapd_iface *hapd_iface)
 
 static inline int
 nl80211_vendor_event_qca_extn(struct i802_bss *bss,
+			      bool *event_handled,
 			      u32 subcmd, u8 *data, size_t len)
 {
 	return -1;
@@ -2578,6 +2579,7 @@ hostapd_config_fill_extn(struct hostapd_config *conf,
 			 const char *buf, char *pos, int line);
 
 int nl80211_vendor_event_qca_extn(struct i802_bss *bss,
+				  bool *event_handled,
 				  u32 subcmd, u8 *data, size_t len);
 int hostapd_ctrl_iface_set_extn(struct hostapd_data *hapd, char *cmd, char *value);
 
